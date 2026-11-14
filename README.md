@@ -37,7 +37,7 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | Real collectors on Raspberry Pi 4 | UNVERIFIED |
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
 | macOS (also: `netsh` labels on non-English Windows may not parse, then it falls back to the simulator with a note) | UNVERIFIED |
-| ESP32 CSI over UDP: packets, token and timestamps over a local socket | VERIFIED |
+| ESP32 CSI over UDP: packets, token (collector and `Runtime` wiring) and timestamps over a local socket | VERIFIED |
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
 
 ## Tests
