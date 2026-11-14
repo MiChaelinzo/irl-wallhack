@@ -23,6 +23,7 @@ class Config:
     ping_target: str = ""         # optional private IP of your router (ping fallback)
     udp_port: int = 0             # >0 enables the ESP32 CSI UDP receiver
     udp_host: str = "127.0.0.1"
+    udp_token: str = ""           # optional shared secret that UDP packets must include
     background: bool = True       # tests set False and step manually
 
     def validate(self) -> None:

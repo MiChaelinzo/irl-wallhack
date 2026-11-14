@@ -8,6 +8,7 @@ from typing import List, Optional
 class Reading:
     link: str
     rssi: float  # dBm, or a proxy value (see ping.py / udp_csi.py)
+    t: Optional[float] = None  # time.monotonic() when received; None means "stamp at poll time"
 
 
 class Collector:

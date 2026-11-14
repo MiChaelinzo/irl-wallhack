@@ -2,6 +2,8 @@
 
 Packet format (one JSON object per UDP datagram, UTF-8):
     {"link": "esp32-1", "rssi": -52, "csi": [i0, q0, i1, q1, ...]}
+"link" is required. If the receiver has a token configured (udp_token), packets must also carry
+"token" with the same value; others are dropped. This is a shared secret, not encryption.
 "link" is required. Provide "rssi" (dBm) and/or "csi" (interleaved int I/Q values).
 If "csi" is present the reading is mean amplitude in dB (20*log10), which is more
 sensitive than RSSI; otherwise "rssi" is used. Binds to 127.0.0.1 unless told otherwise.
@@ -9,16 +11,19 @@ sensitive than RSSI; otherwise "rssi" is used. Binds to 127.0.0.1 unless told ot
 import json
 import math
 import socket
+import time
 from typing import List, Optional
 
 from .base import Collector, Reading
 
 
-def parse_csi_packet(data: bytes) -> Optional[Reading]:
+def parse_csi_packet(data: bytes, token: str = "") -> Optional[Reading]:
     try:
         obj = json.loads(data.decode("utf-8"))
         link = str(obj["link"])
     except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        return None
+    if token and obj.get("token") != token:
         return None
     csi = obj.get("csi")
     if isinstance(csi, list) and len(csi) >= 2:
@@ -40,8 +45,8 @@ class UdpCsiCollector(Collector):
     name = "udp-csi"
     interval_s = 0.1
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 5500):
-        self.host, self.port = host, port
+    def __init__(self, host: str = "127.0.0.1", port: int = 5500, token: str = ""):
+        self.host, self.port, self.token = host, port, token
         self._sock: Optional[socket.socket] = None
 
     def available(self) -> bool:
@@ -67,8 +72,9 @@ class UdpCsiCollector(Collector):
                 data, _addr = sock.recvfrom(65535)
             except BlockingIOError:
                 break
-            r = parse_csi_packet(data)
+            r = parse_csi_packet(data, self.token)
             if r:
+                r.t = time.monotonic()
                 out.append(r)
         return out
 

@@ -15,6 +15,8 @@ MIN_BREATH_SPAN_S = 15.0       # minimum history before estimating breathing
 BREATH_BAND_HZ = (0.1, 0.5)    # 6-30 breaths per minute
 BREATH_PEAK_RATIO = 10.0       # peak power / off-peak band power needed to accept a peak
 BREATH_MIN_AMPLITUDE_DB = 0.25  # peak amplitude floor, rejects flat noise
+MIN_BREATH_SAMPLE_HZ = 4.0     # raw samples per second needed; band edge 0.5 Hz is Nyquist at 1 Hz
+QUANTISATION_STEP_DB = 0.5     # readings that are all multiples of this are too coarse for breathing
 MOTION_ENTER = 1.4             # std of first difference (dB per grid step) to enter motion
 MOTION_EXIT_FACTOR = 0.7
 ENTER_HOLD = 3                 # consecutive evaluations before a state turns on
@@ -58,6 +60,20 @@ def motion_metric(values: np.ndarray) -> float:
     if len(values) < 5:
         return 0.0
     return float(np.std(np.diff(values)))
+
+
+def breathing_supported(times: np.ndarray, values: np.ndarray) -> bool:
+    """False when raw data cannot carry breathing: sampled too slowly or quantised to whole steps.
+
+    Judged on the raw (not resampled) readings, because interpolation invents in-between samples.
+    """
+    if len(times) < 2 or times[-1] - times[0] <= 0:
+        return True  # not enough data to judge yet; estimate_breathing needs its own minimum span
+    rate = (len(times) - 1) / (times[-1] - times[0])
+    if rate < MIN_BREATH_SAMPLE_HZ:
+        return False
+    steps = values / QUANTISATION_STEP_DB
+    return not bool(np.all(np.abs(steps - np.round(steps)) < 1e-6))
 
 
 def estimate_breathing(values: np.ndarray, hz: float = GRID_HZ):
@@ -109,6 +125,7 @@ class LinkState:
     breathing_bpm: Optional[float] = None
     breathing_ratio: float = 0.0
     presence: bool = False
+    breathing_supported: bool = True
     samples_seen: int = 0
 
     def as_dict(self) -> dict:
@@ -116,7 +133,7 @@ class LinkState:
             "link": self.link_id, "zone": self.zone, "rssi": round(self.rssi, 2),
             "motion_value": round(self.motion_value, 3), "motion": self.motion,
             "breathing_bpm": None if self.breathing_bpm is None else round(self.breathing_bpm, 1),
-            "presence": self.presence, "samples": self.samples_seen,
+            "presence": self.presence, "breathing_supported": self.breathing_supported, "samples": self.samples_seen,
         }
 
 
@@ -152,7 +169,11 @@ class LinkProcessor:
         s.motion = self._motion_h.update(s.motion_value > enter,
                                          s.motion_value < enter * MOTION_EXIT_FACTOR)
         # Breathing analysis is only meaningful while the subject is not moving much.
-        bpm, ratio = estimate_breathing(series[-int(BREATH_WINDOW_S * GRID_HZ):])
+        s.breathing_supported = breathing_supported(times, vals)
+        if s.breathing_supported:
+            bpm, ratio = estimate_breathing(series[-int(BREATH_WINDOW_S * GRID_HZ):])
+        else:
+            bpm, ratio = None, 0.0
         s.breathing_ratio = ratio
         has_breath = bpm is not None and not s.motion
         if has_breath:
@@ -215,6 +236,7 @@ class SensingEngine:
             "presence": any(z["presence"] for z in zones),
             "motion": any(z["motion"] for z in zones),
             "breathing_bpm": round(float(np.median(bpms)), 1) if bpms else None,
+            "breathing_supported": not self.links or any(p.state.breathing_supported for p in self.links.values()),
         }
 
     def link_states(self) -> List[dict]:

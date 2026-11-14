@@ -15,12 +15,20 @@ from .simulator import SAMPLE_HZ, SCENARIOS, Simulator
 log = logging.getLogger("wallhack")
 REAL_ZONE = "room"
 HISTORY = 6000
+STALE_AFTER_S = 10.0
+
+
+class SourceUnavailableError(ValueError):
+    """The explicitly requested data source produced no readings."""
 
 
 class Runtime:
     def __init__(self, config: Config):
         self.config = config
-        self.lock = threading.RLock()
+        self.lock = threading.RLock()          # guards engine, samples and status; held briefly
+        self._source_lock = threading.Lock()   # serialises collector polling and reconfiguration
+        self._generation = 0
+        self._last_data = time.monotonic()
         self.samples: Deque[dict] = deque(maxlen=HISTORY)
         self.seq = 0
         self.engine = SensingEngine(config.sensitivity)
@@ -59,30 +67,48 @@ class Runtime:
         return cols
 
     def reconfigure(self) -> None:
-        with self.lock:
+        """Rebuild the data source. Probing collectors can be slow, so it happens outside
+        `self.lock` (which API readers use); only the final swap takes it."""
+        with self._source_lock:
             for col in self.collectors:
                 col.close()
             self.collectors = []
-            self.engine = SensingEngine(self.config.sensitivity)
-            self.samples.clear()
-            self.seq = 0
-            self.sim = None
-            self.note = ""
+            error: Optional[str] = None
+            cols: List[Collector] = []
+            real = False
             if self.config.source in ("auto", "real"):
                 cols = self._build_collectors()
-                if cols and any(cols[i].poll() for i in range(len(cols))):
+                real = bool(cols) and any([c.poll() for c in cols])
+                if not real:
+                    for col in cols:
+                        col.close()
+                    cols = []
+            with self.lock:
+                self._generation += 1
+                self.engine = SensingEngine(self.config.sensitivity)
+                self.samples.clear()
+                self.seq = 0
+                self.sim = None
+                self.note = ""
+                self._last_data = time.monotonic()
+                if real:
                     self.collectors, self.source = cols, "real"
                     self._t0 = time.monotonic()
                     log.info("Using real collectors: %s", ", ".join(c.name for c in cols))
                     return
-                for col in cols:
-                    col.close()
-                self.note = ("No WiFi readings from this machine's tools; showing SIMULATED data. "
-                             "Run with --source simulator to hide this message.")
+                if self.config.source == "real":
+                    error = ("source 'real' was requested but no WiFi readings are available from this "
+                             "machine's tools. Check docs/hardware.md, or use --source auto/simulator.")
+                    self.note = "Requested real data, but none is available. Showing SIMULATED data."
+                else:
+                    self.note = ("No WiFi readings from this machine's tools; showing SIMULATED data. "
+                                 "Run with --source simulator to hide this message.")
                 log.warning(self.note)
-            self.source = "simulator"
-            self.sim = Simulator(self.config.seed, self.config.scenario)
-            self._sim_clock = time.monotonic()
+                self.source = "simulator"
+                self.sim = Simulator(self.config.seed, self.config.scenario)
+                self._sim_clock = time.monotonic()
+            if error:
+                raise SourceUnavailableError(error)
 
     # ---- data flow --------------------------------------------------------
     def _ingest(self, t: float, link: str, zone: str, rssi: float) -> None:
@@ -99,11 +125,21 @@ class Runtime:
                 self._ingest(s.t, s.link, s.zone, s.rssi)
 
     def poll_real(self) -> None:
-        with self.lock:
-            t = time.monotonic() - self._t0
+        """Poll collectors without holding `self.lock`, then ingest the readings under it."""
+        with self._source_lock:
+            gen = self._generation
+            batch = []
             for col in self.collectors:
-                for r in col.poll():
-                    self._ingest(t, r.link, REAL_ZONE, r.rssi)
+                now = time.monotonic()
+                batch.extend((r.t if r.t is not None else now, r) for r in col.poll())
+        if not batch:
+            return
+        with self.lock:
+            if gen != self._generation:
+                return  # settings changed while polling; drop stale readings
+            for mono, r in batch:
+                self._ingest(max(mono - self._t0, 0.0), r.link, REAL_ZONE, r.rssi)
+            self._last_data = time.monotonic()
 
     def _loop(self) -> None:
         while not self._stop.wait(0.1 if self.source == "simulator" else self._real_interval()):
@@ -142,6 +178,7 @@ class Runtime:
 
     def update_settings(self, source=None, scenario=None, sensitivity=None) -> None:
         with self.lock:
+            old = Config(**{**self.config.__dict__})
             new = Config(**{**self.config.__dict__})
             if source is not None:
                 new.source = source
@@ -154,7 +191,17 @@ class Runtime:
             new.validate()
             self.config.source, self.config.scenario = new.source, new.scenario
             self.config.sensitivity = new.sensitivity
+        try:
             self.reconfigure()
+        except SourceUnavailableError:
+            with self.lock:
+                self.config.source, self.config.scenario = old.source, old.scenario
+                self.config.sensitivity = old.sensitivity
+            try:
+                self.reconfigure()
+            except SourceUnavailableError:
+                pass  # previous setting was also unavailable; runtime stays on the labelled simulator
+            raise
 
     def status(self) -> dict:
         with self.lock:
@@ -163,6 +210,14 @@ class Runtime:
                    "scenario": self.config.scenario if self.source == "simulator" else None,
                    "links": len(self.engine.links), "t": round(self.engine.last_t, 2),
                    "disclaimer": "Estimates from signal fluctuations. Not imaging; cannot see through walls."}
+            if self.source == "real":
+                idle = time.monotonic() - self._last_data
+                out["stale_s"] = round(idle, 1)
+                if idle > STALE_AFTER_S:
+                    out["note"] = f"No new WiFi readings for {int(idle)} s. Values shown are the last known state."
+                elif not out["breathing_supported"]:
+                    out["note"] = ("Breathing is disabled: these readings are too slow or too coarse "
+                                   "(needs 4+ readings per second, e.g. ESP32/Nexmon CSI).")
             if self.sim is not None:
                 out["truth"] = self.sim.truth(self.engine.last_t)
             return out
