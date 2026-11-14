@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Polish
+- feat: browser opens by default when run from a terminal (`--no-browser` to skip); `Makefile`, `pyproject.toml` with a `wallhack` command.
+- feat: `tools/csi_forwarder.py` converts nexmon_csi frames to the UDP JSON format (UNVERIFIED on hardware); docs/hardware.md no longer references a missing script.
+- feat: `netsh` parsing no longer depends on the Windows display language; fixture tests added.
+- feat: dashboard has presence/motion/breathing pills and a SIMULATED/REAL chip.
+- fix: found by running the page in headless Chromium: a late poll response overwrote the "live" chip with "polling".
+- docs: simpler README quick start; screenshot via `tools/screenshot.py` (optional playwright).
+
 ### Review fixes (feat/wifi-sensing)
 - fix: `uvicorn[standard]` so `/ws` works on a real server. Test: real-process WebSocket smoke test.
 - fix: Host allow-list (localhost, 127.0.0.1) on loopback binds, WebSocket Origin must match Host, `POST /api/settings` requires `application/json`.

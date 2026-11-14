@@ -51,6 +51,13 @@
     if (st.motion) { badge.className = "badge moving"; badge.textContent = "Motion detected"; }
     else if (st.presence) { badge.className = "badge present"; badge.textContent = "Presence detected"; }
     else { badge.className = "badge idle"; badge.textContent = "No presence"; }
+    setPill("pPresence", st.presence ? "on" : "off");
+    setPill("pMotion", st.motion ? "alert" : "off");
+    setPill("pBreathing", st.breathing_bpm !== null && st.breathing_bpm !== undefined ? "on" : (st.breathing_supported === false ? "na" : "off"),
+      st.breathing_supported === false ? "Breathing (n/a)" : "Breathing");
+    var mode = $("mode"), simulated = st.source === "simulator";
+    mode.hidden = false; mode.textContent = simulated ? "SIMULATED" : "REAL";
+    mode.className = "chip " + (simulated ? "warn" : "ok");
     $("badgeSub").textContent = "Estimate from signal changes across " + st.links + " link(s)";
     var src = $("source");
     src.textContent = "source: " + st.source;
@@ -65,6 +72,12 @@
     drawHeat($("heat"), latest.zones);
     renderLegend();
     renderEvents();
+  }
+
+  function setPill(id, state, label) {
+    var el = $(id);
+    el.className = "pill " + state;
+    if (label) { el.textContent = label; }
   }
 
   function renderLegend() {
@@ -190,7 +203,7 @@
       fetch("/api/events?limit=20").then(function (r) { return r.json(); }),
       fetch("/api/samples?limit=600&since=" + lastSeq).then(function (r) { return r.json(); })
     ]).then(function (a) {
-      setConn("polling", "warn");
+      if (!wsOpen) { setConn("polling", "warn"); }  // a late poll must not overwrite "live"
       ingest({ status: a[0], zones: a[1], links: a[2], events: a[3], samples: a[4] });
     }).catch(function () { setConn("offline", "warn"); });
   }

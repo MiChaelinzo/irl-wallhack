@@ -11,6 +11,7 @@
   <h1>Wallhack <span class="sub">WiFi sensing</span></h1>
   <div class="hdr-right">
     <span id="source" class="chip">source: ?</span>
+    <span id="mode" class="chip" hidden></span>
     <span id="conn" class="chip warn">connecting</span>
     <button id="settingsBtn" type="button" aria-controls="drawer" aria-expanded="false">Settings</button>
   </div>
@@ -29,6 +30,11 @@
   <section class="card status">
     <h2>Status</h2>
     <div id="badge" class="badge idle">No presence</div>
+    <div class="pills" aria-label="Detection state">
+      <span id="pPresence" class="pill off">Presence</span>
+      <span id="pMotion" class="pill off">Motion</span>
+      <span id="pBreathing" class="pill off">Breathing</span>
+    </div>
     <div id="badgeSub" class="muted">Waiting for data</div>
   </section>
 
