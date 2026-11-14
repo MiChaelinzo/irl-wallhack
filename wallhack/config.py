@@ -8,7 +8,9 @@ from typing import Optional
 log = logging.getLogger("wallhack")
 
 SOURCES = ("auto", "simulator", "real")
-LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+# IPv6 loopback is deliberately absent: Starlette's TrustedHostMiddleware splits the Host
+# header on ":" and cannot parse "[::1]:8000", so Host protection would reject every request.
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
 @dataclass
