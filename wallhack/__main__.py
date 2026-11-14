@@ -1,6 +1,7 @@
 """python -m wallhack [--source simulator] [--open]"""
 import argparse
 import logging
+import sys
 import threading
 import webbrowser
 
@@ -25,7 +26,8 @@ def main(argv=None) -> None:
     p.add_argument("--udp-host", help="address for the UDP receiver (default 127.0.0.1; use 0.0.0.0 for an ESP32 on your LAN)")
     p.add_argument("--udp-token", help="shared secret UDP packets must carry in a \"token\" field")
     p.add_argument("--config", help="path to config.json")
-    p.add_argument("--open", action="store_true", help="open the dashboard in your browser")
+    p.add_argument("--open", action="store_true", help="open the dashboard in your browser (default when run from a terminal)")
+    p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(a.config)
@@ -40,7 +42,7 @@ def main(argv=None) -> None:
             "UDP receiver on %s has no --udp-token: anyone on the network can send fake readings.", cfg.udp_host)
     url = f"http://{cfg.host}:{cfg.port}/"
     print(f"Wallhack dashboard: {url}  (Ctrl+C to stop)")
-    if a.open:
+    if a.open or (not a.no_browser and sys.stdin.isatty()):
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     try:
         app = create_app(cfg)
