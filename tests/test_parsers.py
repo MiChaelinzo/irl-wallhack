@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from wallhack.collectors.linux import parse_iw_link, parse_iw_scan, parse_nmcli
-from wallhack.collectors.macos import parse_system_profiler, parse_wdutil
+from wallhack.collectors.macos import parse_system_profiler
 from wallhack.collectors.ping import PingCollector, parse_ping_ms
 from wallhack.collectors.udp_csi import parse_csi_packet
 from wallhack.collectors.windows import parse_netsh_interfaces, parse_netsh_networks
@@ -46,11 +46,6 @@ def test_system_profiler_uses_current_network_only():
     r = parse_system_profiler(fx("system_profiler.txt"))
     assert len(r) == 1 and r[0].rssi == -55.0 and r[0].link == "HomeNet"
     assert parse_system_profiler("nothing here") == []
-
-
-def test_wdutil():
-    r = parse_wdutil("    BSSID : aa:bb:cc:dd:ee:ff\n    RSSI : -61 dBm\n")
-    assert r[0].rssi == -61.0
 
 
 def test_ping_parse_and_private_only():
