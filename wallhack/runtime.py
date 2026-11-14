@@ -47,7 +47,7 @@ class Runtime:
         cols: List[Collector] = []
         c = self.config
         if c.udp_port > 0:
-            u = UdpCsiCollector(c.udp_host, c.udp_port)
+            u = UdpCsiCollector(c.udp_host, c.udp_port, token=c.udp_token)
             if u.available():
                 cols.append(u)
             else:

@@ -100,3 +100,27 @@ def test_udp_token_and_real_socket():
         assert got[0].t <= got[1].t <= got[2].t
     finally:
         col.close()
+
+
+def test_runtime_passes_udp_token_to_collector():
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    rt = runtime.Runtime(Config(source="simulator", background=False, udp_port=port, udp_token="s3"))
+    try:
+        udp = [c for c in rt._build_collectors() if isinstance(c, UdpCsiCollector)]
+        assert len(udp) == 1
+        col = udp[0]
+        try:
+            tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            tx.sendto(b'{"link": "e", "rssi": -1}', ("127.0.0.1", port))  # untokened: dropped
+            tx.sendto(b'{"link": "e", "rssi": -50, "token": "s3"}', ("127.0.0.1", port))
+            time.sleep(0.2)
+            got = col.poll()
+            assert [r.rssi for r in got] == [-50.0]
+        finally:
+            col.close()
+            tx.close()
+    finally:
+        rt.stop()
