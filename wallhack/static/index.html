@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallhack WiFi sensing dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Wallhack <span class="sub">WiFi sensing</span></h1>
+  <div class="hdr-right">
+    <span id="source" class="chip">source: ?</span>
+    <span id="conn" class="chip warn">connecting</span>
+    <button id="settingsBtn" type="button" aria-controls="drawer" aria-expanded="false">Settings</button>
+  </div>
+</header>
+
+<div id="privacy" class="banner" role="note">
+  <p><strong>Privacy and consent.</strong> Use only in your own space, and only with the knowledge and consent of everyone who may be sensed.
+  Do not use this to monitor other people or other people's networks.</p>
+  <p><strong>Honest limits.</strong> This dashboard shows estimates derived from WiFi signal fluctuations. It does not produce images and cannot literally see through walls.
+  Readings can be wrong.</p>
+  <button id="dismissPrivacy" type="button">I understand</button>
+</div>
+<div id="note" class="banner note" hidden></div>
+
+<main>
+  <section class="card status">
+    <h2>Status</h2>
+    <div id="badge" class="badge idle">No presence</div>
+    <div id="badgeSub" class="muted">Waiting for data</div>
+  </section>
+
+  <section class="card">
+    <h2>Breathing rate</h2>
+    <canvas id="gauge" width="260" height="160" aria-label="Breathing rate gauge"></canvas>
+    <div class="muted">Estimate, still person, breaths per minute</div>
+  </section>
+
+  <section class="card wide">
+    <h2>RSSI per link (dBm)</h2>
+    <canvas id="rssi" width="800" height="220" aria-label="RSSI graph"></canvas>
+    <div id="legend" class="legend"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Motion energy</h2>
+    <canvas id="motion" width="800" height="140" aria-label="Motion energy graph"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Zones</h2>
+    <p class="muted">Per-zone signal activity, not a camera view.</p>
+    <canvas id="heat" width="360" height="200" aria-label="Zone heat map"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Activity timeline</h2>
+    <ul id="events" class="events"><li class="muted">No events yet</li></ul>
+  </section>
+</main>
+
+<aside id="drawer" hidden>
+  <h2>Settings</h2>
+  <label>Source
+    <select id="setSource"></select>
+  </label>
+  <label>Simulator scenario
+    <select id="setScenario"></select>
+  </label>
+  <label>Sensitivity: <span id="sensVal">1.0</span>
+    <input id="setSens" type="range" min="0.25" max="4" step="0.05" value="1">
+  </label>
+  <div class="row">
+    <button id="applyBtn" type="button">Apply</button>
+    <button id="closeBtn" type="button">Close</button>
+  </div>
+  <div id="setMsg" class="muted"></div>
+</aside>
+
+<footer class="muted" id="disclaimer">Estimates from signal fluctuations. Not imaging.</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
