@@ -1,0 +1,13 @@
+Wi-Fi:
+      Interfaces:
+        en0:
+          Card Type: Wi-Fi
+          Status: Connected
+          Current Network Information:
+            HomeNet:
+              PHY Mode: 802.11ax
+              Channel: 36 (5GHz, 80MHz)
+              Signal / Noise: -55 dBm / -92 dBm
+          Other Local Wi-Fi Networks:
+            Neighbor:
+              Signal / Noise: -80 dBm / -92 dBm

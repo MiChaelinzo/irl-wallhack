@@ -1,0 +1,7 @@
+Connected to a4:2b:b0:11:22:33 (on wlan0)
+	SSID: HomeNet
+	freq: 5180
+	RX: 1234567 bytes (9876 packets)
+	TX: 234567 bytes (4321 packets)
+	signal: -52 dBm
+	rx bitrate: 433.3 MBit/s
