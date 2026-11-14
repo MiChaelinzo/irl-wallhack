@@ -26,7 +26,8 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | Platform output parsers (on fixture text) | VERIFIED |
 | REST API and static files served | VERIFIED |
 | Server smoke test | VERIFIED |
-| `install.sh` / `run.sh` in the Linux sandbox | VERIFIED |
+| `install.sh` in the Linux sandbox | VERIFIED |
+| `run.sh` (syntax checked; same command as smoke test) | PARTIALLY VERIFIED |
 | Dashboard files and JS syntax | PARTIALLY VERIFIED (not rendered in a browser) |
 | Dashboard rendering in a real browser | UNVERIFIED |
 | Real collectors on Raspberry Pi 4 | UNVERIFIED |
