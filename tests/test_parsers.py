@@ -6,6 +6,7 @@ from wallhack.collectors.linux import parse_iw_link, parse_iw_scan, parse_nmcli
 from wallhack.collectors.macos import parse_system_profiler
 from wallhack.collectors.ping import PingCollector, parse_ping_ms
 from wallhack.collectors.udp_csi import parse_csi_packet
+from wallhack.collectors.base import percent_to_dbm
 from wallhack.collectors.windows import parse_netsh_interfaces, parse_netsh_networks
 
 FX = Path(__file__).parent / "fixtures"
@@ -35,6 +36,13 @@ def test_netsh_interfaces():
     r = parse_netsh_interfaces(fx("netsh_interfaces.txt"))
     assert r[0].link == "a4:2b:b0:11:22:33" and r[0].rssi == -57.0
     assert parse_netsh_interfaces("There is 0 interfaces") == []
+
+
+def test_netsh_interfaces_non_english_labels():
+    de = parse_netsh_interfaces(fx("netsh_interfaces_de.txt"))
+    es = parse_netsh_interfaces(fx("netsh_interfaces_es.txt"))
+    assert de[0].link == "a4:2b:b0:11:22:33" and de[0].rssi == percent_to_dbm(72)
+    assert es[0].link == "a4:2b:b0:11:22:33" and es[0].rssi == percent_to_dbm(90)
 
 
 def test_netsh_networks():

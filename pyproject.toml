@@ -7,7 +7,7 @@ name = "irl-wallhack"
 version = "0.1.0"
 description = "Local WiFi sensing dashboard: presence, motion and breathing from signal changes"
 requires-python = ">=3.9"
-dependencies = ["fastapi", "uvicorn[standard]"]
+dependencies = ["fastapi>=0.100", "uvicorn[standard]>=0.23", "numpy>=1.21"]
 
 [project.scripts]
 wallhack = "wallhack.__main__:main"

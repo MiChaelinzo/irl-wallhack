@@ -6,21 +6,27 @@ from typing import List
 from .base import Collector, Reading, percent_to_dbm, run_command
 
 
+# netsh labels are localised ("Signal", "Senal", "Segnale"...), so parse by value shape instead:
+# a MAC address, and the one "<label> : NN%" line (the signal quality).
+_MAC = r"([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})"
+_PERCENT_LINE = re.compile(r"^\s*[^:\n]+:\s*(\d{1,3})\s*%\s*$", re.M)
+
+
 def parse_netsh_interfaces(text: str) -> List[Reading]:
-    """`netsh wlan show interfaces` -> reading for the connected BSSID."""
-    bssid = re.search(r"^\s*BSSID\s*:\s*([0-9a-fA-F:]{17})", text, re.M)
-    sig = re.search(r"^\s*Signal\s*:\s*(\d+)\s*%", text, re.M)
+    """`netsh wlan show interfaces` -> reading for the connected BSSID (any language)."""
+    bssid = re.search(r"^\s*[^:\n]*BSSID[^:\n]*:\s*" + _MAC, text, re.M)
+    sig = _PERCENT_LINE.search(text)
     if not bssid or not sig:
         return []
     return [Reading(bssid.group(1).lower(), percent_to_dbm(float(sig.group(1))))]
 
 
 def parse_netsh_networks(text: str) -> List[Reading]:
-    """`netsh wlan show networks mode=bssid` -> one reading per visible BSSID."""
+    """`netsh wlan show networks mode=bssid` -> one reading per visible BSSID (any language)."""
     out: List[Reading] = []
-    for block in re.split(r"(?m)^\s*BSSID\s+\d+\s*:\s*", text)[1:]:
-        mac = re.match(r"([0-9a-fA-F:]{17})", block)
-        sig = re.search(r"Signal\s*:\s*(\d+)\s*%", block)
+    for block in re.split(r"(?m)^\s*BSSID\s+\d+\s*:\s*(?=" + _MAC + ")", text)[1:]:
+        mac = re.match(_MAC, block)
+        sig = _PERCENT_LINE.search(block)
         if mac and sig:
             out.append(Reading(mac.group(1).lower(), percent_to_dbm(float(sig.group(1)))))
     return out
