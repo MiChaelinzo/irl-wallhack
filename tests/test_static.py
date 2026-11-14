@@ -13,7 +13,7 @@ from wallhack.config import Config
 @pytest.fixture()
 def client():
     app = create_app(Config(source="simulator", background=False))
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://localhost") as c:
         yield c
 
 

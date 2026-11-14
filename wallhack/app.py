@@ -4,14 +4,17 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
-from .config import Config, load_config
+from .config import LOCAL_HOSTS, Config, load_config
 from .runtime import Runtime
 
 STATIC = Path(__file__).parent / "static"
@@ -38,6 +41,9 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
 
     app = FastAPI(title="Wallhack WiFi sensing", version=__version__, lifespan=lifespan)
     app.state.runtime = runtime
+    if config.host in LOCAL_HOSTS:
+        # Blocks DNS rebinding: a loopback server must only answer to its own names.
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 
     @app.get("/api/status")
     def status():
@@ -69,15 +75,27 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         return runtime.settings()
 
     @app.post("/api/settings")
-    def post_settings(update: SettingsUpdate):
+    async def post_settings(request: Request):
+        # Requiring JSON forces a CORS preflight for cross-site pages, which this server never approves.
+        if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+            raise HTTPException(status_code=415, detail="Content-Type must be application/json")
         try:
-            runtime.update_settings(update.source, update.scenario, update.sensitivity)
+            update = SettingsUpdate(**(await request.json()))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"invalid settings: {exc}")
+        try:
+            await run_in_threadpool(runtime.update_settings, update.source, update.scenario, update.sensitivity)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return runtime.settings()
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
+        # Browsers do not apply the same-origin policy to WebSockets, so check it here.
+        origin = sock.headers.get("origin")
+        if origin is not None and urlparse(origin).netloc != sock.headers.get("host"):
+            await sock.close(code=1008)
+            return
         await sock.accept()
         last = 0
         try:
