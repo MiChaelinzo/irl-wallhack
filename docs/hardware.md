@@ -12,15 +12,44 @@ RSSI and CSI changes reveal presence, motion, breathing rate (0.1-0.5 Hz, needs 
 - **macOS**: reads `system_profiler` (about every second or slower). Newer macOS versions may hide details without extra permissions.
 - **Any OS, fallback**: `--ping-target 192.168.x.1` measures latency to your own router (private IPs only).
 
-## Nexmon CSI (Raspberry Pi 4, optional)
-The Pi 4 Broadcom chip (BCM43455) can export CSI with the [nexmon_csi](https://github.com/seemoo-lab/nexmon_csi) firmware patch. Install it following its README, then forward each CSI frame as UDP JSON (format below) to the port given by `--udp-port`. Wallhack does not parse raw Nexmon frames itself; use the bundled stdlib-only forwarder, which converts them to that JSON:
+## Raspberry Pi 4 real CSI (nexmon_csi)
+**UNVERIFIED on hardware.** The steps below follow the upstream [nexmon_csi](https://github.com/seemoo-lab/nexmon_csi) recipe ([discussion #395](https://github.com/seemoo-lab/nexmon_csi/discussions/395)). The script was tested only with `--dry-run` and a fake model file, and decoding only on synthetic frames. No Pi 4 was available to run it.
 
-```
-python3 tools/csi_forwarder.py --listen-port 5500 --target-port 5005 --link pi4 --token YOUR_SECRET
-python3 -m wallhack --udp-port 5005 --udp-token YOUR_SECRET
-```
+### What to buy
+- Raspberry Pi 4 Model B, quality microSD card, official power supply.
+- Ethernet cable and a free router port, or a USB WiFi adapter the stock kernel supports. CSI mode takes over the Pi's own WiFi (`wlan0`), so the Pi needs another way to be reachable.
+- Optional: a second Pi, ESP32 or phone generating traffic, to raise the packet rate.
+- Optional alternative route: an ESP32-S3 or C6 running Espressif's [esp-csi](https://github.com/espressif/esp-csi), see the ESP32 section below. [RuView](https://github.com/ruvnet/RuView) (MIT licence, by ruvnet) is a separate project that targets these boards; Wallhack does not include or depend on it.
 
-**UNVERIFIED on hardware.** `tools/csi_forwarder.py` reuses `wallhack/nexmon.py` and is tested on synthetic frames built from the public nexmon_csi layout, never on a real capture. The Pi 4's BCM43455c0 stores CSI as int16 I/Q pairs (as in upstream `csireader.m`), which is what is decoded.
+### Steps
+```
+./install.sh --pi-csi                   # installs Wallhack, then a read-only preflight
+scripts/pi_setup.sh install --dry-run   # optional: see every command first
+scripts/pi_setup.sh install             # builds nexmon + nexmon_csi, replaces WiFi firmware (asks first)
+scripts/pi_setup.sh start               # asks for your router's channel/width, enables CSI + monitor mode
+.venv/bin/python -m wallhack --source real --csi-source nexmon --interface wlan0 --csi-check 10
+.venv/bin/python -m wallhack --source real --csi-source nexmon --interface wlan0
+scripts/pi_setup.sh restore             # back to normal WiFi
+```
+Everything is downloaded into `~/.local/share/wallhack/nexmon` (never into this repository); the commit hashes built are recorded in `INSTALLED_VERSIONS` there. `scripts/pi_setup.sh status` shows the active firmware and whether frames arrive. Options: `--dry-run`, `--yes`, `--force`, `--channel 36/20`, `--mac aa:bb:cc:dd:ee:ff`, `--iface`, `--build-dir`.
+
+### Format and channel
+The BCM43455c0 chip in the Pi 4 stores CSI as interleaved int16 real/imag pairs (as in upstream `csireader.m`); `wallhack/nexmon.py` decodes that. Frames arrive as UDP packets to port 5500 on `wlan0` and are read through `tcpdump`. The channel and bandwidth must match your router. By default CSI is taken from the router's beacons (about 10 per second), enough for the 4 Hz breathing gate. A second device sending traffic and `--mac` for its address raises the rate.
+
+### Kernel caveat
+The `Makefile.rpi` flow targets recent Raspberry Pi OS, but upstream reports problems on very new kernels such as 6.12 (see discussion #395). The script prints a WARN for kernels it has not been tested on, which is every kernel.
+
+### Troubleshooting
+| Symptom | Likely cause and fix |
+|---|---|
+| `--csi-check` sees no frames | Wrong channel (must match router), `start` not run, or tcpdump lacks permission. Run `scripts/pi_setup.sh status`. |
+| Under 4 Hz | Beacons only give about 10 per second and some are missed. Use `--mac` of a device sending traffic. Breathing stays off below 4 Hz. |
+| `wlan0` or SSH lost | Expected when WiFi was your link. Use Ethernet, then `scripts/pi_setup.sh restore`. |
+| tcpdump permission denied | Accept the setcap prompt in `start`, or use `docs/wallhack.service`, which grants capabilities. |
+| Build fails | Check the kernel caveat and the upstream discussion; run `restore` before trying again. |
+
+## What this can and cannot see
+CSI can reveal presence, motion, breathing (a still person with strong signal) and, with several links, a coarse zone. News stories and papers that show silhouettes through walls use special radio hardware, trained models and controlled rooms. This project does no imaging. RuView's own README reports low accuracy for camera-free pose on live hardware. Expect "someone is here and moving", not a picture.
 
 ## ESP32 CSI over UDP (optional)
 Flash an ESP32 with CSI firmware (for example Espressif's esp-csi) and have it send one JSON datagram per packet to the machine running Wallhack:

@@ -16,6 +16,15 @@ make run          # Windows: run.bat  (opens the dashboard at 127.0.0.1:8000)
 ```
 Options: `python -m wallhack --source simulator|real|auto --no-browser`. Hardware notes: [docs/hardware.md](docs/hardware.md).
 
+## Raspberry Pi 4 real CSI
+Real (not simulated) CSI on a Pi 4 Model B uses the nexmon_csi firmware patch. UNVERIFIED on hardware; see [docs/hardware.md](docs/hardware.md) for the full guide, buy list and what it can and cannot see.
+```
+./install.sh --pi-csi && scripts/pi_setup.sh install      # asks before replacing WiFi firmware
+scripts/pi_setup.sh start                                  # pick your router's channel
+.venv/bin/python -m wallhack --source real --csi-source nexmon --interface wlan0
+```
+Undo with `scripts/pi_setup.sh restore`. Add `--dry-run` to any command to only print what it would do.
+
 ## Privacy and consent
 Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything.
 
@@ -41,7 +50,11 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
 | macOS collector | UNVERIFIED |
 | `netsh` parsing on non-English Windows | PARTIALLY VERIFIED (hand-written German/Spanish fixtures, no real captures) |
-| `tools/csi_forwarder.py` (Nexmon frames to UDP JSON) | PARTIALLY VERIFIED (synthetic int16 frames only, decoded by `wallhack/nexmon.py`) |
+| `tools/csi_forwarder.py` (Nexmon frames to UDP JSON; BCM43455c0 decoded as int16 per upstream) | PARTIALLY VERIFIED (synthetic frames only, never a real capture) |
+| Nexmon frame/pcap decoding and `NexmonCollector` on fixtures built from upstream docs | VERIFIED (synthetic only) |
+| End-to-end synthetic CSI to breathing rate | VERIFIED (synthetic only) |
+| `scripts/pi_setup.sh` dry-run and check logic with a fake model file | PARTIALLY VERIFIED (not run on a Pi) |
+| nexmon build and firmware install, monitor-mode config, tcpdump capture, real CSI decoding with real frames, real breathing accuracy, systemd unit | UNVERIFIED (no Pi 4 in the sandbox) |
 | ESP32 CSI over UDP: packets, token (collector and `Runtime` wiring) and timestamps over a local socket | VERIFIED |
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
 

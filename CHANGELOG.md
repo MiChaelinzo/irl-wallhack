@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Real Pi 4 CSI
+- feat: `scripts/pi_setup.sh` (check, install, start, status, stop/restore, `--dry-run`, `--yes`) builds nexmon_csi on a Pi 4 per the upstream recipe. Only dry-run and check logic tested; UNVERIFIED on hardware.
+- feat: `./install.sh --pi-csi` runs the read-only preflight after installing; no-argument behaviour unchanged.
+- feat: `docs/wallhack.service` is a CSI-capable unit with a dedicated user and ambient capabilities (UNVERIFIED).
+- docs: Pi 4 step-by-step guide, buy list, troubleshooting, and an honest "what this can and cannot see" section; the BCM43455c0 CSI format is int16, not 32-bit packed.
+- fix: nexmon collector reports tcpdump's stderr reliably when capture fails (a race dropped it).
+- ci: `bash -n` on the shell scripts.
+
 ### Dashboard upgrade
 - feat: `POST /api/calibrate` resets learned baselines (same-origin check, also now applied to `POST /api/settings`); Calibrate button in the dashboard.
 - feat: light/dark theme toggle (saved in localStorage, follows the OS by default), mobile-friendly header, offline banner and "Waiting for readings" empty states.
