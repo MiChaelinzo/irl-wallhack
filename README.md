@@ -35,6 +35,8 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | `run.sh` (syntax checked; same command as smoke test) | PARTIALLY VERIFIED |
 | Dashboard files and JS syntax | VERIFIED (automated tests) |
 | Dashboard in headless Chromium (simulator mode: loads, live WebSocket, no JS errors, `docs/screenshot.png`, via `tools/screenshot.py`) | VERIFIED (one run in this sandbox; not Firefox/Safari, not a phone) |
+| `POST /api/calibrate` and cross-origin refusal | VERIFIED (automated tests) |
+| Dashboard theme toggle, export, beep, offline banner | PARTIALLY VERIFIED (JS syntax check; headless Chromium load showed no JS errors and rendered the light theme; toggle, export, beep and offline banner were not clicked or exercised) |
 | Real collectors on Raspberry Pi 4 | UNVERIFIED |
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
 | macOS collector | UNVERIFIED |

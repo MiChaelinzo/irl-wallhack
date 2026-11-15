@@ -11,7 +11,18 @@
   var lastSeq = 0;
   var ws = null, retryMs = 500, pollTimer = null, wsOpen = false;
 
+  var soundOn = false, audio = null, prevPresence = false, prevMotion = false;
+
   function $(id) { return document.getElementById(id); }
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function store(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* storage unavailable */ } }
+  function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function getJson(url) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) { throw new Error(url + " returned " + r.status); }
+      return r.json();
+    });
+  }
   function colorFor(link) {
     var i = linkOrder.indexOf(link);
     if (i < 0) { linkOrder.push(link); i = linkOrder.length - 1; }
@@ -40,6 +51,7 @@
       });
     }
     if (msg.events) { latest.events = msg.events; }
+    $("offline").hidden = true;
     render();
   }
 
@@ -55,6 +67,7 @@
     setPill("pMotion", st.motion ? "alert" : "off");
     setPill("pBreathing", st.breathing_bpm !== null && st.breathing_bpm !== undefined ? "on" : (st.breathing_supported === false ? "na" : "off"),
       st.breathing_supported === false ? "Breathing (n/a)" : "Breathing");
+    alertOnChange(st);
     var mode = $("mode"), simulated = st.source === "simulator";
     mode.hidden = false; mode.textContent = simulated ? "SIMULATED" : "REAL";
     mode.className = "chip " + (simulated ? "warn" : "ok");
@@ -72,6 +85,21 @@
     drawHeat($("heat"), latest.zones);
     renderLegend();
     renderEvents();
+  }
+
+  // Optional beep, off by default. Needs a user gesture to start, which the toggle provides.
+  function alertOnChange(st) {
+    if (soundOn && ((st.motion && !prevMotion) || (st.presence && !prevPresence && !st.motion))) { beep(st.motion ? 880 : 520); }
+    prevPresence = !!st.presence; prevMotion = !!st.motion;
+  }
+  function beep(freq) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      var o = audio.createOscillator(), gain = audio.createGain();
+      o.frequency.value = freq; gain.gain.value = 0.05;
+      o.connect(gain); gain.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.15);
+    } catch (e) { /* audio unavailable */ }
   }
 
   function setPill(id, state, label) {
@@ -130,10 +158,13 @@
     Object.keys(data).forEach(function (l) {
       data[l].forEach(function (p) { min = Math.min(min, p[key]); max = Math.max(max, p[key]); });
     });
-    if (!isFinite(min)) { min = 0; max = 1; }
+    if (!isFinite(min)) {
+      g.fillStyle = css("--muted"); g.font = "14px sans-serif"; g.fillText("Waiting for readings...", pad, h / 2);
+      return;
+    }
     if (floor !== null) { min = floor; }
     if (max - min < 1) { max = min + 1; }
-    g.strokeStyle = "#2a3240"; g.fillStyle = "#8b97a7"; g.font = "12px sans-serif"; g.lineWidth = 1;
+    g.strokeStyle = css("--line"); g.fillStyle = css("--muted"); g.font = "12px sans-serif"; g.lineWidth = 1;
     for (var i = 0; i <= 4; i++) {
       var y = pad / 2 + (h - pad) * i / 4;
       g.beginPath(); g.moveTo(pad, y); g.lineTo(w - 4, y); g.stroke();
@@ -156,14 +187,14 @@
     var g = ctxOf(canvas), w = canvas.width, h = canvas.height;
     var cx = w / 2, cy = h - 24, r = 100, lo = 6, hi = 30;
     g.lineWidth = 16; g.lineCap = "round";
-    g.strokeStyle = "#2a3240"; g.beginPath(); g.arc(cx, cy, r, Math.PI, 2 * Math.PI); g.stroke();
+    g.strokeStyle = css("--line"); g.beginPath(); g.arc(cx, cy, r, Math.PI, 2 * Math.PI); g.stroke();
     if (bpm !== null && bpm !== undefined) {
       var f = Math.min(1, Math.max(0, (bpm - lo) / (hi - lo)));
-      g.strokeStyle = "#58a6ff"; g.beginPath(); g.arc(cx, cy, r, Math.PI, Math.PI + Math.PI * f); g.stroke();
+      g.strokeStyle = css("--accent"); g.beginPath(); g.arc(cx, cy, r, Math.PI, Math.PI + Math.PI * f); g.stroke();
     }
-    g.fillStyle = "#e6edf3"; g.textAlign = "center"; g.font = "bold 34px sans-serif";
+    g.fillStyle = css("--fg"); g.textAlign = "center"; g.font = "bold 34px sans-serif";
     g.fillText(bpm === null || bpm === undefined ? "--" : bpm.toFixed(1), cx, cy - 8);
-    g.fillStyle = "#8b97a7"; g.font = "12px sans-serif";
+    g.fillStyle = css("--muted"); g.font = "12px sans-serif";
     g.fillText("breaths/min", cx, cy + 12);
     g.textAlign = "left";
   }
@@ -171,7 +202,7 @@
   function drawHeat(canvas, zones) {
     var g = ctxOf(canvas), w = canvas.width, h = canvas.height;
     if (!zones.length) {
-      g.fillStyle = "#8b97a7"; g.font = "14px sans-serif"; g.fillText("No zones yet", 10, 24);
+      g.fillStyle = css("--muted"); g.font = "14px sans-serif"; g.fillText("No zones yet", 10, 24);
       return;
     }
     var cols = Math.min(zones.length, 3), rows = Math.ceil(zones.length / cols);
@@ -179,10 +210,11 @@
     zones.forEach(function (z, i) {
       var x = (i % cols) * cw, y = Math.floor(i / cols) * ch;
       var level = z.motion ? 1 : (z.presence ? 0.55 : 0.08);
-      var color = z.motion ? "248,81,73" : (z.presence ? "63,185,80" : "139,151,167");
-      g.fillStyle = "rgba(" + color + "," + level + ")";
+      g.fillStyle = css(z.motion ? "--bad" : (z.presence ? "--ok" : "--muted"));
+      g.globalAlpha = level * 0.6;
       g.fillRect(x + 3, y + 3, cw - 6, ch - 6);
-      g.fillStyle = "#e6edf3"; g.font = "bold 14px sans-serif";
+      g.globalAlpha = 1;
+      g.fillStyle = css("--fg"); g.font = "bold 14px sans-serif";
       g.fillText(z.zone.replace(/_/g, " "), x + 12, y + 26);
       g.font = "12px sans-serif";
       g.fillText(z.motion ? "motion" : (z.presence ? "presence" : "quiet"), x + 12, y + 44);
@@ -197,15 +229,12 @@
 
   function poll() {
     Promise.all([
-      fetch("/api/status").then(function (r) { return r.json(); }),
-      fetch("/api/zones").then(function (r) { return r.json(); }),
-      fetch("/api/links").then(function (r) { return r.json(); }),
-      fetch("/api/events?limit=20").then(function (r) { return r.json(); }),
-      fetch("/api/samples?limit=600&since=" + lastSeq).then(function (r) { return r.json(); })
+      getJson("/api/status"), getJson("/api/zones"), getJson("/api/links"),
+      getJson("/api/events?limit=20"), getJson("/api/samples?limit=600&since=" + lastSeq)
     ]).then(function (a) {
       if (!wsOpen) { setConn("polling", "warn"); }  // a late poll must not overwrite "live"
       ingest({ status: a[0], zones: a[1], links: a[2], events: a[3], samples: a[4] });
-    }).catch(function () { setConn("offline", "warn"); });
+    }).catch(function () { setConn("offline", "warn"); $("offline").hidden = false; });
   }
 
   function startPolling() { if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); } }
@@ -235,13 +264,14 @@
   }
 
   function openDrawer() {
-    fetch("/api/settings").then(function (r) { return r.json(); }).then(function (s) {
+    getJson("/api/settings").then(function (s) {
       fillSelect($("setSource"), s.sources, s.source);
       fillSelect($("setScenario"), s.scenarios, s.scenario);
       $("setSens").value = s.sensitivity; $("sensVal").textContent = Number(s.sensitivity).toFixed(2);
       $("setMsg").textContent = "";
+      $("setSound").checked = soundOn;
       $("drawer").hidden = false; $("settingsBtn").setAttribute("aria-expanded", "true");
-    });
+    }).catch(function (e) { $("note").hidden = false; $("note").textContent = "Could not load settings: " + e.message; });
   }
   function closeDrawer() { $("drawer").hidden = true; $("settingsBtn").setAttribute("aria-expanded", "false"); }
 
@@ -256,16 +286,67 @@
       .catch(function (e) { $("setMsg").textContent = "Error: " + e.message; });
   }
 
+  // ---- theme, calibrate, export -----------------------------------------
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    var btn = $("themeBtn");
+    btn.textContent = theme === "light" ? "Dark" : "Light";
+    btn.setAttribute("aria-pressed", String(theme === "light"));
+    render();
+  }
+
+  function calibrate() {
+    var msg = $("note");
+    fetch("/api/calibrate", { method: "POST" }).then(function (r) {
+      if (!r.ok) { throw new Error("server returned " + r.status); }
+      motionSeries = {};
+      msg.hidden = false; msg.textContent = "Calibrated: baselines reset. Keep the space empty and still for about 30 seconds.";
+    }).catch(function (e) { msg.hidden = false; msg.textContent = "Calibration failed: " + e.message; });
+  }
+
+  function download(name, type, text) {
+    var url = URL.createObjectURL(new Blob([text], { type: type }));
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function csvCell(v) {
+    var t = String(v === null || v === undefined ? "" : v);
+    if (/^[=+\-@]/.test(t)) { t = "'" + t; }  // stop spreadsheet formula injection
+    return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  }
+  function exportEvents(format) {
+    getJson("/api/events?limit=500").then(function (events) {
+      if (!events.length) { throw new Error("no events to export"); }
+      var stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      if (format === "json") { download("wallhack-events-" + stamp + ".json", "application/json", JSON.stringify(events, null, 2)); return; }
+      var cols = Object.keys(events[0]);
+      var rows = [cols.join(",")].concat(events.map(function (e) { return cols.map(function (c) { return csvCell(e[c]); }).join(","); }));
+      download("wallhack-events-" + stamp + ".csv", "text/csv", rows.join("\n") + "\n");
+    }).catch(function (e) { $("note").hidden = false; $("note").textContent = "Export failed: " + e.message; });
+  }
+
   function init() {
+    soundOn = load("wallhack.sound") === "1";
+    applyTheme(load("wallhack.theme") || (window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+    $("themeBtn").addEventListener("click", function () {
+      var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      store("wallhack.theme", next); applyTheme(next);
+    });
+    $("calibrateBtn").addEventListener("click", calibrate);
+    $("exportJson").addEventListener("click", function () { exportEvents("json"); });
+    $("exportCsv").addEventListener("click", function () { exportEvents("csv"); });
+    $("setSound").addEventListener("change", function () { soundOn = $("setSound").checked; store("wallhack.sound", soundOn ? "1" : "0"); });
     $("settingsBtn").addEventListener("click", openDrawer);
     $("closeBtn").addEventListener("click", closeDrawer);
     $("applyBtn").addEventListener("click", applySettings);
     $("setSens").addEventListener("input", function () { $("sensVal").textContent = Number($("setSens").value).toFixed(2); });
     $("dismissPrivacy").addEventListener("click", function () {
       $("privacy").hidden = true;
-      try { localStorage.setItem("wallhack.privacy", "1"); } catch (e) { /* storage unavailable */ }
+      store("wallhack.privacy", "1");
     });
-    try { if (localStorage.getItem("wallhack.privacy") === "1") { $("privacy").hidden = true; } } catch (e) { /* ignore */ }
+    if (load("wallhack.privacy") === "1") { $("privacy").hidden = true; }
     drawGauge($("gauge"), null); drawHeat($("heat"), []);
     connect();
     startPolling();

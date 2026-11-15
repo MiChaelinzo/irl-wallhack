@@ -13,6 +13,8 @@
     <span id="source" class="chip">source: ?</span>
     <span id="mode" class="chip" hidden></span>
     <span id="conn" class="chip warn">connecting</span>
+    <button id="calibrateBtn" type="button" title="Reset baselines. Use while the space is empty and still.">Calibrate</button>
+    <button id="themeBtn" type="button" aria-pressed="false">Light</button>
     <button id="settingsBtn" type="button" aria-controls="drawer" aria-expanded="false">Settings</button>
   </div>
 </header>
@@ -25,6 +27,7 @@
   <button id="dismissPrivacy" type="button">I understand</button>
 </div>
 <div id="note" class="banner note" hidden></div>
+<div id="offline" class="banner error" role="alert" hidden>Connection to the Wallhack server lost. Showing the last known values and retrying.</div>
 
 <main>
   <section class="card status">
@@ -63,6 +66,10 @@
 
   <section class="card">
     <h2>Activity timeline</h2>
+    <div class="row tools">
+      <button id="exportJson" type="button">Export JSON</button>
+      <button id="exportCsv" type="button">Export CSV</button>
+    </div>
     <ul id="events" class="events"><li class="muted">No events yet</li></ul>
   </section>
 </main>
@@ -78,6 +85,7 @@
   <label>Sensitivity: <span id="sensVal">1.0</span>
     <input id="setSens" type="range" min="0.25" max="4" step="0.05" value="1">
   </label>
+  <label class="check"><input id="setSound" type="checkbox"> Beep when presence or motion starts</label>
   <div class="row">
     <button id="applyBtn" type="button">Apply</button>
     <button id="closeBtn" type="button">Close</button>

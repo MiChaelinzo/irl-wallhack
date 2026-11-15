@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Dashboard upgrade
+- feat: `POST /api/calibrate` resets learned baselines (same-origin check, also now applied to `POST /api/settings`); Calibrate button in the dashboard.
+- feat: light/dark theme toggle (saved in localStorage, follows the OS by default), mobile-friendly header, offline banner and "Waiting for readings" empty states.
+- feat: event log export to JSON or CSV (client-side, spreadsheet formula characters escaped); optional beep on presence/motion, off by default.
+- fix: WebSocket stream resumes after a source change restarts sample numbering.
+
 ### Polish
 - ci: GitHub Actions workflow runs pytest (Python 3.9 and 3.12) and `node --check` on push/PR with read-only permissions; not yet run on GitHub (UNVERIFIED).
 - fix: forwarder logs and continues if forwarding a packet fails; CRLF netsh output covered by a test.

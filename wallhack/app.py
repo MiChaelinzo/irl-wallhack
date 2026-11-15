@@ -114,6 +114,8 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         try:
             while True:
                 with runtime.lock:
+                    if runtime.seq < last:  # source was reconfigured and numbering restarted
+                        last = 0
                     new = [s for s in runtime.samples if s["seq"] > last][-600:]
                 if new:
                     last = new[-1]["seq"]
