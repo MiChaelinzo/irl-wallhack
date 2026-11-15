@@ -3,6 +3,18 @@
 set -e
 cd "$(dirname "$0")"
 
+PI_CSI=0
+case "${1:-}" in
+  "") ;;
+  --pi-csi) PI_CSI=1 ;;
+  -h|--help)
+    echo "Usage: ./install.sh [--pi-csi]"
+    echo "  --pi-csi  after installing, run the read-only Raspberry Pi CSI preflight"
+    echo "            (scripts/pi_setup.sh check). It does not change the WiFi firmware."
+    exit 0 ;;
+  *) echo "Unknown option: $1 (try --help)"; exit 1 ;;
+esac
+
 PY=""
 for c in python3 python; do
   if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
@@ -27,3 +39,12 @@ fi
 .venv/bin/python -m pip install -r requirements.txt
 echo
 echo "Install complete. Start the dashboard with: ./run.sh"
+
+if [ "$PI_CSI" -eq 1 ]; then
+  echo
+  status=0
+  scripts/pi_setup.sh check || status=$?
+  echo
+  echo "Next, to build the real CSI firmware (replaces WiFi firmware, asks first): scripts/pi_setup.sh install"
+  exit "$status"
+fi
