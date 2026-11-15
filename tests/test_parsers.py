@@ -74,3 +74,13 @@ def test_udp_csi_packet():
     assert abs(r.rssi - 13.9794) < 1e-3
     assert parse_csi_packet(b"not json") is None
     assert parse_csi_packet(b'{"rssi":-50}') is None
+
+
+def test_netsh_parsers_accept_windows_crlf_line_endings():
+    from pathlib import Path
+    from wallhack.collectors.windows import parse_netsh_interfaces, parse_netsh_networks
+    fixtures = Path(__file__).parent / "fixtures"
+    one = (fixtures / "netsh_interfaces.txt").read_text().replace("\n", "\r\n")
+    many = (fixtures / "netsh_networks.txt").read_text().replace("\n", "\r\n")
+    assert len(parse_netsh_interfaces(one)) == 1
+    assert len(parse_netsh_networks(many)) == 2

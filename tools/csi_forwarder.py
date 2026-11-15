@@ -64,7 +64,10 @@ def main(argv=None) -> None:
                 if dropped in (1, 100, 10000):
                     print("dropped %d frame(s) that are not nexmon_csi frames" % dropped, file=sys.stderr)
                 continue
-            tx.sendto(json.dumps(packet).encode("utf-8"), (a.target_host, a.target_port))
+            try:
+                tx.sendto(json.dumps(packet).encode("utf-8"), (a.target_host, a.target_port))
+            except OSError as exc:
+                print("could not forward packet: %s" % exc, file=sys.stderr)
     except KeyboardInterrupt:
         pass
 
