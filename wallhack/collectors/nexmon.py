@@ -21,6 +21,7 @@ log = logging.getLogger("wallhack")
 
 MAX_QUEUED_READINGS = 5000
 STDERR_TAIL_LINES = 5
+STDERR_JOIN_TIMEOUT_S = 1.0
 FIRST_FRAME_WAIT_S = 2.0   # the first poll waits this long so the runtime's probe sees a live stream
 THREAD_JOIN_S = 2.0
 TERMINATE_WAIT_S = 2.0
@@ -51,8 +52,9 @@ class NexmonCollector(Collector):
 
     def _start(self) -> None:
         self._proc = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        for target in (self._read_frames, self._read_stderr):
-            t = threading.Thread(target=target, name="wallhack-nexmon", daemon=True)
+        self._stderr_thread = threading.Thread(target=self._read_stderr, name="wallhack-nexmon-stderr", daemon=True)
+        self._frames_thread = threading.Thread(target=self._read_frames, name="wallhack-nexmon", daemon=True)
+        for t in (self._stderr_thread, self._frames_thread):
             t.start()
             self._threads.append(t)
 
@@ -76,6 +78,7 @@ class NexmonCollector(Collector):
         except OSError as exc:
             self.last_error = str(exc)
         code = proc.wait()
+        self._stderr_thread.join(STDERR_JOIN_TIMEOUT_S)  # stderr must be drained before it is reported
         if code != 0 and not self.last_error:
             self.last_error = " ".join(self._stderr_tail) or "capture exited with status %d" % code
         if self.last_error:
