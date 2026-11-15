@@ -74,8 +74,21 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     def get_settings():
         return runtime.settings()
 
+    def require_same_origin(request: Request) -> None:
+        origin = request.headers.get("origin")
+        if origin is not None and urlparse(origin).netloc != request.headers.get("host"):
+            raise HTTPException(status_code=403, detail="cross-origin request refused")
+
+    @app.post("/api/calibrate")
+    def calibrate(request: Request):
+        """Reset learned baselines. Run it while the monitored space is empty and still."""
+        require_same_origin(request)
+        runtime.calibrate()
+        return {"calibrated": True}
+
     @app.post("/api/settings")
     async def post_settings(request: Request):
+        require_same_origin(request)
         # Requiring JSON forces a CORS preflight for cross-site pages, which this server never approves.
         if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
             raise HTTPException(status_code=415, detail="Content-Type must be application/json")

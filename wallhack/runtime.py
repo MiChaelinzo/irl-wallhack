@@ -203,6 +203,12 @@ class Runtime:
                 pass  # previous setting was also unavailable; runtime stays on the labelled simulator
             raise
 
+    def calibrate(self) -> None:
+        """Forget learned baselines and events so the next readings define "quiet".
+        Sample history and sequence numbers are kept, so connected clients stay in sync."""
+        with self.lock:
+            self.engine = SensingEngine(self.config.sensitivity)
+
     def status(self) -> dict:
         with self.lock:
             out = {"source": self.source, "requested_source": self.config.source, "note": self.note,

@@ -108,3 +108,20 @@ def test_settings_to_real_rejected_and_reverted(monkeypatch):
         assert r.status_code == 422 and "real" in r.json()["detail"]
         assert c.get("/api/settings").json()["source"] == "simulator"
         assert c.get("/api/status").json()["source"] == "simulator"
+
+
+def test_calibrate_resets_baseline(client):
+    rt = client.app.state.runtime
+    seq = rt.seq
+    assert client.get("/api/events").json()
+    r = client.post("/api/calibrate")
+    assert r.status_code == 200 and r.json() == {"calibrated": True}
+    assert client.get("/api/events").json() == []
+    assert rt.seq == seq  # history and sequence numbers survive, clients stay in sync
+
+
+def test_calibrate_rejects_cross_origin(client):
+    assert client.post("/api/calibrate", headers={"Origin": "http://evil.example"}).status_code == 403
+    assert client.post("/api/settings", json={"scenario": "empty"},
+                       headers={"Origin": "http://evil.example"}).status_code == 403
+    assert client.post("/api/calibrate", headers={"Origin": "http://localhost"}).status_code == 200
