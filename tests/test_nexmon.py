@@ -72,6 +72,38 @@ def test_amplitude_ignores_null_and_guard_subcarriers():
         assert frame_amplitude_db(f) == pytest.approx(20 * math.log10(5))
 
 
+def amplitude_with_only_these_loud(n, loud_indices):
+    values = [(1000, 0) if k in loud_indices else (3, 4) for k in range(n)]
+    return frame_amplitude_db(parse_nexmon_payload(make_payload(values=values)))
+
+
+QUIET_DB = 20 * math.log10(5)
+
+
+def test_20mhz_mask_matches_upstream_faq_indices():
+    # nexmon_csi FAQ, fftshifted order: nulls -32..-29, 0, +29..+31 -> 0..3, 32, 61..63.
+    for k in (0, 1, 2, 3, 32, 61, 62, 63):
+        assert amplitude_with_only_these_loud(64, {k}) == pytest.approx(QUIET_DB), k
+    for k in (4, 31, 33, 60):  # data carriers k in 4..60 except 32 must be kept
+        assert amplitude_with_only_these_loud(64, {k}) > QUIET_DB + 1, k
+
+
+def test_40mhz_mask_matches_upstream_faq_indices():
+    # -64..-59, -1..+1, +59..+63 with index = subcarrier + 64 -> 0..5, 63..65, 123..127.
+    for k in (0, 5, 63, 64, 65, 123, 127):
+        assert amplitude_with_only_these_loud(128, {k}) == pytest.approx(QUIET_DB), k
+    for k in (6, 62, 66, 122):
+        assert amplitude_with_only_these_loud(128, {k}) > QUIET_DB + 1, k
+
+
+def test_80mhz_mask_matches_upstream_faq_indices():
+    # -128..-123, -1..+1, +123..+127 with index = subcarrier + 128 -> 0..5, 127..129, 251..255.
+    for k in (0, 5, 127, 128, 129, 251, 255):
+        assert amplitude_with_only_these_loud(256, {k}) == pytest.approx(QUIET_DB), k
+    for k in (6, 126, 130, 250):
+        assert amplitude_with_only_these_loud(256, {k}) > QUIET_DB + 1, k
+
+
 def test_zero_amplitude_gives_none():
     assert frame_amplitude_db(parse_nexmon_payload(make_payload(values=[(0, 0)] * 64))) is None
 
@@ -165,6 +197,31 @@ def test_collector_records_stderr_when_capture_fails(tmp_path):
         time.sleep(0.01)
     col.close()
     assert "Operation not permitted" in col.last_error
+
+
+def test_failure_is_reported_only_after_capture_ends(tmp_path):
+    col = NexmonCollector(command=emit_script(b"", tmp_path, exit_code=1, stderr="tcpdump: no such device"))
+    assert col.failure() == ""
+    col.poll()
+    end = time.monotonic() + 5
+    while not col.failure() and time.monotonic() < end:
+        time.sleep(0.01)
+    col.close()
+    assert "no such device" in col.failure()
+
+
+def test_close_right_after_start_does_not_raise_in_threads(tmp_path):
+    errors = []
+    previous = threading.excepthook
+    threading.excepthook = lambda args: errors.append(args.exc_value)
+    try:
+        for _ in range(20):
+            col = NexmonCollector(command=emit_script(b"", tmp_path))
+            col._start()
+            col.close()
+    finally:
+        threading.excepthook = previous
+    assert errors == []
 
 
 def test_collector_unavailable_without_tcpdump(monkeypatch):
