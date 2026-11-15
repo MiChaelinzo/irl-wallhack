@@ -1,0 +1,9 @@
+Hay 1 interfaz en el sistema:
+
+    Nombre                 : Wi-Fi
+    Estado                 : conectado
+    SSID                   : HomeNet
+    BSSID                  : a4:2b:b0:11:22:33
+    Canal                  : 36
+    Señal                  : 90%
+    Perfil                 : HomeNet

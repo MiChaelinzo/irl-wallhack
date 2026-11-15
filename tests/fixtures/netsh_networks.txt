@@ -1,0 +1,9 @@
+SSID 1 : HomeNet
+    Network type            : Infrastructure
+    Authentication          : WPA2-Personal
+    BSSID 1                 : a4:2b:b0:11:22:33
+         Signal             : 86%
+         Radio type         : 802.11ax
+    BSSID 2                 : a4:2b:b0:11:22:34
+         Signal             : 40%
+         Radio type         : 802.11n

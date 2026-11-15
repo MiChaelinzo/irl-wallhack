@@ -1,0 +1,12 @@
+Auf dem System ist 1 Schnittstelle vorhanden:
+
+    Name                   : WLAN
+    Beschreibung           : Intel(R) Wi-Fi 6 AX201 160MHz
+    Status                 : Verbunden
+    SSID                   : HomeNet
+    BSSID                  : a4:2b:b0:11:22:33
+    Netzwerktyp            : Infrastruktur
+    Funktyp                : 802.11ax
+    Kanal                  : 36
+    Signal                 : 72%
+    Profil                 : HomeNet
