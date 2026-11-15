@@ -33,6 +33,23 @@ scripts/pi_setup.sh restore             # back to normal WiFi
 ```
 Everything is downloaded into `~/.local/share/wallhack/nexmon` (never into this repository); the commit hashes built are recorded in `INSTALLED_VERSIONS` there. `scripts/pi_setup.sh status` shows the active firmware and whether frames arrive. Options: `--dry-run`, `--yes`, `--force`, `--channel 36/20`, `--mac aa:bb:cc:dd:ee:ff`, `--iface`, `--build-dir`.
 
+### What install changes, and what restore undoes
+`install` follows upstream and runs `apt full-upgrade` (all packages, possibly the kernel; the nexmon patch is kernel-sensitive). It records its persistent changes in `<build-dir>/state`.
+
+| Change | Undone by `restore`? |
+|---|---|
+| Patched firmware via `update-alternatives`, `unmanage` of `wlan0` | Yes. Runs upstream `make -f Makefile.rpi restore-wifi` (target exists on nexmon_csi master: firmware alternative back to auto, `brcmfmac_cyw` reload, NetworkManager manage and connect). The module name is upstream's; on an older kernel it may differ, then use the manual steps below. |
+| `setcap cap_net_admin+ep /usr/bin/nexutil`, and tcpdump `setcap` if you used `--grant-tcpdump-caps` | Yes, `setcap -r` on every path recorded in the state file |
+| Library symlinks `libisl.so.10`, `libmpfr.so.4` (aarch64), only if the script created them | Offered; removed if you agree |
+| `dpkg --add-architecture armhf` and the armhf packages | No. `restore` prints the commands to remove them |
+| `apt full-upgrade`, build packages, the build directory | No |
+
+tcpdump is not given file capabilities unless you pass `--grant-tcpdump-caps` (`--yes` does not imply it). Prefer `docs/wallhack.service`, which grants capabilities to a dedicated user only.
+
+If `python2.7` is missing from apt, upstream adds the archived Debian stretch repository, which is unauthenticated and end of life. `install` stops there unless you pass `--allow-archived-python27` or type the requested phrase; `--yes` never allows it. Installing python2.7 yourself avoids the question.
+
+Manual restore without the checkout: `sudo update-alternatives --auto cyfmac43455-sdio.bin`, reload the driver (`sudo modprobe -r brcmfmac_cyw && sudo modprobe brcmfmac_cyw`), then `sudo nmcli dev set wlan0 managed yes && sudo nmcli radio wifi on && sudo nmcli dev connect wlan0`.
+
 ### Format and channel
 The BCM43455c0 chip in the Pi 4 stores CSI as interleaved int16 real/imag pairs (as in upstream `csireader.m`); `wallhack/nexmon.py` decodes that. Frames arrive as UDP packets to port 5500 on `wlan0` and are read through `tcpdump`. The channel and bandwidth must match your router. By default CSI is taken from the router's beacons (about 10 per second), enough for the 4 Hz breathing gate. A second device sending traffic and `--mac` for its address raises the rate.
 
@@ -45,7 +62,7 @@ The `Makefile.rpi` flow targets recent Raspberry Pi OS, but upstream reports pro
 | `--csi-check` sees no frames | Wrong channel (must match router), `start` not run, or tcpdump lacks permission. Run `scripts/pi_setup.sh status`. |
 | Under 4 Hz | Beacons only give about 10 per second and some are missed. Use `--mac` of a device sending traffic. Breathing stays off below 4 Hz. |
 | `wlan0` or SSH lost | Expected when WiFi was your link. Use Ethernet, then `scripts/pi_setup.sh restore`. |
-| tcpdump permission denied | Accept the setcap prompt in `start`, or use `docs/wallhack.service`, which grants capabilities. |
+| tcpdump permission denied | Use `docs/wallhack.service`, which grants capabilities, or run `start` with `--grant-tcpdump-caps` (any local user can then capture; `restore` removes it). |
 | Build fails | Check the kernel caveat and the upstream discussion; run `restore` before trying again. |
 
 ## What this can and cannot see

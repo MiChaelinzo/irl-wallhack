@@ -7,7 +7,10 @@
 - feat: `./install.sh --pi-csi` runs the read-only preflight after installing; no-argument behaviour unchanged.
 - feat: `docs/wallhack.service` is a CSI-capable unit with a dedicated user and ambient capabilities (UNVERIFIED).
 - docs: Pi 4 step-by-step guide, buy list, troubleshooting, and an honest "what this can and cannot see" section; the BCM43455c0 CSI format is int16, not 32-bit packed.
-- fix: nexmon collector reports tcpdump's stderr reliably when capture fails (a race dropped it).
+- feat: `pi_setup.sh install` discloses `apt full-upgrade`, armhf, symlinks and setcap before asking; the archived unauthenticated python2.7 repository now needs `--allow-archived-python27` or a typed phrase, and `--yes` never allows it.
+- feat: `pi_setup.sh` records setcap grants, the armhf architecture and symlinks in `<build-dir>/state`; `restore` removes the setcap grants, offers to remove created symlinks and lists what remains. Upstream `restore-wifi` confirmed to exist in `Makefile.rpi`.
+- change: `start` no longer sets file capabilities on tcpdump under `--yes`; use `--grant-tcpdump-caps` or the systemd unit.
+- feat: the dashboard note shows why the capture process stopped (for example tcpdump permission denied).
 - ci: `bash -n` on the shell scripts.
 
 ### Dashboard upgrade

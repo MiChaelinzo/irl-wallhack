@@ -10,6 +10,12 @@
 # for confirmation unless --yes is given. Every state-changing command goes
 # through run() or capture(), which print the command and execute nothing
 # under --dry-run.
+#
+# Persistent grants and changes this script makes are recorded in
+# <build-dir>/state (installed, setcap <path>, arch armhf, symlink <path>) so
+# that `restore` can undo them or tell you what remains. Upstream's
+# `make -f Makefile.rpi restore-wifi` target (checked against upstream master)
+# only restores the firmware alternative, the driver and NetworkManager.
 set -euo pipefail
 
 NEXMON_URL="https://github.com/seemoo-lab/nexmon.git"
@@ -38,6 +44,8 @@ CORE_MASK=1
 STREAM_MASK=1
 BUILD_DIR="$DEFAULT_BUILD_DIR"
 FAILS=0
+ALLOW_ARCHIVED_PY27=0
+GRANT_TCPDUMP_CAPS=0
 
 SUDO="sudo"
 if [ "$(id -u)" -eq 0 ]; then SUDO=""; fi
@@ -60,6 +68,12 @@ Options:
   --dry-run          Print every state-changing command with a '+' prefix, run none.
   --yes              Do not ask for confirmation.
   --force            Continue past preflight FAILs (you accept losing SSH/WiFi).
+  --allow-archived-python27
+                     For install: permit the unauthenticated archived Debian stretch
+                     repo as a fallback source for python2.7. --yes never allows this.
+  --grant-tcpdump-caps
+                     For start: setcap cap_net_raw,cap_net_admin on the system tcpdump
+                     (any local user could then capture). --yes does not imply it.
   --iface NAME       WiFi interface (default wlan0).
   --channel CH/BW    For start, e.g. 36/20. Must match your router's channel.
   --mac MAC          For start: only frames from this MAC (alias --bssid).
@@ -115,6 +129,18 @@ confirm() { # y or yes
   printf '%s [y/N] ' "$1" >&2
   read -r ans || ans=""
   [ "$ans" = "y" ] || [ "$ans" = "yes" ]
+}
+
+# Always asks, even under --yes. Used for the one step that lowers package authentication.
+confirm_typed() { # $1 prompt, $2 exact word the user must type
+  local ans=""
+  printf '%s Type "%s" to continue: ' "$1" "$2" >&2
+  read -r ans || ans=""
+  [ "$ans" = "$2" ]
+}
+
+record_state() { # idempotent: append a line to the state file once
+  run bash -c 'grep -qxF "$1" "$2" 2>/dev/null || printf "%s\n" "$1" >> "$2"' _ "$1" "$STATE_FILE"
 }
 
 confirm_strict() { # must type yes
@@ -245,8 +271,12 @@ install_python27() {
   fi
   say "python2.7 is not in your apt sources. The upstream workaround adds the archived Debian stretch"
   say "repository temporarily (unauthenticated, end-of-life packages) just to fetch python2.7."
-  if ! confirm "Add it temporarily to $STRETCH_LIST and remove it afterwards?"; then
-    die "python2.7 is required by the nexmon b43 tool. Install it yourself, then run install again."
+  if [ "$ALLOW_ARCHIVED_PY27" -eq 1 ]; then
+    say "--allow-archived-python27 given: using the archived repository."
+  elif [ "$DRY_RUN" -eq 1 ]; then
+    say "(dry-run: a real run needs --allow-archived-python27 or the typed confirmation; --yes is not enough)"
+  elif ! confirm_typed "Add it temporarily to $STRETCH_LIST and remove it afterwards?" "install-unauthenticated"; then
+    die "python2.7 is required by the nexmon b43 tool. Install it yourself, or pass --allow-archived-python27, then run install again."
   fi
   trap 'if [ "$DRY_RUN" -eq 0 ]; then $SUDO rm -f "$STRETCH_LIST"; fi' EXIT
   run bash -c 'printf "%s\n" "$1" | '"$SUDO"' tee "$2" >/dev/null' _ "$STRETCH_LINE" "$STRETCH_LIST"
@@ -263,15 +293,25 @@ do_install() {
   cat <<EOF
 This will:
   - download nexmon and nexmon_csi from github.com/seemoo-lab (needs internet, Ethernet recommended)
+  - run 'apt full-upgrade' (as upstream does). This upgrades ALL packages, possibly the kernel, and
+    cannot be undone by this script. The nexmon firmware patch is sensitive to kernel versions.
   - install build packages with apt and build the nexmon toolchain (about 3 GB, many minutes)
+  - on aarch64: add the armhf dpkg architecture and two library symlinks (kept after restore)
+  - grant cap_net_admin to $NEXUTIL_PATH with setcap (removed by restore)
   - replace the WiFi firmware for $IFACE using update-alternatives
 After this, WiFi on $IFACE does not work normally until you run: scripts/pi_setup.sh restore
+Changes are recorded in $BUILD_DIR/state. If python2.7 is not in your apt sources, install stops
+and asks for a separate, typed confirmation (or --allow-archived-python27) before it touches an
+unauthenticated archive.
 Build directory: $BUILD_DIR
 EOF
   require_preflight
   if [ "$DRY_RUN" -eq 0 ] && ! confirm_strict "Proceed?"; then
     die "Aborted. Nothing was changed."
   fi
+
+  run mkdir -p "$BUILD_DIR"
+  run touch "$STATE_FILE"
 
   step "1. apt update, upgrade and build dependencies"
   run $SUDO apt update
@@ -280,11 +320,11 @@ EOF
 
   step "2. 32-bit libraries for the nexmon toolchain (aarch64 only)"
   if [ "$(uname -m)" = "aarch64" ]; then
-    run $SUDO dpkg --add-architecture armhf
+    run $SUDO bash -c 'if dpkg --print-foreign-architectures | grep -qx armhf; then :; else dpkg --add-architecture armhf && echo "arch armhf" >> "$1"; fi' _ "$STATE_FILE"
     run $SUDO apt update
     run $SUDO apt install -y libc6:armhf libisl23:armhf libmpfr6:armhf libmpc3:armhf libstdc++6:armhf
-    run $SUDO bash -c '[ -e "$2" ] || [ -L "$2" ] || { [ -e "$1" ] && ln -s "$1" "$2"; }' _ /usr/lib/arm-linux-gnueabihf/libisl.so.23 /usr/lib/arm-linux-gnueabihf/libisl.so.10
-    run $SUDO bash -c '[ -e "$2" ] || [ -L "$2" ] || { [ -e "$1" ] && ln -s "$1" "$2"; }' _ /usr/lib/arm-linux-gnueabihf/libmpfr.so.6 /usr/lib/arm-linux-gnueabihf/libmpfr.so.4
+    run $SUDO bash -c 'if [ ! -e "$2" ] && [ ! -L "$2" ] && [ -e "$1" ]; then ln -s "$1" "$2" && echo "symlink $2" >> "$3"; fi' _ /usr/lib/arm-linux-gnueabihf/libisl.so.23 /usr/lib/arm-linux-gnueabihf/libisl.so.10 "$STATE_FILE"
+    run $SUDO bash -c 'if [ ! -e "$2" ] && [ ! -L "$2" ] && [ -e "$1" ]; then ln -s "$1" "$2" && echo "symlink $2" >> "$3"; fi' _ /usr/lib/arm-linux-gnueabihf/libmpfr.so.6 /usr/lib/arm-linux-gnueabihf/libmpfr.so.4 "$STATE_FILE"
   else
     say "Not aarch64 ($(uname -m)); skipping armhf libraries."
   fi
@@ -293,7 +333,6 @@ EOF
   install_python27
 
   step "4. Fetch nexmon"
-  run mkdir -p "$BUILD_DIR"
   if [ -d "$NEXMON_DIR/.git" ]; then
     say "nexmon already present in $NEXMON_DIR; keeping the checked-out version."
     if [ "$YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && confirm "Run git pull to update it?"; then
@@ -310,6 +349,7 @@ EOF
   step "6. Build and install nexutil"
   run bash -c 'cd "$1" && source ./setup_env.sh >/dev/null && cd utilities/nexutil && '"${SUDO:+$SUDO -E }"'make install USE_VENDOR_CMD=1' _ "$NEXMON_DIR"
   run $SUDO setcap cap_net_admin+ep "$NEXUTIL_PATH"
+  record_state "setcap $NEXUTIL_PATH"
 
   step "7. Fetch nexmon_csi"
   if [ -d "$CSI_DIR/.git" ]; then
@@ -328,7 +368,8 @@ EOF
 
   step "10. Record installed versions and state"
   run bash -c 'printf "nexmon %s\nnexmon_csi %s\n" "$(git -C "$1" rev-parse HEAD)" "$(git -C "$2" rev-parse HEAD)" > "$3"' _ "$NEXMON_DIR" "$CSI_DIR" "$VERSIONS_FILE"
-  run bash -c 'printf "installed %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$1"' _ "$STATE_FILE"
+  record_state "installed"
+  run bash -c 'printf "installed_at %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$1"' _ "$STATE_FILE"
   say
   say "Done. Next: scripts/pi_setup.sh start"
   say "Undo any time: scripts/pi_setup.sh restore"
@@ -347,7 +388,7 @@ prompt_channel() {
 
 do_start() {
   paths
-  if [ ! -f "$STATE_FILE" ]; then
+  if ! grep -qx installed "$STATE_FILE" 2>/dev/null; then
     if [ "$DRY_RUN" -eq 1 ]; then
       warn "No install state at $STATE_FILE (a real start would refuse)."
     else
@@ -377,9 +418,19 @@ do_start() {
   local tcpdump_bin
   tcpdump_bin="$(readlink -f "$(command -v tcpdump 2>/dev/null || echo /usr/bin/tcpdump)")"
   say
-  say "tcpdump needs CAP_NET_RAW to read $IFACE as a normal user."
-  if confirm "Grant it with setcap on $tcpdump_bin? (the systemd unit in docs/ grants it differently)"; then
+  say "tcpdump needs CAP_NET_RAW to read $IFACE as a normal user. Preferred: run Wallhack through the"
+  say "systemd unit in docs/wallhack.service, which grants it to a dedicated user only."
+  local grant=0
+  if [ "$GRANT_TCPDUMP_CAPS" -eq 1 ]; then
+    grant=1
+  elif [ "$YES" -eq 0 ] && confirm "Instead grant it with setcap on $tcpdump_bin? Any local user could then capture traffic. 'restore' removes it."; then
+    grant=1
+  fi
+  if [ "$grant" -eq 1 ]; then
     run $SUDO setcap cap_net_raw,cap_net_admin=eip "$tcpdump_bin"
+    record_state "setcap $tcpdump_bin"
+  else
+    say "Skipped setcap on tcpdump (use --grant-tcpdump-caps to do it non-interactively)."
   fi
   say
   say "Run the dashboard with real CSI:"
@@ -390,14 +441,63 @@ do_start() {
 
 # ---------- restore / status ----------
 
+# Undo what this script recorded in the state file and say what it cannot undo.
+revert_recorded_changes() {
+  local line path
+  if [ ! -f "$STATE_FILE" ]; then
+    say "No state file at $STATE_FILE: no setcap grants or symlinks recorded by this script."
+    return
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      "setcap "*)
+        path="${line#setcap }"
+        if [ -e "$path" ]; then run $SUDO setcap -r "$path"; else say "Skipping $path (no longer exists)."; fi
+        ;;
+    esac
+  done < "$STATE_FILE"
+  run bash -c 'grep -v "^setcap " "$1" > "$1.tmp"; mv "$1.tmp" "$1"' _ "$STATE_FILE"
+
+  local symlinks=()
+  while IFS= read -r line; do
+    case "$line" in "symlink "*) symlinks+=("${line#symlink }") ;; esac
+  done < "$STATE_FILE"
+  if [ "${#symlinks[@]}" -gt 0 ]; then
+    say "This script created these symlinks: ${symlinks[*]}"
+    if confirm "Remove them?"; then
+      for path in "${symlinks[@]}"; do
+        run $SUDO rm -f "$path"
+      done
+      run bash -c 'grep -v "^symlink " "$1" > "$1.tmp"; mv "$1.tmp" "$1"' _ "$STATE_FILE"
+    fi
+  fi
+}
+
+print_remaining_changes() {
+  say
+  say "Not undone by restore:"
+  say "  - apt full-upgrade (packages and kernel stay upgraded)"
+  say "  - installed build packages (git, make, libnl, tcpdump, ...)"
+  if grep -qx "arch armhf" "$STATE_FILE" 2>/dev/null; then
+    say "  - dpkg foreign architecture armhf, added by install. Remove with:"
+    say "      sudo apt purge ':armhf' && sudo dpkg --remove-architecture armhf"
+  fi
+  if grep -q "^symlink " "$STATE_FILE" 2>/dev/null; then
+    say "  - symlinks you chose to keep: $(grep '^symlink ' "$STATE_FILE" | cut -d' ' -f2- | tr '\n' ' ')"
+  fi
+  say "  - the build directory $BUILD_DIR (delete it to free about 3 GB)"
+}
+
 do_restore() {
   paths
-  say "This restores the stock WiFi firmware and hands $IFACE back to the network manager."
+  say "This restores the stock WiFi firmware (upstream 'make -f Makefile.rpi restore-wifi': firmware"
+  say "alternative, brcmfmac_cyw driver reload, NetworkManager manage and connect for wlan0), then removes"
+  say "the setcap grants this script recorded in $STATE_FILE."
   if ! confirm "Continue?"; then die "Aborted. Nothing was changed."; fi
   if [ -d "$CSI_DIR" ] || [ "$DRY_RUN" -eq 1 ]; then
     run_nexmon_env "$CSI_DIR" make -f Makefile.rpi restore-wifi
   else
-    warn "No nexmon_csi checkout at $CSI_DIR, so make restore-wifi cannot run. See docs/hardware.md for manual recovery."
+    warn "No nexmon_csi checkout at $CSI_DIR, so make restore-wifi cannot run. See docs/hardware.md for the manual steps."
   fi
   local unit
   for unit in wpa_supplicant NetworkManager; do
@@ -405,6 +505,8 @@ do_restore() {
       run $SUDO systemctl restart "$unit"
     fi
   done
+  revert_recorded_changes
+  print_remaining_changes
   say "Confirm with: iw dev $IFACE link"
 }
 
@@ -433,6 +535,8 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1 ;;
     --yes) YES=1 ;;
     --force) FORCE=1 ;;
+    --allow-archived-python27) ALLOW_ARCHIVED_PY27=1 ;;
+    --grant-tcpdump-caps) GRANT_TCPDUMP_CAPS=1 ;;
     --iface) IFACE="${2:?--iface needs a value}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a value}"; shift ;;
     --mac|--bssid) MAC_FILTER="${2:?$1 needs a value}"; shift ;;

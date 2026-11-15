@@ -23,7 +23,7 @@ Real (not simulated) CSI on a Pi 4 Model B uses the nexmon_csi firmware patch. U
 scripts/pi_setup.sh start                                  # pick your router's channel
 .venv/bin/python -m wallhack --source real --csi-source nexmon --interface wlan0
 ```
-Undo with `scripts/pi_setup.sh restore`. Add `--dry-run` to any command to only print what it would do.
+Run the script as your normal user; it asks for sudo where needed. `install` runs `apt full-upgrade` as upstream does. Undo with `scripts/pi_setup.sh restore` (see docs/hardware.md for what it does not undo). Add `--dry-run` to any command to only print what it would do.
 
 ## Privacy and consent
 Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything.
