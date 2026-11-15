@@ -20,7 +20,7 @@ python3 tools/csi_forwarder.py --listen-port 5500 --target-port 5005 --link pi4 
 python3 -m wallhack --udp-port 5005 --udp-token YOUR_SECRET
 ```
 
-**UNVERIFIED.** `tools/csi_forwarder.py` is unit-tested on synthetic frames built from the public nexmon_csi header layout, never on a real capture. It decodes int16 I/Q frames only. The Pi 4's BCM43455c0 packs CSI into 32-bit words that need nexmon's unpack step; those frames are forwarded as RSSI only (so no breathing) until that is added and tested on hardware.
+**UNVERIFIED on hardware.** `tools/csi_forwarder.py` reuses `wallhack/nexmon.py` and is tested on synthetic frames built from the public nexmon_csi layout, never on a real capture. The Pi 4's BCM43455c0 stores CSI as int16 I/Q pairs (as in upstream `csireader.m`), which is what is decoded.
 
 ## ESP32 CSI over UDP (optional)
 Flash an ESP32 with CSI firmware (for example Espressif's esp-csi) and have it send one JSON datagram per packet to the machine running Wallhack:

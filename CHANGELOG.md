@@ -12,6 +12,8 @@
 - ci: GitHub Actions workflow runs pytest (Python 3.9 and 3.12) and `node --check` on push/PR with read-only permissions; not yet run on GitHub (UNVERIFIED).
 - fix: forwarder logs and continues if forwarding a packet fails; CRLF netsh output covered by a test.
 - feat: browser opens by default when run from a terminal (`--no-browser` to skip); `Makefile`, `pyproject.toml` with a `wallhack` command.
+- feat: `wallhack/nexmon.py` and `NexmonCollector` read real nexmon_csi frames from a `tcpdump` pcap stream (`--csi-source nexmon`, `--csi-port`); `--csi-check [SECONDS]` diagnoses a capture. VERIFIED on synthetic frames only, UNVERIFIED on Pi hardware.
+- fix: the forwarder reuses `wallhack/nexmon.py`; docs no longer claim the Pi 4 packs 32-bit CSI (it is int16 I/Q).
 - feat: `tools/csi_forwarder.py` converts nexmon_csi frames to the UDP JSON format (UNVERIFIED on hardware); docs/hardware.md no longer references a missing script.
 - feat: `netsh` parsing no longer depends on the Windows display language; fixture tests added.
 - feat: dashboard has presence/motion/breathing pills and a SIMULATED/REAL chip.

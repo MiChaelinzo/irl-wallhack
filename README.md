@@ -41,7 +41,7 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
 | macOS collector | UNVERIFIED |
 | `netsh` parsing on non-English Windows | PARTIALLY VERIFIED (hand-written German/Spanish fixtures, no real captures) |
-| `tools/csi_forwarder.py` (Nexmon frames to UDP JSON) | PARTIALLY VERIFIED (synthetic frames only; BCM43455 packed CSI not decoded) |
+| `tools/csi_forwarder.py` (Nexmon frames to UDP JSON) | PARTIALLY VERIFIED (synthetic int16 frames only, decoded by `wallhack/nexmon.py`) |
 | ESP32 CSI over UDP: packets, token (collector and `Runtime` wiring) and timestamps over a local socket | VERIFIED |
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
 
