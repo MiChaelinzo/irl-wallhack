@@ -5,7 +5,7 @@ import time
 from collections import deque
 from typing import Deque, List, Optional
 
-from .collectors import Collector, detect_collector
+from .collectors import Collector, NexmonCollector, detect_collector
 from .collectors.ping import PingCollector
 from .collectors.udp_csi import UdpCsiCollector
 from .config import Config
@@ -46,13 +46,22 @@ class Runtime:
     def _build_collectors(self) -> List[Collector]:
         cols: List[Collector] = []
         c = self.config
+        nexmon_active = False
+        if c.csi_source == "nexmon":
+            nx = NexmonCollector(c.interface, c.csi_port)
+            if nx.available():
+                cols.append(nx)
+                nexmon_active = True
+            else:
+                log.warning("csi_source is 'nexmon' but tcpdump was not found on PATH")
         if c.udp_port > 0:
             u = UdpCsiCollector(c.udp_host, c.udp_port, token=c.udp_token)
             if u.available():
                 cols.append(u)
             else:
                 log.warning("UDP CSI port %s unavailable", c.udp_port)
-        plat = detect_collector()
+        # CSI mode owns wlan0 (monitor-like); the platform RSSI tools would get no data from it.
+        plat = None if nexmon_active else detect_collector()
         if plat is not None:
             if hasattr(plat, "interface"):
                 plat.interface = c.interface
@@ -214,6 +223,7 @@ class Runtime:
             out = {"source": self.source, "requested_source": self.config.source, "note": self.note,
                    **self.engine.summary(), "sensitivity": self.config.sensitivity,
                    "scenario": self.config.scenario if self.source == "simulator" else None,
+                   "collectors": [c.name for c in self.collectors],
                    "links": len(self.engine.links), "t": round(self.engine.last_t, 2),
                    "disclaimer": "Estimates from signal fluctuations. Not imaging; cannot see through walls."}
             if self.source == "real":

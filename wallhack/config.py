@@ -10,6 +10,7 @@ log = logging.getLogger("wallhack")
 SOURCES = ("auto", "simulator", "real")
 # IPv6 loopback is deliberately absent: Starlette's TrustedHostMiddleware splits the Host
 # header on ":" and cannot parse "[::1]:8000", so Host protection would reject every request.
+CSI_SOURCES = ("", "nexmon")
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
@@ -26,6 +27,8 @@ class Config:
     udp_port: int = 0             # >0 enables the ESP32 CSI UDP receiver
     udp_host: str = "127.0.0.1"
     udp_token: str = ""           # optional shared secret that UDP packets must include
+    csi_source: str = ""          # "" or "nexmon" (Raspberry Pi 4 nexmon_csi via tcpdump)
+    csi_port: int = 5500          # UDP port nexmon_csi sends frames to
     background: bool = True       # tests set False and step manually
 
     def validate(self) -> None:
@@ -33,6 +36,10 @@ class Config:
             raise ValueError(f"source must be one of {SOURCES}")
         if not 0.25 <= self.sensitivity <= 4.0:
             raise ValueError("sensitivity must be between 0.25 and 4.0")
+        if self.csi_source not in CSI_SOURCES:
+            raise ValueError(f"csi_source must be one of {CSI_SOURCES}")
+        if not 1 <= self.csi_port <= 65535:
+            raise ValueError("csi_port must be 1-65535")
         if not 1 <= self.port <= 65535:
             raise ValueError("port must be 1-65535")
 
