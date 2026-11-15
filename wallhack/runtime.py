@@ -234,6 +234,10 @@ class Runtime:
                 elif not out["breathing_supported"]:
                     out["note"] = ("Breathing is disabled: these readings are too slow or too coarse "
                                    "(needs 4+ readings per second, e.g. ESP32/Nexmon CSI).")
+            if self.source == "real":
+                failures = [f"{c.name}: {c.failure()}" for c in self.collectors if c.failure()]
+                if failures:
+                    out["note"] = "Capture stopped. " + "; ".join(failures)
             if self.sim is not None:
                 out["truth"] = self.sim.truth(self.engine.last_t)
             return out

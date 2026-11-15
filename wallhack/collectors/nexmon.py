@@ -46,20 +46,22 @@ class NexmonCollector(Collector):
         self._proc: Optional[subprocess.Popen] = None
         self._threads: List[threading.Thread] = []
         self._first_frame = threading.Event()
+        self._capture_ended = threading.Event()
 
     def available(self) -> bool:
         return shutil.which(self.command[0]) is not None
 
     def _start(self) -> None:
-        self._proc = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self._stderr_thread = threading.Thread(target=self._read_stderr, name="wallhack-nexmon-stderr", daemon=True)
-        self._frames_thread = threading.Thread(target=self._read_frames, name="wallhack-nexmon", daemon=True)
+        proc = subprocess.Popen(self.command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self._proc = proc
+        self._capture_ended.clear()
+        self._stderr_thread = threading.Thread(target=self._read_stderr, args=(proc,), name="wallhack-nexmon-stderr", daemon=True)
+        self._frames_thread = threading.Thread(target=self._read_frames, args=(proc,), name="wallhack-nexmon", daemon=True)
         for t in (self._stderr_thread, self._frames_thread):
             t.start()
             self._threads.append(t)
 
-    def _read_frames(self) -> None:
-        proc = self._proc
+    def _read_frames(self, proc: subprocess.Popen) -> None:
         try:
             for payload in iter_pcap_udp_payloads(proc.stdout, self.port):
                 frame = parse_nexmon_payload(payload)
@@ -83,10 +85,15 @@ class NexmonCollector(Collector):
             self.last_error = " ".join(self._stderr_tail) or "capture exited with status %d" % code
         if self.last_error:
             log.warning("nexmon capture stopped: %s", self.last_error)
+        self._capture_ended.set()
 
-    def _read_stderr(self) -> None:
+    def failure(self) -> str:
+        """Why the capture process died, or "" while it runs (or died without an error)."""
+        return self.last_error if self._capture_ended.is_set() else ""
+
+    def _read_stderr(self, proc: subprocess.Popen) -> None:
         try:
-            for line in self._proc.stderr:
+            for line in proc.stderr:
                 self._stderr_tail.append(line.decode("utf-8", "replace").strip())
         except (OSError, ValueError):
             return

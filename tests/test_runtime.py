@@ -143,6 +143,18 @@ def test_status_lists_active_collector_names(monkeypatch):
     assert rt.status()["collectors"] == ["fake"]
 
 
+def test_status_note_reports_dead_capture_process(monkeypatch):
+    class Dead(FakeCollector):
+        name = "nexmon-csi"
+
+        def failure(self):
+            return "tcpdump: Operation not permitted"
+
+    rt = make_runtime(monkeypatch, Dead([[Reading("a", -50.0)]]))
+    note = rt.status()["note"]
+    assert "Capture stopped" in note and "nexmon-csi" in note and "Operation not permitted" in note
+
+
 def test_config_rejects_unknown_csi_source():
     import pytest
     with pytest.raises(ValueError):
