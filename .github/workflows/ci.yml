@@ -21,4 +21,4 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
       - run: for f in wallhack/static/*.js; do node --check "$f"; done
-      - run: bash -n scripts/pi_setup.sh install.sh
+      - run: bash -n scripts/pi_setup.sh install.sh run.sh
