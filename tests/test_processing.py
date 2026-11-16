@@ -16,7 +16,8 @@ def run(scenario, seed=1, n=1200, sensitivity=1.0, bpm=15.0):
 def test_empty_room_stays_quiet(seed):
     eng = run("empty", seed, n=3000)
     assert eng.summary() == {"presence": False, "motion": False, "breathing_bpm": None,
-                             "breathing_supported": True}
+                             "breathing_supported": True, "heart_bpm": None, "heart_supported": True,
+                             "activity": "empty"}
     assert len(eng.events) == 0
 
 

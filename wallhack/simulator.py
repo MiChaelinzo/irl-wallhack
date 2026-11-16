@@ -20,6 +20,8 @@ NOISE_SIGMA = 0.5
 WALK_AMPLITUDE = 4.0
 WALK_FREQS_HZ = (0.7, 1.1, 1.7)
 BREATH_AMPLITUDE = 1.0
+HEART_AMPLITUDE = 0.5          # dB; exaggerated vs real CSI so the demo shows a clear peak
+DEFAULT_HEART_BPM = 68.0
 
 # (duration seconds, {zone: activity}); activity in empty|walking|breathing
 DEMO_SCRIPT: List[Tuple[float, Dict[str, str]]] = [
@@ -39,14 +41,16 @@ class SimSample:
 
 
 class Simulator:
-    def __init__(self, seed: int = 42, scenario: str = "demo", breaths_per_min: float = 15.0):
+    def __init__(self, seed: int = 42, scenario: str = "demo", breaths_per_min: float = 15.0,
+                 heart_beats_per_min: float = DEFAULT_HEART_BPM):
         if scenario not in SCENARIOS:
             raise ValueError(f"unknown scenario {scenario!r}; choose from {SCENARIOS}")
         self.seed, self.scenario, self.bpm = seed, scenario, breaths_per_min
+        self.heart_bpm = heart_beats_per_min
         self._rng = random.Random(seed)
         self._step = 0
         # fixed per-link phase offsets so the signal does not depend on call batching
-        self._phase = {l: [self._rng.uniform(0, 2 * math.pi) for _ in WALK_FREQS_HZ + (0,)]
+        self._phase = {l: [self._rng.uniform(0, 2 * math.pi) for _ in WALK_FREQS_HZ + (0, 0)]
                        for l in LINKS}
 
     def activity(self, t: float) -> Dict[str, str]:
@@ -72,7 +76,8 @@ class Simulator:
         return {"activity": act,
                 "presence": any(a != "empty" for a in act.values()),
                 "motion": any(a == "walking" for a in act.values()),
-                "breathing_bpm": self.bpm if any(a == "breathing" for a in act.values()) else None}
+                "breathing_bpm": self.bpm if any(a == "breathing" for a in act.values()) else None,
+                "heart_bpm": self.heart_bpm if any(a == "breathing" for a in act.values()) else None}
 
     def next_samples(self, n: int = 1) -> List[SimSample]:
         out: List[SimSample] = []
@@ -88,6 +93,7 @@ class Simulator:
                     for i, f in enumerate(WALK_FREQS_HZ):
                         v += WALK_AMPLITUDE / 1.5 * math.sin(2 * math.pi * f * t + ph[i])
                 elif a == "breathing":
-                    v += BREATH_AMPLITUDE * math.sin(2 * math.pi * (self.bpm / 60.0) * t + ph[-1])
+                    v += BREATH_AMPLITUDE * math.sin(2 * math.pi * (self.bpm / 60.0) * t + ph[-2])
+                    v += HEART_AMPLITUDE * math.sin(2 * math.pi * (self.heart_bpm / 60.0) * t + ph[-1])
                 out.append(SimSample(round(t, 3), link, zone, round(v, 2)))
         return out
