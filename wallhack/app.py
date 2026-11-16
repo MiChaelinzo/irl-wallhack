@@ -70,6 +70,15 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         with runtime.lock:
             return list(runtime.engine.zones().values())
 
+    @app.get("/api/environment")
+    def environment():
+        """Environment readings, or null when no sensors are configured and the source is real."""
+        return runtime.environment()
+
+    @app.get("/api/vitals")
+    def vitals():
+        return runtime.vitals()
+
     @app.get("/api/settings")
     def get_settings():
         return runtime.settings()

@@ -159,3 +159,64 @@ def test_config_rejects_unknown_csi_source():
     import pytest
     with pytest.raises(ValueError):
         Config(csi_source="bogus").validate()
+
+
+def test_real_source_without_sensors_has_no_environment(monkeypatch):
+    rt = make_runtime(monkeypatch, FakeCollector([[Reading("a", -50.0)]] * 3))
+    assert rt.source == "real"
+    assert rt.environment() is None and rt.status()["environment"] is None
+    assert rt.status()["vitals"]["simulated"] is False
+
+
+def test_simulated_environment_responds_to_occupancy_and_is_deterministic():
+    from wallhack.simulator import SimulatedEnvironment
+    occupied = lambda t: t >= 60.0
+    a, b = SimulatedEnvironment(occupied, 7), SimulatedEnvironment(occupied, 7)
+    empty, later = a.reading(50.0), a.reading(400.0)
+    assert later.co2 > empty.co2 + 500 and later.surface_temp_c > empty.surface_temp_c
+    assert all(r.simulated for r in (empty, later))
+    assert b.reading(400.0) == later                      # read pattern does not matter
+    assert SimulatedEnvironment(occupied, 8).reading(400.0) != later
+
+
+def test_simulated_environment_has_pm_spike_event():
+    from wallhack.simulator import PM_SPIKE_WINDOW_S, SimulatedEnvironment
+    env = SimulatedEnvironment(lambda t: False, 3)
+    before = env.reading(PM_SPIKE_WINDOW_S[0] - 1.0).pm25
+    during = env.reading(PM_SPIKE_WINDOW_S[1] - 1.0).pm25
+    assert during > before * 5
+
+
+def test_runtime_uses_hub_when_sensors_configured(monkeypatch):
+    from wallhack.environment import EnvironmentReading
+
+    class FakeHub:
+        started = stopped = False
+
+        def reading(self):
+            return EnvironmentReading(co2=900.0)
+
+        def status(self):
+            return {"scd4x": {"state": "ok", "message": ""}}
+
+        def start(self):
+            FakeHub.started = True
+
+        def stop(self):
+            FakeHub.stopped = True
+
+    monkeypatch.setattr(runtime, "build_hub", lambda config: FakeHub())
+    rt = runtime.Runtime(Config(source="simulator", sensors="scd4x", background=False))
+    env = rt.environment()
+    assert env["simulated"] is False and env["reading"]["co2"] == 900.0
+    assert env["sensors"]["scd4x"]["state"] == "ok"
+    rt.start()
+    rt.stop()
+    assert FakeHub.started and FakeHub.stopped
+
+
+def test_vitals_report_simulated_flag(monkeypatch):
+    rt = runtime.Runtime(Config(source="simulator", scenario="breathing", background=False))
+    rt.step_sim(1200)
+    v = rt.vitals()
+    assert v["simulated"] is True and v["activity"] == "still"

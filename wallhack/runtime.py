@@ -9,8 +9,10 @@ from .collectors import Collector, NexmonCollector, detect_collector
 from .collectors.ping import PingCollector
 from .collectors.udp_csi import UdpCsiCollector
 from .config import Config
+from .environment import environment_report
 from .processing import SensingEngine
-from .simulator import SAMPLE_HZ, SCENARIOS, Simulator
+from .sensors.hub import EnvironmentHub, build_hub
+from .simulator import ROOM_ZONE, SAMPLE_HZ, SCENARIOS, SimulatedEnvironment, Simulator
 
 log = logging.getLogger("wallhack")
 REAL_ZONE = "room"
@@ -33,6 +35,10 @@ class Runtime:
         self.seq = 0
         self.engine = SensingEngine(config.sensitivity)
         self.sim: Optional[Simulator] = None
+        self.sim_environment: Optional[SimulatedEnvironment] = None
+        # Real sensors are opened once: reconfigure() runs on every settings change and must not
+        # reopen serial ports. With no sensors configured and a real source, environment stays None.
+        self.hub: Optional[EnvironmentHub] = build_hub(config) if config.sensor_names() else None
         self.collectors: List[Collector] = []
         self.source = "simulator"
         self.note = ""
@@ -98,6 +104,7 @@ class Runtime:
                 self.samples.clear()
                 self.seq = 0
                 self.sim = None
+                self.sim_environment = None
                 self.note = ""
                 self._last_data = time.monotonic()
                 if real:
@@ -115,6 +122,9 @@ class Runtime:
                 log.warning(self.note)
                 self.source = "simulator"
                 self.sim = Simulator(self.config.seed, self.config.scenario)
+                sim = self.sim
+                self.sim_environment = SimulatedEnvironment(
+                    lambda t: sim.activity(t)[ROOM_ZONE] != "empty", self.config.seed)
                 self._sim_clock = time.monotonic()
             if error:
                 raise SourceUnavailableError(error)
@@ -168,12 +178,16 @@ class Runtime:
         return min((c.interval_s for c in self.collectors), default=0.5)
 
     def start(self) -> None:
+        if self.hub is not None:
+            self.hub.start()
         if self._thread is None:
             self._thread = threading.Thread(target=self._loop, name="wallhack-sensing", daemon=True)
             self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self.hub is not None:
+            self.hub.stop()
         if self._thread:
             self._thread.join(timeout=2)
         for col in self.collectors:
@@ -218,6 +232,22 @@ class Runtime:
         with self.lock:
             self.engine = SensingEngine(self.config.sensitivity)
 
+    def environment(self) -> Optional[dict]:
+        """Environment report from real sensors, else the labelled simulation, else None."""
+        with self.lock:
+            if self.hub is not None:
+                return {**environment_report(self.hub.reading()), "sensors": self.hub.status()}
+            if self.sim_environment is not None:
+                return {**environment_report(self.sim_environment.reading(self.engine.last_t)), "sensors": {}}
+            return None
+
+    def vitals(self) -> dict:
+        with self.lock:
+            summary = self.engine.summary()
+            return {"heart_bpm": summary["heart_bpm"], "breathing_bpm": summary["breathing_bpm"],
+                    "activity": summary["activity"], "heart_supported": summary["heart_supported"],
+                    "simulated": self.source == "simulator"}
+
     def status(self) -> dict:
         with self.lock:
             out = {"source": self.source, "requested_source": self.config.source, "note": self.note,
@@ -225,6 +255,7 @@ class Runtime:
                    "scenario": self.config.scenario if self.source == "simulator" else None,
                    "collectors": [c.name for c in self.collectors],
                    "links": len(self.engine.links), "t": round(self.engine.last_t, 2),
+                   "vitals": self.vitals(), "environment": self.environment(),
                    "disclaimer": "Estimates from signal fluctuations. Not imaging; cannot see through walls."}
             if self.source == "real":
                 idle = time.monotonic() - self._last_data

@@ -5,7 +5,9 @@ Same seed + scenario + parameters => identical samples.
 import math
 import random
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
+
+from .environment import EnvironmentReading
 
 SAMPLE_HZ = 10.0
 SCENARIOS = ("empty", "walking", "breathing", "two_zones", "demo")
@@ -97,3 +99,68 @@ class Simulator:
                     v += HEART_AMPLITUDE * math.sin(2 * math.pi * (self.heart_bpm / 60.0) * t + ph[-1])
                 out.append(SimSample(round(t, 3), link, zone, round(v, 2)))
         return out
+
+
+# ---- simulated environment ---------------------------------------------------
+ENV_STEP_S = 1.0               # fixed integration step, so output depends only on t and the seed
+ROOM_ZONE = "living_room"      # occupancy of this zone drives CO2, VOC and surface temperature
+CO2_OUTDOOR_PPM, CO2_OCCUPIED_PPM, CO2_TAU_S = 450.0, 1400.0, 120.0
+TVOC_EMPTY_PPB, TVOC_OCCUPIED_PPB = 60.0, 240.0
+HCHO_PPB = 25.0
+PM25_BASE, PM25_SPIKE = 6.0, 95.0          # ug/m3; the spike mimics cooking smoke
+PM_TAU_S = 15.0
+PM_SPIKE_WINDOW_S = (60.0, 80.0)           # seconds into each demo loop
+PM1_PER_PM25, PM10_PER_PM25, PM10_OFFSET = 0.6, 1.4, 2.0
+TEMP_BASE_C, TEMP_SWING_C, TEMP_PERIOD_S = 22.0, 1.0, 600.0
+HUMIDITY_BASE, HUMIDITY_SWING, HUMIDITY_PERIOD_S = 45.0, 5.0, 420.0
+SKIN_SURFACE_C = 33.0                      # infrared surface temperature of a person in view
+SENSOR_NOISE = {"co2": 8.0, "pm25": 0.4, "tvoc": 6.0, "hcho": 1.0, "temp": 0.05, "humidity": 0.2}
+
+
+class SimulatedEnvironment:
+    """Deterministic fake environment sensors. Every reading is flagged simulated=True.
+
+    State relaxes toward targets in fixed ENV_STEP_S steps, so the output for a given time depends
+    only on the seed and the occupancy function, not on how often it is read.
+    """
+
+    def __init__(self, occupied: Callable[[float], bool], seed: int = 42):
+        self._occupied = occupied
+        self._rng = random.Random(seed + 1)
+        self._phase = (self._rng.uniform(0, 2 * math.pi), self._rng.uniform(0, 2 * math.pi))
+        self._step = 0
+        self._co2, self._tvoc, self._pm25 = CO2_OUTDOOR_PPM, TVOC_EMPTY_PPB, PM25_BASE
+        self._surface = TEMP_BASE_C
+        self._noise = {k: 0.0 for k in SENSOR_NOISE}
+
+    def _relax(self, value: float, target: float, tau: float) -> float:
+        return value + (target - value) * (1.0 - math.exp(-ENV_STEP_S / tau))
+
+    def _advance(self) -> None:
+        t = self._step * ENV_STEP_S
+        self._step += 1
+        occupied = self._occupied(t)
+        loop_t = t % sum(d for d, _ in DEMO_SCRIPT)
+        spike = PM_SPIKE_WINDOW_S[0] <= loop_t < PM_SPIKE_WINDOW_S[1]
+        self._co2 = self._relax(self._co2, CO2_OCCUPIED_PPM if occupied else CO2_OUTDOOR_PPM, CO2_TAU_S)
+        self._tvoc = self._relax(self._tvoc, TVOC_OCCUPIED_PPB if occupied else TVOC_EMPTY_PPB, CO2_TAU_S)
+        self._pm25 = self._relax(self._pm25, PM25_SPIKE if spike else PM25_BASE, PM_TAU_S)
+        self._surface = self._relax(self._surface, SKIN_SURFACE_C if occupied
+                                    else self._temperature(t), PM_TAU_S)
+        self._noise = {k: self._rng.gauss(0.0, sigma) for k, sigma in SENSOR_NOISE.items()}
+
+    def _temperature(self, t: float) -> float:
+        return TEMP_BASE_C + TEMP_SWING_C * math.sin(2 * math.pi * t / TEMP_PERIOD_S + self._phase[0])
+
+    def reading(self, t: float) -> EnvironmentReading:
+        while self._step * ENV_STEP_S <= t:
+            self._advance()
+        n = self._noise
+        pm25 = max(self._pm25 + n["pm25"], 0.0)
+        humidity = HUMIDITY_BASE + HUMIDITY_SWING * math.sin(2 * math.pi * t / HUMIDITY_PERIOD_S + self._phase[1])
+        return EnvironmentReading(
+            pm1=round(pm25 * PM1_PER_PM25, 1), pm25=round(pm25, 1), pm10=round(pm25 * PM10_PER_PM25 + PM10_OFFSET, 1),
+            co2=round(self._co2 + n["co2"]), temperature_c=round(self._temperature(t) + n["temp"], 2),
+            humidity_pct=round(humidity + n["humidity"], 1), tvoc_ppb=round(max(self._tvoc + n["tvoc"], 0.0)),
+            hcho_ppb=round(max(HCHO_PPB + n["hcho"], 0.0)), surface_temp_c=round(self._surface, 1),
+            simulated=True, t=round(t, 2))
