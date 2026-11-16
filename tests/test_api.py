@@ -125,3 +125,41 @@ def test_calibrate_rejects_cross_origin(client):
     assert client.post("/api/settings", json={"scenario": "empty"},
                        headers={"Origin": "http://evil.example"}).status_code == 403
     assert client.post("/api/calibrate", headers={"Origin": "http://localhost"}).status_code == 200
+
+
+def test_environment_endpoint_is_simulated_in_simulator_mode(client):
+    env = client.get("/api/environment").json()
+    assert env["simulated"] is True and env["reading"]["simulated"] is True
+    assert env["aqi"]["aqi"] >= 0 and env["aqi"]["category"]
+    assert set(env["ratings"]) == {"particulates", "co2", "tvoc", "hcho", "humidity"}
+    assert env["overall"]["level"] in ("good", "fair", "poor", "bad")
+    assert env["sensors"] == {}
+
+
+def test_vitals_endpoint(client):
+    v = client.get("/api/vitals").json()
+    assert v["simulated"] is True and v["activity"] == "still"
+    assert abs(v["breathing_bpm"] - 15) <= 1 and abs(v["heart_bpm"] - 68) <= 3
+    assert v["heart_supported"] is True
+
+
+def test_status_and_websocket_carry_environment_and_vitals(client):
+    st = client.get("/api/status").json()
+    assert st["environment"]["simulated"] is True and st["vitals"]["heart_bpm"] is not None
+    with client.websocket_connect("ws://localhost/ws") as ws:
+        msg = ws.receive_json()
+    assert msg["status"]["environment"]["simulated"] is True
+    assert msg["status"]["vitals"]["activity"] == "still"
+
+
+def test_environment_and_vitals_keep_host_protection(client):
+    for path in ("/api/environment", "/api/vitals"):
+        assert client.get(path, headers={"host": "evil.example"}).status_code == 400
+
+
+def test_sensor_config_from_environment():
+    cfg = load_config("/nonexistent.json", env={"WALLHACK_SENSORS": "pms5003,scd4x", "WALLHACK_I2C_BUS": "3",
+                                                 "WALLHACK_SERIAL_PMS": "/dev/ttyAMA0"})
+    assert cfg.sensor_names() == ("pms5003", "scd4x") and cfg.i2c_bus == 3 and cfg.serial_pms == "/dev/ttyAMA0"
+    with pytest.raises(ValueError):
+        load_config("/nonexistent.json", env={"WALLHACK_SENSORS": "bogus"})

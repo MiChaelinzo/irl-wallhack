@@ -4,16 +4,20 @@ set -e
 cd "$(dirname "$0")"
 
 PI_CSI=0
-case "${1:-}" in
-  "") ;;
-  --pi-csi) PI_CSI=1 ;;
-  -h|--help)
-    echo "Usage: ./install.sh [--pi-csi]"
-    echo "  --pi-csi  after installing, run the read-only Raspberry Pi CSI preflight"
-    echo "            (scripts/pi_setup.sh check). It does not change the WiFi firmware."
-    exit 0 ;;
-  *) echo "Unknown option: $1 (try --help)"; exit 1 ;;
-esac
+SENSORS=0
+for arg in "$@"; do
+  case "$arg" in
+    --pi-csi) PI_CSI=1 ;;
+    --sensors) SENSORS=1 ;;
+    -h|--help)
+      echo "Usage: ./install.sh [--pi-csi] [--sensors]"
+      echo "  --pi-csi   after installing, run the read-only Raspberry Pi CSI preflight"
+      echo "             (scripts/pi_setup.sh check). It does not change the WiFi firmware."
+      echo "  --sensors  also install pyserial and smbus2 for the optional air-quality sensors"
+      exit 0 ;;
+    *) echo "Unknown option: $arg (try --help)"; exit 1 ;;
+  esac
+done
 
 PY=""
 for c in python3 python; do
@@ -37,6 +41,9 @@ fi
 
 .venv/bin/python -m pip install --upgrade pip >/dev/null
 .venv/bin/python -m pip install -r requirements.txt
+if [ "$SENSORS" -eq 1 ]; then
+  .venv/bin/python -m pip install "pyserial>=3.5" "smbus2>=0.4"
+fi
 echo
 echo "Install complete. Start the dashboard with: ./run.sh"
 

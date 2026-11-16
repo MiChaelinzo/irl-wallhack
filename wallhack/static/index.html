@@ -8,7 +8,7 @@
 </head>
 <body>
 <header>
-  <h1>Wallhack <span class="sub">WiFi sensing</span></h1>
+  <h1><span class="logo" aria-hidden="true"></span>Wallhack <span class="sub">WiFi sensing</span></h1>
   <div class="hdr-right">
     <span id="source" class="chip">source: ?</span>
     <span id="mode" class="chip" hidden></span>
@@ -30,8 +30,8 @@
 <div id="offline" class="banner error" role="alert" hidden>Connection to the Wallhack server lost. Showing the last known values and retrying.</div>
 
 <main>
-  <section class="card status">
-    <h2>Status</h2>
+  <section class="card status" aria-labelledby="hStatus">
+    <h2 id="hStatus">Status</h2>
     <div id="badge" class="badge idle">No presence</div>
     <div class="pills" aria-label="Detection state">
       <span id="pPresence" class="pill off">Presence</span>
@@ -41,27 +41,62 @@
     <div id="badgeSub" class="muted">Waiting for data</div>
   </section>
 
+  <section class="card vitals" id="vitalsCard" aria-labelledby="hVitals">
+    <span class="ribbon" id="vitalsSim" hidden>SIMULATED</span>
+    <h2 id="hVitals">Vitals</h2>
+    <div class="vital-row">
+      <div class="vital">
+        <span class="heart" id="heartIcon" aria-hidden="true"></span>
+        <div><div class="big" id="heartVal">--</div><div class="muted">heart rate, bpm <span class="chip warn exp-tag">experimental</span></div></div>
+      </div>
+      <div class="vital">
+        <div><div class="big" id="breathVal">--</div><div class="muted">breathing, per min</div></div>
+      </div>
+    </div>
+    <div class="row-center"><span class="muted">Activity</span> <span id="activityBadge" class="act empty">empty</span></div>
+    <div id="vitalsNote" class="muted lowconf" hidden></div>
+  </section>
+
   <section class="card">
     <h2>Breathing rate</h2>
-    <canvas id="gauge" width="260" height="160" aria-label="Breathing rate gauge"></canvas>
+    <canvas id="gauge" width="260" height="160" role="img" aria-label="Breathing rate gauge"></canvas>
     <div class="muted">Estimate, still person, breaths per minute</div>
+  </section>
+
+  <section class="card wide room-card" aria-labelledby="hRoom">
+    <h2 id="hRoom">3D room view</h2>
+    <div class="tools3d" role="group" aria-label="3D view controls">
+      <button id="rotateBtn" type="button" aria-pressed="true">Auto-rotate</button>
+      <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+      <button id="zoomOut" type="button" aria-label="Zoom out">&minus;</button>
+      <button id="resetView" type="button">Reset view</button>
+    </div>
+    <canvas id="room3d" class="room3d" tabindex="0" role="img" aria-label="3D signal-activity view of the room. Drag to orbit, scroll to zoom, arrow keys also work."></canvas>
+    <p class="muted caption">Signal-activity visualisation. Not imaging. Positions are schematic.</p>
+  </section>
+
+  <section class="card wide env" id="envSection" aria-labelledby="hEnv">
+    <h2 id="hEnv">Environment</h2>
+    <div id="envHead" class="env-head"></div>
+    <div id="envChips" class="chips" aria-label="Sensor status"></div>
+    <div id="envGrid" class="env-grid"></div>
   </section>
 
   <section class="card wide">
     <h2>RSSI per link (dBm)</h2>
-    <canvas id="rssi" width="800" height="220" aria-label="RSSI graph"></canvas>
+    <canvas id="rssi" width="800" height="220" role="img" aria-label="RSSI graph"></canvas>
     <div id="legend" class="legend"></div>
   </section>
 
   <section class="card wide">
     <h2>Motion energy</h2>
-    <canvas id="motion" width="800" height="140" aria-label="Motion energy graph"></canvas>
+    <canvas id="motion" width="800" height="140" role="img" aria-label="Motion energy graph"></canvas>
   </section>
 
   <section class="card">
     <h2>Zones</h2>
     <p class="muted">Per-zone signal activity, not a camera view.</p>
-    <canvas id="heat" width="360" height="200" aria-label="Zone heat map"></canvas>
+    <canvas id="heat" width="360" height="200" role="img" aria-label="Zone heat map"></canvas>
   </section>
 
   <section class="card">
@@ -71,6 +106,31 @@
       <button id="exportCsv" type="button">Export CSV</button>
     </div>
     <ul id="events" class="events"><li class="muted">No events yet</li></ul>
+  </section>
+
+  <section class="card wide about">
+    <details>
+      <summary>About these readings</summary>
+      <div class="about-cols">
+        <div>
+          <h3>What WiFi sensing can estimate</h3>
+          <ul>
+            <li>Presence and motion, from changes in signal strength.</li>
+            <li>Breathing rate of a still person, when readings arrive at 4 per second or faster.</li>
+            <li>Heart rate and activity level, only with high-rate CSI (8 Hz or more). Low confidence.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>What it cannot do</h3>
+          <ul>
+            <li>Mood or emotion: there is no established way to infer it from WiFi. Not shown.</li>
+            <li>Perspiration: no WiFi or listed-sensor method. Not shown.</li>
+            <li>Images, or seeing through walls: signals give coarse activity, never a picture.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="muted">Air quality values come only from optional physical sensors, or are labelled SIMULATED. See <code>docs/hardware.md</code> in the repository for supported hardware.</p>
+    </details>
   </section>
 </main>
 
@@ -94,6 +154,7 @@
 </aside>
 
 <footer class="muted" id="disclaimer">Estimates from signal fluctuations. Not imaging.</footer>
+<script src="/static/view3d.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -20,5 +20,5 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
-      - run: node --check wallhack/static/app.js
-      - run: bash -n scripts/pi_setup.sh install.sh
+      - run: for f in wallhack/static/*.js; do node --check "$f"; done
+      - run: bash -n scripts/pi_setup.sh install.sh run.sh

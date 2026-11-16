@@ -4,13 +4,74 @@ Wallhack works without hardware: with no usable WiFi source it runs a seeded sim
 Everything below is UNVERIFIED on real devices. Parsers are tested on fixture text and the UDP receiver over a local socket.
 
 ## What it can and cannot do
-RSSI and CSI changes reveal presence, motion, breathing rate (0.1-0.5 Hz, needs a still person, good signal and CSI-rate data: 4+ unrounded readings per second; disabled automatically for Windows, macOS and nmcli data) and a coarse zone. It cannot make images or show people through walls like a camera.
+RSSI and CSI changes reveal presence, motion, activity, breathing rate (0.1-0.5 Hz, needs a still person, good signal and CSI-rate data: 4+ unrounded readings per second; disabled automatically for Windows, macOS and nmcli data) and a coarse zone. It cannot make images or show people through walls like a camera.
 
 ## Data sources
 - **Linux / Raspberry Pi 4**: reads signal strength from `iw` / `nmcli` (`--interface wlan0`). Plain RSSI is coarse; presence and motion work best with a stable link.
 - **Windows 11**: reads `netsh wlan show interfaces`. Updates about once per second. Parsing does not depend on the Windows display language (tested on hand-written German and Spanish fixtures, not real captures).
 - **macOS**: reads `system_profiler` (about every second or slower). Newer macOS versions may hide details without extra permissions.
 - **Any OS, fallback**: `--ping-target 192.168.x.1` measures latency to your own router (private IPs only).
+
+## Environment and vital sensors
+**Everything in this section is UNVERIFIED on hardware.** Parsers are tested on hand-built frames and drivers on fake transports. Sensors are optional; without `--sensors` the dashboard shows "no sensor" tiles.
+
+### Parts
+| Part | Measures | Bus | Notes |
+|---|---|---|---|
+| Sensirion SCD41 (or SCD40) | CO2 ppm, temperature, humidity | I2C 0x62 | Reading about every 5 s. Self-calibration needs fresh air now and then. |
+| Plantower PMS5003 | PM1.0, PM2.5, PM10 (atmospheric values) | UART 9600 | Has a fan. Allow about 30 s of warm-up. |
+| ScioSense ENS160 | TVOC ppb (also eCO2 and AQI on the chip) | I2C 0x52 or 0x53 | eCO2 is an estimate from VOCs, not a CO2 measurement. The datasheet asks for a long first-use burn-in. |
+| Winsen ZE08-CH2O | Formaldehyde ppb | UART 9600 | Electrochemical; warm-up of several minutes and drift over its life. |
+| Melexis MLX90614 | Infrared surface temperature | I2C 0x5A | Surface temperature of what it points at, not clinical body temperature. |
+
+### Wiring (Raspberry Pi 4, 40-pin header)
+I2C devices share bus 1 (`--i2c-bus 1`):
+
+| Sensor pin | Pi pin |
+|---|---|
+| VCC | pin 1 (3V3) |
+| GND | pin 6 (GND) |
+| SDA | pin 3 (GPIO2) |
+| SCL | pin 5 (GPIO3) |
+
+Enable I2C with `sudo raspi-config` (Interface Options, I2C), then check with `sudo apt install i2c-tools && i2cdetect -y 1`. Expected addresses: SCD4x `0x62`, ENS160 `0x52` or `0x53`, MLX90614 `0x5A`. Use 3.3 V breakout boards (or ones with their own level shifting). A bare 5 V I2C sensor must not be wired straight to the Pi.
+
+UART sensors are read only. Wallhack never writes to them, so connect just the sensor's TX to the Pi's RX and share ground. Both parts send 3.3 V logic. The PMS5003 and ZE08-CH2O fans/cells are powered from 5 V (Pi pin 2 or 4), but the data line stays 3.3 V. Check your module's datasheet before powering it; if a module has 5 V logic, use a level shifter.
+
+| Sensor | Sensor pin | Pi pin / device |
+|---|---|---|
+| PMS5003 | VCC (5 V), GND, TXD | pin 2, pin 14, pin 10 (GPIO15 RXD0) -> `/dev/serial0` (default `--pms-port`) |
+| ZE08-CH2O | Vin (5 V), GND, TXD | via a USB-TTL adapter -> `/dev/ttyUSB0` (default `--hcho-port`) |
+
+The Pi 4 has one easy hardware UART on pins 8/10. To use it, run `sudo raspi-config`, Interface Options, Serial Port: answer **No** to a login shell over serial and **Yes** to the serial port hardware. The second UART sensor is simplest on a USB-TTL adapter. Alternatively enable another Pi 4 UART in `/boot/firmware/config.txt` (`/boot/config.txt` on older images):
+```
+dtoverlay=uart3      # RX on GPIO5 (pin 29), TX on GPIO4 (pin 7)
+```
+Reboot, then run `ls /dev/ttyAMA*` to see the new device (often `/dev/ttyAMA1`, but check) and pass it as `--hcho-port`. Other overlays on Pi 4: `uart4` (GPIO9 RX pin 21), `uart5` (GPIO13 RX pin 33). Avoid `uart2` (GPIO0/1 are the HAT ID pins).
+
+### Install and run
+```
+./install.sh --sensors      # pyserial and smbus2 are optional extras
+sudo usermod -aG dialout,i2c $USER     # then log out and in; needed for /dev/ttyUSB0 and /dev/i2c-1
+.venv/bin/python -m wallhack --sensors pms5003,scd4x,ens160,ze08,mlx90614 --pms-port /dev/serial0 --hcho-port /dev/ttyUSB0 --i2c-bus 1
+```
+For `docs/wallhack.service` add `SupplementaryGroups=dialout i2c` to the `[Service]` section. Env vars: `WALLHACK_SENSORS`, `WALLHACK_SERIAL_PMS`, `WALLHACK_SERIAL_HCHO`, `WALLHACK_I2C_BUS`.
+
+### What the numbers mean
+- **AQI**: US EPA index from PM2.5 (2024 breakpoints) and PM10, whichever is worse. It needs PM data.
+- **Ratings** (good / fair / poor / bad) are guidance bands, not medical advice: CO2 (1000 and 2000 ppm, Umweltbundesamt), TVOC (ScioSense UBA levels), HCHO (WHO 30 min guideline), humidity (comfort band 30-60 %). The overall rating is the worst of its parts and lists the drivers.
+- **Heat index** is shown only when it applies (80 F and 40 % RH or more); **dew point** uses the Magnus formula.
+- **Surface temperature** depends on distance, emissivity and ambient temperature. Do not use it as a fever check.
+- Sensor self-heating can raise SCD4x readings if mounted near the Pi; keep a few centimetres away from the CPU.
+
+### Heart rate over WiFi: limits
+Heart rate needs CSI at 8 Hz or more (not quantised), a still person and good signal; the amplitude is tiny. Wallhack gates it on those conditions and a strong spectral peak (peak ratio 30). It is experimental, UNVERIFIED on real CSI, and not a medical measurement. The simulator's heartbeat is exaggerated and marked SIMULATED. The walking-cadence rule for the activity badge is also only tried on the simulator.
+
+### Not built
+- **Mood / emotion**: no established way to infer it from WiFi.
+- **Perspiration**: no WiFi or listed-sensor method.
+- **Through-wall sights / images**: not possible here. The 3D view is a schematic signal-activity visualisation with schematic positions.
+- **Thermal array image** (MLX90640, AMG8833): would need an image driver and a camera-like view; possible future optional hardware, not implemented.
 
 ## Raspberry Pi 4 real CSI (nexmon_csi)
 **UNVERIFIED on hardware.** The steps below follow the upstream [nexmon_csi](https://github.com/seemoo-lab/nexmon_csi) recipe ([discussion #395](https://github.com/seemoo-lab/nexmon_csi/discussions/395)). The script was tested only with `--dry-run` and a fake model file, and decoding only on synthetic frames. No Pi 4 was available to run it.
