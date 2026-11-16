@@ -18,7 +18,7 @@ from .ze08_ch2o import Ze08Ch2o
 log = logging.getLogger("wallhack")
 STALE_INTERVALS = 3.0          # a sensor is stale after this many missed polling intervals
 HUB_TICK_S = 0.25
-WAITING, OK, STALE, ERROR = "waiting", "ok", "stale", "error"
+WAITING, OK, STALE, ERROR, WARMING = "waiting", "ok", "stale", "error", "warming"
 _FIELDS = {f.name for f in fields(EnvironmentReading)} - {"simulated", "t"}
 
 
@@ -45,7 +45,10 @@ class EnvironmentHub:
             self._last_poll[driver.name] = now
             try:
                 values = driver.poll()
-            except (SensorError, OSError) as exc:
+                unknown = set(values or ()) - _FIELDS
+                if unknown:
+                    raise SensorError(f"driver {driver.name} returned unknown fields {sorted(unknown)}")
+            except Exception as exc:  # one sensor's failure, including a driver bug, must not stop the others
                 message = f"{type(exc).__name__}: {exc}"
                 with self._lock:
                     if self._errors.get(driver.name) != message:
@@ -56,9 +59,6 @@ class EnvironmentHub:
             with self._lock:
                 self._errors.pop(driver.name, None)
                 if values is not None:
-                    unknown = set(values) - _FIELDS
-                    if unknown:
-                        raise ValueError(f"driver {driver.name} returned unknown fields {sorted(unknown)}")
                     self._values[driver.name] = values
                     self._last_ok[driver.name] = now
 
@@ -67,9 +67,12 @@ class EnvironmentHub:
         out: Dict[str, dict] = {}
         with self._lock:
             intervals = {d.name: d.interval_s for d in self._drivers}
+            warming = {d.name for d in self._drivers if getattr(d, "warming_up", False)}
             for name in self._names:
                 if name in self._errors:
                     out[name] = {"state": ERROR, "message": self._errors[name]}
+                elif name in warming:
+                    out[name] = {"state": WARMING, "message": "sensor is warming up, readings are not valid yet"}
                 elif name not in self._last_ok:
                     out[name] = {"state": WAITING, "message": ""}
                 elif now - self._last_ok[name] > STALE_INTERVALS * intervals[name]:

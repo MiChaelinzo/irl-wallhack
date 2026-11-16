@@ -173,6 +173,14 @@ def test_scd4x_zero_co2_is_an_error():
         driver.poll()
 
 
+def _pms_valid(frame):
+    try:
+        pms5003.parse_frame(frame)
+    except SensorError:
+        return False
+    return True
+
+
 # ---- ENS160 -------------------------------------------------------------------------
 def test_ens160_reads_tvoc_after_enabling_standard_mode():
     bus = FakeI2C([bytes([0x02]), bytes([0xC8, 0x00])])    # status NEWDAT, validity normal; TVOC 200 ppb
@@ -191,6 +199,7 @@ def test_ens160_little_endian_and_states():
     startup = ens160.Ens160(FakeI2C([bytes([0x02 | (2 << 2)])]))
     startup.poll()
     assert startup.poll() is None                          # initial start-up: not trusted yet
+    assert startup.warming_up
     nodata = ens160.Ens160(FakeI2C([bytes([0x00])]))
     nodata.poll()
     assert nodata.poll() is None
@@ -305,10 +314,54 @@ def test_hub_surfaces_errors_and_recovers(caplog):
     assert hub.status()["scd4x"]["state"] == OK and hub.reading().co2 == 650.0
 
 
-def test_hub_rejects_driver_returning_unknown_fields():
-    hub = EnvironmentHub([ScriptedDriver("x", {"bogus": 1.0})], clock=Clock())
-    with pytest.raises(ValueError, match="unknown fields"):
+def test_unknown_fields_mark_only_that_sensor_errored_and_others_keep_polling(caplog):
+    clock = Clock()
+    good = ScriptedDriver("scd4x", {"co2": 800.0}, {"co2": 700.0})
+    hub = EnvironmentHub([ScriptedDriver("x", {"bogus": 1.0}, {"bogus": 2.0}), good], clock=clock)
+    with caplog.at_level("WARNING", logger="wallhack"):
         hub.poll_once()
+    assert hub.status()["x"]["state"] == ERROR and "unknown fields" in hub.status()["x"]["message"]
+    assert "unknown fields" in caplog.text
+    assert hub.status()["scd4x"]["state"] == OK and hub.reading().co2 == 800.0
+    clock.now += 1.1
+    hub.poll_once()                                       # keeps polling after the contract error
+    assert hub.reading().co2 == 700.0
+
+
+def test_unexpected_driver_exception_does_not_stop_other_sensors():
+    clock = Clock()
+    hub = EnvironmentHub([ScriptedDriver("x", IndexError("bug")), ScriptedDriver("scd4x", {"co2": 500.0})], clock=clock)
+    hub.poll_once()
+    assert "IndexError" in hub.status()["x"]["message"]
+    assert hub.reading().co2 == 500.0
+
+
+def test_take_latest_frame_ignores_header_bytes_inside_payload():
+    # PM1 value 0x424D puts the PMS5003 header pair inside the payload of a valid frame.
+    inner = pms_frame(pm1=0x424D)
+    assert inner.count(pms5003.HEADER) == 2
+    valid = lambda f: _pms_valid(f)
+    tail = pms_frame()[:12]                               # start of the next frame has arrived
+    frame, rest = take_latest_frame(inner + tail, pms5003.HEADER, pms5003.FRAME_LENGTH, valid)
+    assert frame == inner and rest == tail
+    driver = pms5003.Pms5003(FakeUart(inner + tail))
+    assert driver.poll()["pm1"] == float(0x424D)
+
+
+def test_take_latest_frame_resyncs_after_corrupt_frame():
+    bad = bytearray(pms_frame())
+    bad[-1] ^= 0xFF
+    driver = pms5003.Pms5003(FakeUart(bytes(bad), pms_frame(1, 2, 3)))
+    with pytest.raises(SensorError, match="checksum"):
+        driver.poll()
+    assert driver.poll() == {"pm1": 1.0, "pm25": 2.0, "pm10": 3.0}
+
+
+def test_ze08_embedded_header_bytes_do_not_misalign():
+    inner = ze08_frame(ppb=0xFF17, full_range=0xFFFF)
+    assert inner.count(ze08_ch2o.HEADER) == 2
+    tail = ze08_frame()[:5]
+    assert ze08_ch2o.Ze08Ch2o(FakeUart(inner + tail)).poll() == {"hcho_ppb": float(0xFF17)}
 
 
 def test_oserror_from_transport_is_reported_not_raised():
@@ -371,3 +424,19 @@ def test_config_sensor_validation():
         Config(sensors="pms5003,laser").validate()
     with pytest.raises(ValueError, match="i2c_bus"):
         Config(i2c_bus=-1).validate()
+
+
+def test_ens160_warmup_is_flagged_not_valid_and_hub_reports_warming():
+    warm = ens160.Ens160(FakeI2C([bytes([0x02 | (1 << 2)]), bytes([0x02]), bytes([0xC8, 0x00])]))
+    hub = EnvironmentHub([warm], clock=Clock())
+    hub.poll_once()                                       # enables standard mode
+    clock = hub._clock
+    clock.now += 1.1
+    hub.poll_once()                                       # validity 1: warm-up
+    assert warm.warming_up
+    assert hub.status()["ens160"]["state"] == "warming"
+    assert hub.reading().tvoc_ppb is None
+    clock.now += 1.1
+    hub.poll_once()                                       # validity 0: valid
+    assert not warm.warming_up
+    assert hub.status()["ens160"]["state"] == OK and hub.reading().tvoc_ppb == 200.0

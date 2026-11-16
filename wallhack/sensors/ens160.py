@@ -28,6 +28,7 @@ class Ens160(SensorDriver):
     def __init__(self, bus: I2CTransport, address: int = ADDRESS):
         self._bus, self._address = bus, address
         self._started = False
+        self.warming_up = False
 
     def poll(self) -> Optional[dict]:
         if not self._started:
@@ -38,8 +39,11 @@ class Ens160(SensorDriver):
         validity = (status >> VALIDITY_SHIFT) & VALIDITY_MASK
         if validity == VALIDITY_INVALID:
             raise SensorError("ENS160 reports invalid output (status validity 3); check power and wiring")
-        if validity == VALIDITY_STARTUP or not status & STATUS_NEWDAT:
-            return None  # initial start-up (up to an hour) or no new sample yet
+        # Warm-up (about 3 minutes) and initial start-up (up to an hour) readings are not valid
+        # per the datasheet: hold them back and let the hub report the sensor as warming up.
+        self.warming_up = validity in (VALIDITY_WARMUP, VALIDITY_STARTUP)
+        if self.warming_up or not status & STATUS_NEWDAT:
+            return None
         raw = self._bus.write_read(self._address, bytes([REG_TVOC]), 2)
         if len(raw) != 2:
             raise SensorError(f"ENS160 TVOC read returned {len(raw)} bytes, expected 2")

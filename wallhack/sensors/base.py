@@ -3,7 +3,7 @@
 Drivers take an injected transport, so parsing and polling are testable without hardware.
 """
 import importlib
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 SENSIRION_CRC_POLY = 0x31
 SENSIRION_CRC_INIT = 0xFF
@@ -53,6 +53,7 @@ class SensorDriver:
     """poll() returns EnvironmentReading field values, or None when there is no new data yet."""
     name = "sensor"
     interval_s = 1.0
+    warming_up = False             # True while the device reports readings that are not valid yet
 
     def poll(self) -> Optional[dict]:
         raise NotImplementedError
@@ -71,11 +72,26 @@ def sensirion_crc(data: bytes) -> int:
     return crc8(data, SENSIRION_CRC_POLY, SENSIRION_CRC_INIT)
 
 
-def take_latest_frame(buffer: bytes, header: bytes, length: int) -> Tuple[Optional[bytes], bytes]:
-    """Return (newest complete frame starting with header, or None; bytes to keep for next time)."""
-    start = buffer.rfind(header, 0, len(buffer) - length + len(header)) if len(buffer) >= length else -1
-    if start >= 0:
-        return buffer[start:start + length], buffer[start + length:]
+def take_latest_frame(buffer: bytes, header: bytes, length: int,
+                      is_valid: Optional[Callable[[bytes], bool]] = None) -> Tuple[Optional[bytes], bytes]:
+    """Return (newest complete valid frame, or None; bytes to keep for next time).
+
+    Header bytes can also occur inside a frame's data, so candidates are tried newest first and
+    the first one that passes is_valid (for example a checksum test) wins. If candidates exist but
+    none validates, only the possible start of an incomplete frame is kept, which resyncs the stream.
+    """
+    if len(buffer) < length:
+        return None, buffer
+    end = len(buffer) - length + len(header)
+    start = buffer.rfind(header, 0, end)
+    while start >= 0:
+        frame = buffer[start:start + length]
+        if is_valid is None or is_valid(frame):
+            return frame, buffer[start + length:]
+        end = start + len(header) - 1
+        start = buffer.rfind(header, 0, end) if end > 0 else -1
+    if buffer.find(header, 0, len(buffer) - length + len(header)) >= 0:
+        return None, buffer[-(length - 1):] if length > 1 else b""
     return None, buffer[-length * MAX_BUFFER_FRAMES:]
 
 
@@ -91,7 +107,19 @@ class FramedUartDriver(SensorDriver):
     def parse_frame(self, frame: bytes) -> dict:
         raise NotImplementedError
 
+    def _is_valid(self, frame: bytes) -> bool:
+        try:
+            self.parse_frame(frame)
+        except SensorError:
+            return False
+        return True
+
     def poll(self) -> Optional[dict]:
-        self._buffer += self._transport.read()
-        frame, self._buffer = take_latest_frame(self._buffer, self.header, self.frame_length)
-        return None if frame is None else self.parse_frame(frame)
+        buffer = self._buffer + self._transport.read()
+        frame, self._buffer = take_latest_frame(buffer, self.header, self.frame_length, self._is_valid)
+        if frame is not None:
+            return self.parse_frame(frame)
+        newest = buffer.rfind(self.header, 0, len(buffer) - self.frame_length + len(self.header))
+        if len(buffer) >= self.frame_length and newest >= 0:
+            self.parse_frame(buffer[newest:newest + self.frame_length])  # raises the explainable error
+        return None
