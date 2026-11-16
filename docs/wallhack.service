@@ -1,15 +1,32 @@
-# Raspberry Pi autostart example (UNVERIFIED on hardware).
+# Raspberry Pi autostart example for real CSI (UNVERIFIED on hardware).
 # Copy to /etc/systemd/system/wallhack.service, adjust User and paths, then:
 #   sudo systemctl daemon-reload && sudo systemctl enable --now wallhack
+# Run `scripts/pi_setup.sh start` first (it sets monitor mode; that does not
+# survive a reboot, so re-run it after boot or add your own unit for it).
+# Create the user once: sudo useradd --system --create-home --home-dir /opt/wallhack wallhack
 [Unit]
-Description=Wallhack WiFi sensing dashboard (localhost only)
+Description=Wallhack WiFi sensing dashboard (localhost only, nexmon CSI)
 After=network-online.target
 
 [Service]
-User=pi
-WorkingDirectory=/home/pi/irl-wallhack
-ExecStart=/home/pi/irl-wallhack/.venv/bin/python -m wallhack
+User=wallhack
+WorkingDirectory=/opt/wallhack/irl-wallhack
+ExecStart=/opt/wallhack/irl-wallhack/.venv/bin/python -m wallhack --source real --csi-source nexmon --interface wlan0 --no-browser
 Restart=on-failure
+# tcpdump (started by Wallhack) needs raw sockets. Ambient capabilities pass
+# them to the non-root user and to the tcpdump child process.
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+# Left false so tcpdump may use file capabilities if you set them with setcap.
+# Set it to true if you rely only on the ambient capabilities above.
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
+
+# Plain variant without CSI (RSSI only): replace ExecStart with
+#   ExecStart=/opt/wallhack/irl-wallhack/.venv/bin/python -m wallhack --no-browser
+# and drop the two Capability lines.

@@ -31,3 +31,8 @@ def test_unknown_payload_size_falls_back_to_rssi_only():
 def test_rejects_bad_magic_and_short_frames():
     assert fwd.convert_frame(_frame(64, magic=0x2222), "pi") is None
     assert fwd.convert_frame(b"\x11\x11", "pi") is None
+
+
+def test_forwarder_uses_the_single_nexmon_implementation():
+    from wallhack import nexmon
+    assert fwd.HEADER is nexmon.HEADER

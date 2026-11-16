@@ -5,9 +5,10 @@ from typing import Optional
 from .base import Collector, Reading
 from .linux import LinuxCollector
 from .macos import MacOSCollector
+from .nexmon import NexmonCollector
 from .windows import WindowsCollector
 
-__all__ = ["Collector", "Reading", "detect_collector"]
+__all__ = ["Collector", "NexmonCollector", "Reading", "detect_collector"]
 
 
 def detect_collector(system: Optional[str] = None) -> Optional[Collector]:

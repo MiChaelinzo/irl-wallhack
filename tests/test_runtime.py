@@ -124,3 +124,38 @@ def test_runtime_passes_udp_token_to_collector():
             tx.close()
     finally:
         rt.stop()
+
+
+def test_nexmon_source_builds_collector_and_skips_platform_collector(monkeypatch):
+    from wallhack.collectors import nexmon as nx
+    called = []
+    monkeypatch.setattr(runtime, "detect_collector", lambda: called.append(1))
+    monkeypatch.setattr(nx.shutil, "which", lambda name: "/usr/sbin/tcpdump")
+    monkeypatch.setattr(runtime.NexmonCollector, "poll", lambda self: [])
+    rt = runtime.Runtime(Config(source="auto", csi_source="nexmon", background=False))
+    cols = rt._build_collectors()
+    assert [c.name for c in cols] == ["nexmon-csi"] and not called
+    assert rt.status()["collectors"] == []  # simulator fallback: nothing real is active
+
+
+def test_status_lists_active_collector_names(monkeypatch):
+    rt = make_runtime(monkeypatch, FakeCollector([[Reading("a", -50.0)]]))
+    assert rt.status()["collectors"] == ["fake"]
+
+
+def test_status_note_reports_dead_capture_process(monkeypatch):
+    class Dead(FakeCollector):
+        name = "nexmon-csi"
+
+        def failure(self):
+            return "tcpdump: Operation not permitted"
+
+    rt = make_runtime(monkeypatch, Dead([[Reading("a", -50.0)]]))
+    note = rt.status()["note"]
+    assert "Capture stopped" in note and "nexmon-csi" in note and "Operation not permitted" in note
+
+
+def test_config_rejects_unknown_csi_source():
+    import pytest
+    with pytest.raises(ValueError):
+        Config(csi_source="bogus").validate()

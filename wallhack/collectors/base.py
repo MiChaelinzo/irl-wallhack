@@ -22,6 +22,10 @@ class Collector:
     def poll(self) -> List[Reading]:
         raise NotImplementedError
 
+    def failure(self) -> str:
+        """A human-readable reason this collector has stopped producing data, or "" if none."""
+        return ""
+
     def close(self) -> None:
         pass
 

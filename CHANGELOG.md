@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Real Pi 4 CSI
+- feat: `scripts/pi_setup.sh` (check, install, start, status, stop/restore, `--dry-run`, `--yes`) builds nexmon_csi on a Pi 4 per the upstream recipe. Only dry-run and check logic tested; UNVERIFIED on hardware.
+- feat: `./install.sh --pi-csi` runs the read-only preflight after installing; no-argument behaviour unchanged.
+- feat: `docs/wallhack.service` is a CSI-capable unit with a dedicated user and ambient capabilities (UNVERIFIED).
+- docs: Pi 4 step-by-step guide, buy list, troubleshooting, and an honest "what this can and cannot see" section; the BCM43455c0 CSI format is int16, not 32-bit packed.
+- feat: `pi_setup.sh install` discloses `apt full-upgrade`, armhf, symlinks and setcap before asking; the archived unauthenticated python2.7 repository now needs `--allow-archived-python27` or a typed phrase, and `--yes` never allows it.
+- feat: `pi_setup.sh` records setcap grants, the armhf architecture and symlinks in `<build-dir>/state`; `restore` removes the setcap grants, offers to remove created symlinks and lists what remains. Upstream `restore-wifi` confirmed to exist in `Makefile.rpi`.
+- change: `start` no longer sets file capabilities on tcpdump under `--yes`; use `--grant-tcpdump-caps` or the systemd unit.
+- feat: the dashboard note shows why the capture process stopped (for example tcpdump permission denied).
+- ci: `bash -n` on the shell scripts.
+
 ### Dashboard upgrade
 - feat: `POST /api/calibrate` resets learned baselines (same-origin check, also now applied to `POST /api/settings`); Calibrate button in the dashboard.
 - feat: light/dark theme toggle (saved in localStorage, follows the OS by default), mobile-friendly header, offline banner and "Waiting for readings" empty states.
@@ -12,6 +23,8 @@
 - ci: GitHub Actions workflow runs pytest (Python 3.9 and 3.12) and `node --check` on push/PR with read-only permissions; not yet run on GitHub (UNVERIFIED).
 - fix: forwarder logs and continues if forwarding a packet fails; CRLF netsh output covered by a test.
 - feat: browser opens by default when run from a terminal (`--no-browser` to skip); `Makefile`, `pyproject.toml` with a `wallhack` command.
+- feat: `wallhack/nexmon.py` and `NexmonCollector` read real nexmon_csi frames from a `tcpdump` pcap stream (`--csi-source nexmon`, `--csi-port`); `--csi-check [SECONDS]` diagnoses a capture. VERIFIED on synthetic frames only, UNVERIFIED on Pi hardware.
+- fix: the forwarder reuses `wallhack/nexmon.py`; docs no longer claim the Pi 4 packs 32-bit CSI (it is int16 I/Q).
 - feat: `tools/csi_forwarder.py` converts nexmon_csi frames to the UDP JSON format (UNVERIFIED on hardware); docs/hardware.md no longer references a missing script.
 - feat: `netsh` parsing no longer depends on the Windows display language; fixture tests added.
 - feat: dashboard has presence/motion/breathing pills and a SIMULATED/REAL chip.
