@@ -125,3 +125,4 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation:none !important; transition:none !important; }
 }
+.exp-tag { padding:1px 8px; margin-left:4px; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; }

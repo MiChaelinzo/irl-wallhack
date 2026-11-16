@@ -11,12 +11,18 @@
 - docs: ZE08-CH2O byte layout cross-checked against two third-party transcriptions of the Winsen manual (PARTIALLY VERIFIED, PDF not fetched); added a literal-frame test.
 - docs: README feature overview and verification table, `docs/hardware.md` sensor parts, Pi 4 wiring, UART setup, limits, and the not-built list (mood, perspiration, through-wall imaging, thermal image).
 - ci: shell syntax check now includes `run.sh`.
+- fix: `EnvironmentHub.poll_once` no longer raises on a driver returning unknown fields (or any driver exception). That sensor is marked error with the reason logged, and the other sensors keep polling.
+- fix: UART framing (PMS5003, ZE08-CH2O) validates the checksum while choosing a frame, so header bytes inside a payload no longer select a misaligned frame. After a corrupt frame the buffer resyncs.
+- fix: ENS160 warm-up and initial start-up readings are held back and reported as a new `warming` sensor state instead of being rated as valid.
 
 ### Dashboard redesign
 - feat: dark-first glass-card dashboard (teal/violet), responsive to phone width, reduced-motion aware, keyboard focus styles.
 - feat: Vitals card (heart rate with pulsing indicator, breathing, activity badge, low-confidence note when CSI is under 8 Hz) and Environment section (AQI ring with EPA bands, PM, CO2, TVOC, HCHO, temperature, humidity, dew point, heat index, surface temperature, sparklines, per-sensor status chips). Simulated values carry a SIMULATED ribbon; missing sensors show a `--sensors` hint.
 - feat: 3D room view (`static/view3d.js`, own projection maths, no libraries): orbit by drag, zoom, auto-rotate, reset. Signal-activity visualisation with schematic positions, not imaging. Projection helpers tested under node (`tests/test_view3d.py`), canvas drawing UNVERIFIED beyond headless screenshots.
 - docs: "About these readings" lists what WiFi cannot sense (mood, perspiration, imaging). `tools/screenshot.py` now writes desktop, 3D and mobile screenshots and fails on JS errors or a blank 3D canvas.
+
+- fix: empty environment tiles show the actual sensor status (error, stale, warming) instead of always suggesting `--sensors`.
+- fix: the heart rate on the Vitals card carries a permanent "experimental" tag.
 
 ### Real Pi 4 CSI
 - feat: `scripts/pi_setup.sh` (check, install, start, status, stop/restore, `--dry-run`, `--yes`) builds nexmon_csi on a Pi 4 per the upstream recipe. Only dry-run and check logic tested; UNVERIFIED on hardware.

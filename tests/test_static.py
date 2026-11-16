@@ -55,3 +55,31 @@ def test_no_external_urls():
 def test_js_syntax(name):
     res = subprocess.run(["node", "--check", str(STATIC / name)], capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
+
+
+def test_heart_rate_has_permanent_experimental_label(client):
+    html = client.get("/").text
+    match = re.search(r'id="heartVal".*?heart rate, bpm(.*?)</div>', html, re.S)
+    assert match and "experimental" in match.group(1)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_empty_tile_hint_reports_actual_sensor_status():
+    source = (STATIC / "app.js").read_text()
+    fn = re.search(r"function emptyTileHint\(env\) \{.*?\n  \}\n", source, re.S).group(0)
+    script = (
+        'var SENSORS_HINT = "no sensor. Start with --sensors";' + fn +
+        'var out = [emptyTileHint(null), emptyTileHint({sensors: {}}),'
+        ' emptyTileHint({sensors: {scd4x: {state: "error", message: "CRC error"}, pms5003: {state: "ok", message: ""}}}),'
+        ' emptyTileHint({sensors: {ens160: {state: "warming", message: "warming up"}}}),'
+        ' emptyTileHint({sensors: {pms5003: {state: "ok", message: ""}}})];'
+        'console.log(JSON.stringify(out));'
+    )
+    res = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    import json
+    none_env, no_sensors, errored, warming, ok_no_data = json.loads(res.stdout)
+    assert none_env == no_sensors == "no sensor. Start with --sensors"
+    assert "scd4x error (CRC error)" in errored and "pms5003" not in errored
+    assert "ens160 warming" in warming
+    assert "--sensors" not in ok_no_data

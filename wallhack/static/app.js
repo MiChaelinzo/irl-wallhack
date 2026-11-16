@@ -152,6 +152,17 @@
     });
   }
 
+  // Explain an empty tile from the real sensor status instead of always suggesting --sensors.
+  function emptyTileHint(env) {
+    var names = Object.keys((env && env.sensors) || {});
+    if (!names.length) { return SENSORS_HINT; }
+    var problems = names.filter(function (n) { return env.sensors[n].state !== "ok"; }).map(function (n) {
+      var st = env.sensors[n];
+      return n + " " + st.state + (st.message ? " (" + st.message + ")" : "");
+    });
+    return problems.length ? "sensor offline: " + problems.join("; ") : "no reading from the configured sensors";
+  }
+
   function tileValue(t, env) {
     if (!env) { return null; }
     var v = t.derived ? env[t.derived] : env.reading[t.field];
@@ -169,7 +180,7 @@
         ref.el.className = "tile empty";
         ref.val.textContent = "--";
         var hint = document.createElement("div"); hint.className = "muted hint";
-        hint.textContent = t.derived ? (env ? "not available for these conditions" : SENSORS_HINT) : SENSORS_HINT;
+        hint.textContent = t.derived ? (env ? "not available for these conditions" : SENSORS_HINT) : emptyTileHint(env);
         ref.val.appendChild(hint);
         drawSpark(ref.spark, []);
         return;
@@ -211,7 +222,7 @@
     drawAqiRing(ring, env.aqi);
     Object.keys(env.sensors || {}).forEach(function (name) {
       var st = env.sensors[name], c = document.createElement("span");
-      c.className = "chip " + (st.state === "ok" ? "ok" : (st.state === "error" ? "error" : (st.state === "stale" ? "stale" : "waiting")));
+      c.className = "chip " + (st.state === "ok" ? "ok" : (st.state === "error" ? "error" : (st.state === "stale" || st.state === "warming" ? "stale" : "waiting")));
       c.textContent = name + ": " + st.state;
       if (st.message) { c.title = st.message; }
       chips.appendChild(c);
