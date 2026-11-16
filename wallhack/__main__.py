@@ -11,7 +11,7 @@ import uvicorn
 from .app import create_app
 from .runtime import SourceUnavailableError
 from .collectors.nexmon import NexmonCollector
-from .config import CSI_SOURCES, LOCAL_HOSTS, load_config
+from .config import CSI_SOURCES, LOCAL_HOSTS, SENSORS, load_config
 from .nexmon import summarize
 
 DEFAULT_CHECK_SECONDS = 10.0
@@ -49,16 +49,24 @@ def main(argv=None) -> None:
     p.add_argument("--csi-port", type=int, help="UDP port nexmon_csi sends to (default 5500)")
     p.add_argument("--csi-check", nargs="?", const=DEFAULT_CHECK_SECONDS, type=float, metavar="SECONDS",
                    help="capture nexmon CSI for SECONDS (default 10), print a diagnosis and exit")
+    p.add_argument("--sensors", help=f"comma list of environment sensors to read ({', '.join(SENSORS)}); needs the sensors extra")
+    p.add_argument("--pms-port", help="serial device of the PMS5003 (default /dev/serial0)")
+    p.add_argument("--hcho-port", help="serial device of the ZE08-CH2O (default /dev/ttyUSB0)")
+    p.add_argument("--i2c-bus", type=int, help="I2C bus number for SCD4x, ENS160 and MLX90614 (default 1)")
     p.add_argument("--config", help="path to config.json")
     p.add_argument("--open", action="store_true", help="open the dashboard in your browser (default when run from a terminal)")
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(a.config)
-    for name in ("source", "scenario", "host", "port", "seed", "sensitivity", "interface", "ping_target", "udp_port", "udp_host", "udp_token", "csi_source", "csi_port"):
+    for name in ("source", "scenario", "host", "port", "seed", "sensitivity", "interface", "ping_target", "udp_port", "udp_host", "udp_token", "csi_source", "csi_port",
+                 "sensors", "i2c_bus"):
         v = getattr(a, name)
         if v is not None:
             setattr(cfg, name, v)
+    for flag, name in (("pms_port", "serial_pms"), ("hcho_port", "serial_hcho")):
+        if getattr(a, flag) is not None:
+            setattr(cfg, name, getattr(a, flag))
     cfg.validate()
     if a.csi_check is not None:
         collector = NexmonCollector(cfg.interface, cfg.csi_port)

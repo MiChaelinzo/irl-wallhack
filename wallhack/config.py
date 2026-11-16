@@ -12,6 +12,10 @@ SOURCES = ("auto", "simulator", "real")
 # header on ":" and cannot parse "[::1]:8000", so Host protection would reject every request.
 CSI_SOURCES = ("", "nexmon")
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
+SENSORS = ("pms5003", "scd4x", "ens160", "ze08", "mlx90614")
+DEFAULT_PMS_PORT = "/dev/serial0"       # Pi primary UART; PMS5003 on GPIO 14/15
+DEFAULT_HCHO_PORT = "/dev/ttyUSB0"      # ZE08-CH2O through a USB-serial adapter
+DEFAULT_I2C_BUS = 1                     # /dev/i2c-1 on Raspberry Pi
 
 
 @dataclass
@@ -29,9 +33,23 @@ class Config:
     udp_token: str = ""           # optional shared secret that UDP packets must include
     csi_source: str = ""          # "" or "nexmon" (Raspberry Pi 4 nexmon_csi via tcpdump)
     csi_port: int = 5500          # UDP port nexmon_csi sends frames to
+    sensors: str = ""             # comma list from SENSORS; "" = no environment sensors
+    serial_pms: str = DEFAULT_PMS_PORT
+    serial_hcho: str = DEFAULT_HCHO_PORT
+    i2c_bus: int = DEFAULT_I2C_BUS
     background: bool = True       # tests set False and step manually
 
+    def sensor_names(self) -> tuple:
+        """The configured sensors as a tuple, in the order given, without duplicates."""
+        names = [n.strip().lower() for n in self.sensors.split(",") if n.strip()]
+        return tuple(dict.fromkeys(names))
+
     def validate(self) -> None:
+        unknown = [n for n in self.sensor_names() if n not in SENSORS]
+        if unknown:
+            raise ValueError(f"unknown sensors {unknown}; choose from {SENSORS}")
+        if self.i2c_bus < 0:
+            raise ValueError("i2c_bus must be 0 or greater")
         if self.source not in SOURCES:
             raise ValueError(f"source must be one of {SOURCES}")
         if not 0.25 <= self.sensitivity <= 4.0:
