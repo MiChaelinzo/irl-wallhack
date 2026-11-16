@@ -25,6 +25,15 @@ def test_index_served(client):
     assert "not produce images" in r.text
 
 
+def test_dashboard_has_new_sections(client):
+    html = client.get("/").text
+    for element_id in ("room3d", "vitalsCard", "heartVal", "activityBadge", "envSection", "envGrid", "rotateBtn", "resetView"):
+        assert f'id="{element_id}"' in html, element_id
+    assert "Not imaging. Positions are schematic." in html
+    assert "About these readings" in html
+    assert "mood" in html.lower() and "perspiration" in html.lower()
+
+
 def test_index_assets_exist_and_served(client):
     html = (STATIC / "index.html").read_text()
     refs = re.findall(r'(?:src|href)="(/static/[^"]+)"', html)
@@ -42,6 +51,7 @@ def test_no_external_urls():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
-def test_app_js_syntax():
-    res = subprocess.run(["node", "--check", str(STATIC / "app.js")], capture_output=True, text=True)
+@pytest.mark.parametrize("name", sorted(p.name for p in STATIC.glob("*.js")))
+def test_js_syntax(name):
+    res = subprocess.run(["node", "--check", str(STATIC / name)], capture_output=True, text=True)
     assert res.returncode == 0, res.stderr

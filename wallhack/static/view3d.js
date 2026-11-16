@@ -12,16 +12,17 @@
   var MOTION_FULL_SCALE = 3;       // motion_value that fills a volume
   var BREATH_SWELL = 0.08;         // fraction of height the breathing pulse adds
   var ARC_LIFT = 0.9, ARC_SEGMENTS = 18, PACKET_COUNT = 3, PACKET_SPEED = 0.35;
-  var CAMERA = { yaw: 0.7, pitch: 0.5, dist: 11, fov: 1.0 };
-  var PITCH_MIN = 0.1, PITCH_MAX = 1.45, DIST_MIN = 6, DIST_MAX = 18, ZOOM_STEP = 1.15;
+  var CAMERA = { yaw: 0.7, pitch: 0.5, dist: 8, fov: 1.0 };
+  var PITCH_MIN = 0.1, PITCH_MAX = 1.45, DIST_MIN = 4, DIST_MAX = 14, ZOOM_STEP = 1.15;
   var AUTO_ROTATE_RAD_S = 0.15, NEAR_PLANE = 0.1;
+  var MIN_ASPECT = 1.3;            // narrower canvases pull the camera back so the room stays in frame
   var TWO_PI = Math.PI * 2;
 
   // ---- pure maths ----------------------------------------------------------
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
   // World point (x right, y up, z toward viewer at yaw 0) to screen pixels.
-  // cam = {yaw, pitch, dist, fov}; view = {w, h}. Returns false when the point is behind the camera.
+  // cam = {yaw, pitch, dist, fov}; view = {w, h, distScale?} (distScale pulls the camera back on narrow canvases). Returns false when the point is behind the camera.
   function project(p, cam, view, out) {
     var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
     var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
@@ -29,7 +30,7 @@
     var z1 = p[0] * sy + p[2] * cy;
     var y2 = p[1] * cp - z1 * sp;
     var z2 = p[1] * sp + z1 * cp;
-    var depth = cam.dist - z2;
+    var depth = cam.dist * (view.distScale || 1) - z2;
     if (depth < NEAR_PLANE) { return false; }
     var scale = (view.h / 2) / Math.tan(cam.fov / 2) / depth;
     out.x = view.w / 2 + x1 * scale;
@@ -65,7 +66,7 @@
   // Deterministic node position for a link inside its zone (index spreads links of one zone apart).
   function linkNodePos(rect, indexInZone, countInZone) {
     var f = (indexInZone + 1) / (countInZone + 1);
-    return [lerp(rect.x0, rect.x1, f), 0.15, rect.z1 - 0.2];
+    return [lerp(rect.x0, rect.x1, f), 0.15, (rect.z0 + rect.z1) / 2];
   }
 
   function volumeHeight(motionValue, breathPhase, breathing) {
@@ -223,6 +224,7 @@
     view.w = w; view.h = h;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.scale(dpr, dpr); view.w = w / dpr; view.h = h / dpr;
+    view.distScale = Math.max(1, MIN_ASPECT / (view.w / view.h));
   }
 
   function frame(now) {

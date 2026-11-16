@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Dashboard redesign
+- feat: dark-first glass-card dashboard (teal/violet), responsive to phone width, reduced-motion aware, keyboard focus styles.
+- feat: Vitals card (heart rate with pulsing indicator, breathing, activity badge, low-confidence note when CSI is under 8 Hz) and Environment section (AQI ring with EPA bands, PM, CO2, TVOC, HCHO, temperature, humidity, dew point, heat index, surface temperature, sparklines, per-sensor status chips). Simulated values carry a SIMULATED ribbon; missing sensors show a `--sensors` hint.
+- feat: 3D room view (`static/view3d.js`, own projection maths, no libraries): orbit by drag, zoom, auto-rotate, reset. Signal-activity visualisation with schematic positions, not imaging. Projection helpers tested under node (`tests/test_view3d.py`), canvas drawing UNVERIFIED beyond headless screenshots.
+- docs: "About these readings" lists what WiFi cannot sense (mood, perspiration, imaging). `tools/screenshot.py` now writes desktop, 3D and mobile screenshots and fails on JS errors or a blank 3D canvas.
+
 ### Real Pi 4 CSI
 - feat: `scripts/pi_setup.sh` (check, install, start, status, stop/restore, `--dry-run`, `--yes`) builds nexmon_csi on a Pi 4 per the upstream recipe. Only dry-run and check logic tested; UNVERIFIED on hardware.
 - feat: `./install.sh --pi-csi` runs the read-only preflight after installing; no-argument behaviour unchanged.
