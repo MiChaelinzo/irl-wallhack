@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Vitals and environment sensing
+- feat: heart rate from CSI (0.8-2.0 Hz, needs 8 Hz or more raw, not quantised, still person, peak ratio 30) and an activity classifier (empty, still, walking, active). Verified on synthetic data only; UNVERIFIED on real CSI. The simulated heartbeat is exaggerated and flagged SIMULATED. New events `heart_detected` and `heart_lost`.
+- feat: `wallhack/environment.py` with US EPA AQI (2024 PM2.5 breakpoints, PM10), dew point, heat index and worst-of air-quality ratings. VERIFIED by unit tests.
+- feat: optional sensor drivers in `wallhack/sensors/` (PMS5003, SCD40/41, ENS160, ZE08-CH2O, MLX90614) with pure frame parsers and an `EnvironmentHub` that reports ok, stale or error per sensor. pyserial and smbus2 are lazy optional imports. Parsers PARTIALLY VERIFIED (hand-built frames); hardware UNVERIFIED.
+- feat: config `sensors`, `serial_pms`, `serial_hcho`, `i2c_bus`, flags `--sensors --pms-port --hcho-port --i2c-bus`, env `WALLHACK_SENSORS` and friends, `./install.sh --sensors`.
+- feat: `status.environment` and `status.vitals`, `GET /api/environment`, `GET /api/vitals`. With a real source and no sensors configured, environment is `null`; the simulator provides a SIMULATED environment.
+- docs: ZE08-CH2O byte layout cross-checked against two third-party transcriptions of the Winsen manual (PARTIALLY VERIFIED, PDF not fetched); added a literal-frame test.
+- docs: README feature overview and verification table, `docs/hardware.md` sensor parts, Pi 4 wiring, UART setup, limits, and the not-built list (mood, perspiration, through-wall imaging, thermal image).
+- ci: shell syntax check now includes `run.sh`.
+
 ### Dashboard redesign
 - feat: dark-first glass-card dashboard (teal/violet), responsive to phone width, reduced-motion aware, keyboard focus styles.
 - feat: Vitals card (heart rate with pulsing indicator, breathing, activity badge, low-confidence note when CSI is under 8 Hz) and Environment section (AQI ring with EPA bands, PM, CO2, TVOC, HCHO, temperature, humidity, dew point, heat index, surface temperature, sparklines, per-sensor status chips). Simulated values carry a SIMULATED ribbon; missing sensors show a `--sensors` hint.
