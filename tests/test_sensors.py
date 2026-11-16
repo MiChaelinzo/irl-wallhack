@@ -110,6 +110,13 @@ def test_ze08_parses_ppb():
     assert ze08_ch2o.parse_frame(ze08_frame(ppb=300)) == {"hcho_ppb": 300.0}
 
 
+def test_ze08_parses_literal_frame_from_manual_example_layout():
+    # FF 17 04 00 | 45 ppb (0x002D) | range 2000 (0x07D0) | checksum computed by hand:
+    # sum(17,04,00,00,2D,07,D0)=0x11F -> low byte 0x1F -> ~0x1F+1 = 0xE1
+    frame = bytes([0xFF, 0x17, 0x04, 0x00, 0x00, 0x2D, 0x07, 0xD0, 0xE1])
+    assert ze08_ch2o.parse_frame(frame) == {"hcho_ppb": 45.0}
+
+
 def test_ze08_rejects_corrupt_frames():
     bad = bytearray(ze08_frame())
     bad[8] ^= 0xFF
