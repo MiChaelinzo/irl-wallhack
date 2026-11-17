@@ -127,3 +127,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
   *, *::before, *::after { animation:none !important; transition:none !important; }
 }
 .exp-tag { padding:1px 8px; margin-left:4px; font-size:.7rem; text-transform:uppercase; letter-spacing:.04em; }
+
+/* static demo build only (demo.js inserts #demoBanner) */
+.banner.demo { display:flex; align-items:center; gap:14px; background:var(--info-bg); border-color:var(--accent); }
+.banner.demo p { margin:0; flex:1; }

@@ -49,6 +49,11 @@ scripts/pi_setup.sh start                                  # pick your router's 
 ```
 Run the script as your normal user; it asks for sudo where needed. `install` runs `apt full-upgrade` as upstream does. Undo with `scripts/pi_setup.sh restore` (see docs/hardware.md for what it does not undo). Add `--dry-run` to any command to only print what it would do.
 
+## Hosted demo (Vercel or any static host)
+`python3 tools/build_demo.py` writes a static, simulated replay to `dist/` (needs numpy only). `vercel.json` runs it on Vercel. The page says it is a simulated replay: it cannot read your WiFi and is not live sensing. Preview locally with `python3 -m http.server -d dist`.
+
+![demo](docs/screenshot-demo.png)
+
 ## Privacy and consent
 Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything.
 

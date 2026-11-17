@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Static Vercel demo
+- feat: `tools/build_demo.py` records the real Python Runtime (Simulator, SensingEngine, simulated environment) into `dist/recording.json`, one frame per WebSocket tick, and assembles a static site with relative paths. Deterministic (byte-identical builds). Needs numpy, not fastapi. No processing is ported to JS.
+- feat: `wallhack/static/demo.js` plays the recording in a loop, with a pause button, a persistent "Simulated replay" banner, and read-only settings and calibrate. `app.js` behaves as before when the demo marker is absent.
+- feat: `vercel.json` (build, output dir, CSP and security headers); `tools/screenshot.py --demo` writes `docs/screenshot-demo.png`. VERIFIED locally with http.server and headless Chromium; an actual Vercel deployment is UNVERIFIED.
+
 ### 3D view upgrade
 - feat: 3D room view on the same 2D canvas, no libraries: gradient floor with distance-fading grid, translucent glowing zone volumes drawn far to near, expanding WiFi rings from the access point, glowing link arcs with comet pulses, a stylised person per occupied zone (breathing swell, heart-rate ring), seeded ambient dust, vignette. Verified by node unit tests (seeded dust, quality helpers) and one headless Chromium screenshot run; visuals on a real Pi UNVERIFIED.
 - feat: quality selector (low, medium, high; default medium) saved in localStorage `wallhack.quality`. Low caps devicePixelRatio and frame rate and skips glow and dust. A sustained average frame time above 40 ms drops to low automatically (not saved).
