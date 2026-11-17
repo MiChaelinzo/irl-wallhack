@@ -50,7 +50,23 @@ scripts/pi_setup.sh start                                  # pick your router's 
 Run the script as your normal user; it asks for sudo where needed. `install` runs `apt full-upgrade` as upstream does. Undo with `scripts/pi_setup.sh restore` (see docs/hardware.md for what it does not undo). Add `--dry-run` to any command to only print what it would do.
 
 ## Hosted demo (Vercel or any static host)
-`python3 tools/build_demo.py` writes a static, simulated replay to `dist/` (needs numpy only). `vercel.json` runs it on Vercel. The page says it is a simulated replay: it cannot read your WiFi and is not live sensing. Preview locally with `python3 -m http.server -d dist`.
+`python3 tools/build_demo.py` writes a static, simulated replay to `dist/` (needs numpy only). The recording is produced by the real Python pipeline (simulator and signal processing), one frame per WebSocket tick, and is deterministic. The page says it is a simulated replay: there is no WebSocket, it cannot read your WiFi and it is not live sensing. Heart rate in the demo is experimental and may show `--`. Preview locally with `python3 -m http.server -d dist`.
+
+### Deploy to Vercel
+No Vercel account details are stored in the repo. Either way, Vercel reads `vercel.json`, which runs `pip install numpy && python3 tools/build_demo.py` and serves `dist/`.
+
+**Dashboard import**
+1. Push this repo to your GitHub account.
+2. In Vercel choose Add New, Project, and import the repo.
+3. Set Framework Preset to Other. Leave build and output settings alone (they come from `vercel.json`).
+4. Click Deploy.
+
+**CLI**
+```
+npx vercel          # preview deployment
+npx vercel --prod   # production deployment
+```
+A real Vercel deployment has not been tried from this repo (UNVERIFIED, see the table).
 
 ![demo](docs/screenshot-demo.png)
 
@@ -85,6 +101,11 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | `/api/environment`, `/api/vitals`, simulated flag, real source without sensors gives `null` | VERIFIED (automated tests) |
 | 3D view projection helpers (`static/view3d.js`, run under node) | VERIFIED |
 | 3D view and environment tiles in headless Chromium (simulator data: no JS errors, SIMULATED ribbons, non-blank canvas, three screenshots) | VERIFIED (one run in this sandbox, simulated data only; touch orbit on phones not tried) |
+| 3D upgrade (quality levels, reduced motion, seeded dust helpers) under node tests | VERIFIED (automated tests) |
+| Static demo build (`tools/build_demo.py`, deterministic output, tests) and playback in headless Chromium via `python3 -m http.server` (`docs/screenshot-demo.png`, no JS errors) | VERIFIED (one run in this sandbox, Chromium only) |
+| Demo heart rate | PARTIALLY VERIFIED (experimental; may show `--` in the replay) |
+| Actual deployment on Vercel (`vercel.json` build, headers, CSP) | UNVERIFIED (no Vercel access from the sandbox) |
+| 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED (low quality and auto-downgrade exist but were never measured on a Pi) |
 | Mood, perspiration, through-wall imaging | NOT BUILT (no valid method; see above) |
 | Real collectors on Raspberry Pi 4 | UNVERIFIED |
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
