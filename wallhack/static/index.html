@@ -70,6 +70,13 @@
       <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
       <button id="zoomOut" type="button" aria-label="Zoom out">&minus;</button>
       <button id="resetView" type="button">Reset view</button>
+      <label class="quality-pick">Quality
+        <select id="quality3d" aria-label="3D graphics quality">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
     </div>
     <canvas id="room3d" class="room3d" tabindex="0" role="img" aria-label="3D signal-activity view of the room. Drag to orbit, scroll to zoom, arrow keys also work."></canvas>
     <p class="muted caption">Signal-activity visualisation. Not imaging. Positions are schematic.</p>

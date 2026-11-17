@@ -533,9 +533,16 @@
     $("zoomIn").addEventListener("click", Room3D.zoomIn);
     $("zoomOut").addEventListener("click", Room3D.zoomOut);
     $("resetView").addEventListener("click", Room3D.reset);
-    if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      Room3D.setAutoRotate(false); $("rotateBtn").setAttribute("aria-pressed", "false");
-    }
+    if (!Room3D.isAutoRotating()) { $("rotateBtn").setAttribute("aria-pressed", "false"); }
+    var qualitySel = $("quality3d");
+    var savedQuality = load("wallhack.quality");
+    if (savedQuality) { Room3D.setQuality(savedQuality); }
+    qualitySel.value = Room3D.getQuality();
+    qualitySel.addEventListener("change", function () {
+      Room3D.setQuality(qualitySel.value); store("wallhack.quality", Room3D.getQuality());
+    });
+    // automatic drop on a slow device updates the selector but is not saved as the user's choice
+    Room3D.onQualityChange(function (q) { qualitySel.value = q; });
     drawGauge($("gauge"), null); drawHeat($("heat"), []);
     connect();
     startPolling();

@@ -12,7 +12,7 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 ## Features
 - **Vitals from WiFi**: breathing (0.1-0.5 Hz) and heart rate (0.8-2.0 Hz, gated at 8 Hz or more raw sampling and a strong spectral peak, peak ratio 30). Activity badge: empty, still, walking, active. The walking cadence rule is a heuristic that has only been tried on the simulator.
 - **Environment tiles** (optional sensors, see below): PM, CO2, TVOC, HCHO, temperature, humidity, dew point, heat index, surface temperature, AQI ring and a worst-of air-quality rating with its drivers. Ratings are general guidance bands, not medical advice.
-- **3D room view**: plain canvas, own projection maths, drag to orbit, zoom, auto-rotate. It is a schematic signal-activity visualisation, not imaging.
+- **3D room view**: plain canvas, own projection maths, drag to orbit, zoom, auto-rotate, a Low/Medium/High quality selector for Raspberry Pi class devices, and reduced-motion support. It is a schematic signal-activity visualisation, not imaging.
 - **Simulator**: every simulated value (vitals and environment) is marked SIMULATED. The simulated heartbeat is exaggerated so the demo shows it. With a real source and no sensors configured, environment tiles show "no sensor" and nothing is invented.
 
 ![Mobile layout](docs/screenshot-mobile.png)
