@@ -1,15 +1,18 @@
 """Owns the sensing engine, the active data source (simulator or real collectors) and history."""
 import logging
+import sqlite3
 import threading
 import time
 from collections import deque
+from pathlib import Path
 from typing import Deque, List, Optional
 
 from .collectors import Collector, NexmonCollector, detect_collector
 from .collectors.ping import PingCollector
 from .collectors.udp_csi import UdpCsiCollector
 from .config import Config
-from .environment import environment_report
+from .environment import EnvironmentReading, environment_report, us_epa_aqi
+from .history import History
 from .processing import SensingEngine
 from .twin import load_twin, save_twin
 from .sensors.hub import EnvironmentHub, build_hub
@@ -26,7 +29,7 @@ class SourceUnavailableError(ValueError):
 
 
 class Runtime:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, history: Optional[History] = None):
         self.config = config
         self.lock = threading.RLock()          # guards engine, samples and status; held briefly
         self._source_lock = threading.Lock()   # serialises collector polling and reconfiguration
@@ -41,6 +44,10 @@ class Runtime:
         # reopen serial ports. With no sensors configured and a real source, environment stays None.
         self.hub: Optional[EnvironmentHub] = build_hub(config) if config.sensor_names() else None
         self.twin = load_twin(config.data_dir)
+        if history is None and config.history_enabled:
+            history = History(str(Path(config.data_dir) / "history.db"), config.history_max_rows)
+        self.history: Optional[History] = history
+        self._history_t = float("-inf")
         self.collectors: List[Collector] = []
         self.source = "simulator"
         self.note = ""
@@ -105,6 +112,9 @@ class Runtime:
                 self.engine = SensingEngine(self.config.sensitivity)
                 self.samples.clear()
                 self.seq = 0
+                self._history_t = float("-inf")
+                if self.history is not None:
+                    self.history.new_session()
                 self.sim = None
                 self.sim_environment = None
                 self.note = ""
@@ -136,6 +146,33 @@ class Runtime:
         self.seq += 1
         self.samples.append({"seq": self.seq, "t": round(t, 3), "link": link, "zone": zone, "rssi": round(rssi, 2)})
         self.engine.feed(t, link, zone, rssi)
+        if self.history is not None and t - self._history_t >= self.config.history_step_s:
+            self._history_t = t
+            self._record_history(t)
+
+    def _environment_reading(self, t: float) -> Optional[EnvironmentReading]:
+        if self.hub is not None:
+            return self.hub.reading()
+        if self.sim_environment is not None:
+            return self.sim_environment.reading(t)
+        return None
+
+    def _record_history(self, t: float) -> None:
+        summary = self.engine.summary()
+        links = list(self.engine.links.values())
+        env = self._environment_reading(t)
+        aqi = us_epa_aqi(env.pm25, env.pm10) if env else None
+        try:
+            self.history.record(
+                t, occupancy=summary["presence"], motion=summary["motion"],
+                breathing_bpm=summary["breathing_bpm"], heart_bpm=summary["heart_bpm"],
+                signal_dbm=sum(p.state.rssi for p in links) / len(links) if links else None,
+                csi_trend=sum(p.state.motion_value for p in links) / len(links) if links else None,
+                pm25=env.pm25 if env else None, co2=env.co2 if env else None,
+                tvoc_ppb=env.tvoc_ppb if env else None, temperature_c=env.temperature_c if env else None,
+                humidity_pct=env.humidity_pct if env else None, aqi=aqi["aqi"] if aqi else None)
+        except sqlite3.Error:
+            log.exception("could not write history row")
 
     def step_sim(self, n: int) -> None:
         """Advance the simulator by n time steps (used by the loop and by tests)."""
@@ -194,6 +231,8 @@ class Runtime:
             self._thread.join(timeout=2)
         for col in self.collectors:
             col.close()
+        if self.history is not None:
+            self.history.close()
 
     # ---- settings & views ---------------------------------------------------
     def settings(self) -> dict:

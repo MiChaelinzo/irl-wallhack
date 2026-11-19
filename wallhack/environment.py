@@ -154,6 +154,52 @@ def rate_humidity(pct: Optional[float]) -> Optional[str]:
     return LEVELS[-1]
 
 
+# ---- Healthy / Warning / Danger status per metric -------------------------------------------------
+STATUS_LEVELS = ("Healthy", "Warning", "Danger")
+PM25_STATUS_LIMITS = (9.0, 35.4)       # EPA Good / Moderate upper bounds (ug/m3)
+PM10_STATUS_LIMITS = (54.0, 154.0)     # EPA Good / Moderate upper bounds (ug/m3)
+TEMPERATURE_RANGES_C = ((18.0, 26.0), (16.0, 30.0))   # general comfort guidance, not medical advice
+_LEVEL_TO_STATUS = {"good": "Healthy", "fair": "Warning", "poor": "Danger", "bad": "Danger"}
+
+
+def _status_by_limits(value: Optional[float], limits) -> Optional[str]:
+    if value is None:
+        return None
+    for status, limit in zip(STATUS_LEVELS, limits):
+        if value <= limit:
+            return status
+    return STATUS_LEVELS[-1]
+
+
+def rate_temperature(temperature_c: Optional[float]) -> Optional[str]:
+    if temperature_c is None:
+        return None
+    for status, (low, high) in zip(STATUS_LEVELS, TEMPERATURE_RANGES_C):
+        if low <= temperature_c <= high:
+            return status
+    return STATUS_LEVELS[-1]
+
+
+def metric_statuses(reading: EnvironmentReading) -> Dict[str, Optional[dict]]:
+    """Healthy/Warning/Danger per metric: CO2, humidity, temperature, TVOC, PM2.5, PM10 and AQI.
+    A metric without data is None. 'poor' and 'bad' ratings both map to Danger."""
+    aqi = us_epa_aqi(reading.pm25, reading.pm10)
+    rows = {
+        "co2": (reading.co2, "ppm", _map_level(rate_co2(reading.co2))),
+        "humidity": (reading.humidity_pct, "%", _map_level(rate_humidity(reading.humidity_pct))),
+        "temperature": (reading.temperature_c, "C", rate_temperature(reading.temperature_c)),
+        "tvoc": (reading.tvoc_ppb, "ppb", _map_level(rate_tvoc(reading.tvoc_ppb))),
+        "pm25": (reading.pm25, "ug/m3", _status_by_limits(reading.pm25, PM25_STATUS_LIMITS)),
+        "pm10": (reading.pm10, "ug/m3", _status_by_limits(reading.pm10, PM10_STATUS_LIMITS)),
+        "aqi": (aqi["aqi"] if aqi else None, "", _map_level(rate_aqi(aqi["aqi"]) if aqi else None)),
+    }
+    return {k: None if v[0] is None else {"value": v[0], "unit": v[1], "status": v[2]} for k, v in rows.items()}
+
+
+def _map_level(level: Optional[str]) -> Optional[str]:
+    return None if level is None else _LEVEL_TO_STATUS[level]
+
+
 def ratings(reading: EnvironmentReading) -> Dict[str, Optional[str]]:
     aqi = us_epa_aqi(reading.pm25, reading.pm10)
     return {"particulates": rate_aqi(aqi["aqi"]) if aqi else None,
@@ -178,5 +224,5 @@ def environment_report(reading: EnvironmentReading) -> dict:
     return {"reading": reading.as_dict(), "aqi": us_epa_aqi(reading.pm25, reading.pm10),
             "dew_point_c": None if dew is None else round(dew, 1),
             "heat_index_c": None if heat is None else round(heat, 1),
-            "ratings": ratings(reading), "overall": overall_air_quality(reading),
+            "ratings": ratings(reading), "status": metric_statuses(reading), "overall": overall_air_quality(reading),
             "simulated": reading.simulated}

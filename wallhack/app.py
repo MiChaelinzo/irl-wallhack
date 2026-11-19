@@ -142,6 +142,18 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    @app.get("/api/history")
+    def history(t_from: float = Query(0.0, alias="from", ge=0), to: Optional[float] = Query(None, ge=0),
+                step: float = Query(5.0, gt=0)):
+        """Downsampled local history for the current session: occupancy, motion, vitals, signal, air."""
+        if runtime.history is None:
+            raise HTTPException(status_code=404, detail="history is disabled (history_enabled=false)")
+        try:
+            return {"session_t": runtime.engine.last_t, "step": step,
+                    "rows": runtime.history.query(t_from, to, step)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
         # Browsers do not apply the same-origin policy to WebSockets, so check it here.

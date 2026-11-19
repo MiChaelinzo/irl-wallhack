@@ -39,6 +39,9 @@ class Config:
     serial_hcho: str = DEFAULT_HCHO_PORT
     i2c_bus: int = DEFAULT_I2C_BUS
     data_dir: str = field(default_factory=lambda: DEFAULT_DATA_DIR)  # read at call time so tests can redirect it
+    history_enabled: bool = True  # keep a local SQLite history under data_dir
+    history_step_s: float = 5.0   # seconds of sensing time between history rows
+    history_max_rows: int = 17280  # retention limit: oldest rows are deleted beyond this
     background: bool = True       # tests set False and step manually
 
     def sensor_names(self) -> tuple:
@@ -60,6 +63,10 @@ class Config:
             raise ValueError(f"csi_source must be one of {CSI_SOURCES}")
         if not 1 <= self.csi_port <= 65535:
             raise ValueError("csi_port must be 1-65535")
+        if self.history_step_s <= 0:
+            raise ValueError("history_step_s must be greater than 0")
+        if self.history_max_rows < 1:
+            raise ValueError("history_max_rows must be at least 1")
         if not 1 <= self.port <= 65535:
             raise ValueError("port must be 1-65535")
 
