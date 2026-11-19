@@ -26,6 +26,14 @@ def is_loopback(host: Optional[str]) -> bool:
     return host in LOOPBACK_CLIENTS
 
 
+def host_name(header: Optional[str]) -> str:
+    """Hostname part of a Host header value, lowercased, without port or IPv6 brackets."""
+    value = (header or "").strip().lower()
+    if value.startswith("["):
+        return value[1:].partition("]")[0]
+    return value.partition(":")[0]
+
+
 def lan_address() -> str:
     """This machine's LAN IPv4 address. Connecting a UDP socket sends no packet."""
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -56,21 +64,33 @@ def _credential(headers: dict) -> Optional[str]:
 class PairingMiddleware:
     """Pure ASGI middleware so WebSocket connections are checked too."""
 
-    def __init__(self, app, token: str):
+    def __init__(self, app, token: str, allowed_hosts=()):
         self.app, self.token = app, token
+        self.allowed_hosts = frozenset(h.lower() for h in allowed_hosts)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
             return await self.app(scope, receive, send)
         client = (scope.get("client") or (None, None))[0]
-        if is_loopback(client) or scope["path"] == PAIR_PATH:
+        headers = dict(scope["headers"])
+        if is_loopback(client):
+            # Loopback is trusted only for the owner's own host names. A rebinding page reaches
+            # this socket with a foreign Host header and must not inherit that trust.
+            if host_name(headers.get(b"host", b"").decode("latin-1")) in self.allowed_hosts:
+                return await self.app(scope, receive, send)
+            return await self._refuse(scope, receive, send, 400, "host not allowed")
+        if scope["path"] == PAIR_PATH:
             return await self.app(scope, receive, send)
-        if token_matches(_credential(dict(scope["headers"])), self.token):
+        if token_matches(_credential(headers), self.token):
             return await self.app(scope, receive, send)
+        await self._refuse(scope, receive, send, 401, "pairing required: scan the QR code shown on the host machine")
+
+    @staticmethod
+    async def _refuse(scope, receive, send, status, detail):
         if scope["type"] == "websocket":
             await receive()
             return await send({"type": "websocket.close", "code": 1008})
-        body = json.dumps({"detail": "pairing required: scan the QR code shown on the host machine"}).encode()
-        await send({"type": "http.response.start", "status": 401,
+        body = json.dumps({"detail": detail}).encode()
+        await send({"type": "http.response.start", "status": status,
                     "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
         await send({"type": "http.response.body", "body": body})

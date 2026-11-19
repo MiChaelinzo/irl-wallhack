@@ -1,5 +1,6 @@
 """FastAPI application: JSON API, WebSocket stream and static dashboard."""
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,6 +19,8 @@ from .config import LOCAL_HOSTS, Config, load_config
 from . import game, judge, llm, pairing, qr, rfmodel
 from .runtime import WS_EVENTS_PER_FRAME, WS_TICK_S, Runtime
 from .twin import TwinError
+
+MAX_BODY_BYTES = 1_000_000
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("wallhack")
@@ -45,7 +48,10 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     if config.lan:
         # LAN opt-in: the host names are unknown, so a random pairing token guards every non-loopback request.
         app.state.pair_token = pairing.new_token()
-        app.add_middleware(pairing.PairingMiddleware, token=app.state.pair_token)
+        lan_hosts = ["localhost", "127.0.0.1", "::1", pairing.lan_address()]
+        if config.host not in lan_hosts and config.host != "0.0.0.0":
+            lan_hosts.append(config.host)
+        app.add_middleware(pairing.PairingMiddleware, token=app.state.pair_token, allowed_hosts=lan_hosts)
     elif config.host in LOCAL_HOSTS:
         # Blocks DNS rebinding: a loopback server must only answer to its own names.
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
@@ -105,7 +111,7 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         require_same_origin(request)
         require_json(request)
         try:
-            update = SettingsUpdate(**(await request.json()))
+            update = SettingsUpdate(**(await read_json(request)))
         except (ValueError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=f"invalid settings: {exc}")
         try:
@@ -113,6 +119,22 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return runtime.settings()
+
+    async def read_json(request: Request):
+        """Parse a JSON body, refusing more than MAX_BODY_BYTES before it is fully buffered."""
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="request body too large")
+        chunks, size = [], 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                raise HTTPException(status_code=413, detail="request body too large")
+            chunks.append(chunk)
+        try:
+            return json.loads(b"".join(chunks))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid JSON: {exc}")
 
     def require_json(request: Request) -> None:
         # Requiring JSON forces a CORS preflight for cross-site pages, which this server never approves.
@@ -127,10 +149,7 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     async def put_twin(request: Request):
         require_same_origin(request)
         require_json(request)
-        try:
-            body = await request.json()
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=f"invalid JSON: {exc}")
+        body = await read_json(request)
         try:
             return await run_in_threadpool(runtime.set_twin, body)
         except TwinError as exc:
@@ -177,10 +196,7 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         """Optional LLM rewording of the rule findings. Cloud providers need confirm_off_device=true."""
         require_same_origin(request)
         require_json(request)
-        try:
-            body = await request.json()
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=f"invalid JSON: {exc}")
+        body = await read_json(request)
         confirm = isinstance(body, dict) and body.get("confirm_off_device") is True
         try:
             return await run_in_threadpool(runtime.explain_insights, confirm)
@@ -198,6 +214,9 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="LAN mode is off. Start with --lan to pair a phone.")
         if not pairing.is_loopback(request.client.host if request.client else None):
             raise HTTPException(status_code=403, detail="the pairing URL is only shown on the host machine")
+        if request.headers.get("origin") is not None:
+            # Browsers attach Origin to cross-site fetches; the owner's own page does a plain same-origin GET.
+            raise HTTPException(status_code=403, detail="the pairing URL is not available to cross-origin requests")
         url = f"http://{pairing.lan_address()}:{config.port}{pairing.PAIR_PATH}?token={app.state.pair_token}"
         return {"url": url, "qr": qr.encode(url),
                 "note": "Open on your phone while on the same network. Treat it like a password."}

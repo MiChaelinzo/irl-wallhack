@@ -75,6 +75,53 @@ def test_pair_url_is_loopback_only_and_off_by_default(monkeypatch):
         assert off.get("/pair?token=x").status_code == 403
 
 
+def test_loopback_client_with_foreign_host_is_refused(monkeypatch):
+    """DNS rebinding: the page reaches 127.0.0.1 but its Host header is the attacker's name."""
+    monkeypatch.setattr(pairing, "lan_address", lambda: "192.168.1.10")
+    app, evil = make(True, client=LOCAL, base="http://evil.example")
+    with evil:
+        for path in ("/api/pair", "/api/status", "/"):
+            assert evil.get(path).status_code == 400, path
+        assert evil.put("/api/twin", json={}).status_code == 400
+        with pytest.raises(WebSocketDisconnect):
+            with evil.websocket_connect("/ws"):
+                pass
+    for base in ("http://localhost:8000", "http://127.0.0.1:8000", "http://192.168.1.10:8000"):
+        _, owner = make(True, client=LOCAL, base=base)
+        with owner:
+            assert owner.get("/api/status").status_code == 200, base
+
+
+def test_pair_url_refused_when_origin_header_present(monkeypatch):
+    monkeypatch.setattr(pairing, "lan_address", lambda: "192.168.1.10")
+    _, host = make(True, client=LOCAL)
+    with host:
+        assert host.get("/api/pair", headers={"Origin": "http://evil.example"}).status_code == 403
+        assert host.get("/api/pair").status_code == 200
+
+
+def test_host_name_parsing():
+    assert pairing.host_name("LocalHost:8000") == "localhost"
+    assert pairing.host_name("[::1]:8000") == "::1"
+    assert pairing.host_name(None) == ""
+
+
+def test_oversized_json_bodies_are_refused():
+    app = create_app(Config(source="simulator", background=False))
+    big = b'{"x":"' + b"a" * 1_100_000 + b'"}'
+    with TestClient(app, base_url="http://localhost") as c:
+        h = {"Content-Type": "application/json"}
+        assert c.put("/api/twin", content=big, headers=h).status_code == 413
+        assert c.post("/api/insights/explain", content=big, headers=h).status_code == 413
+        assert c.post("/api/settings", content=big, headers=h).status_code == 413
+        assert c.put("/api/twin", content=b"{bad", headers=h).status_code == 422
+
+
+def test_llm_provider_lists_match():
+    from wallhack import config, llm
+    assert config.LLM_PROVIDERS == llm.PROVIDERS
+
+
 def test_tokens_are_random_and_compared_safely():
     assert pairing.new_token() != pairing.new_token() and len(pairing.new_token()) >= 32
     assert pairing.token_matches("abc", "abc") and not pairing.token_matches("abd", "abc")
