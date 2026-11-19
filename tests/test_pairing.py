@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from wallhack import pairing
+from wallhack import pairing, qr
 from wallhack.app import create_app
 from wallhack.config import Config, load_config
 
@@ -68,6 +68,7 @@ def test_pair_url_is_loopback_only_and_off_by_default(monkeypatch):
         j = host.get("/api/pair").json()
         assert j["url"] == f"http://192.168.1.10:8000/pair?token={app.state.pair_token}"
         assert host.get("/api/status").status_code == 200    # the host machine needs no token
+        assert j["qr"] == qr.encode(j["url"]) and "token=" + app.state.pair_token in j["url"]
     _, off = make(False, client=LOCAL, base="http://localhost")
     with off:
         assert off.get("/api/pair").status_code == 404
