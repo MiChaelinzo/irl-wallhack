@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Review fixes
+- fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
+- fix: JSON bodies on `PUT /api/twin`, `POST /api/settings` and `POST /api/insights/explain` are capped at 1 MB (413).
+- fix: judge item `mobile` is PARTIALLY VERIFIED and tracks the real-phone README row. A test asserts `config.LLM_PROVIDERS == llm.PROVIDERS`.
+- docs: `confirm_off_device` is a client-side consent flag, not a server-enforced policy (documented, not changed).
+
 ### Docs and polish
 - docs: README run instructions per mode, LLM provider table, status of the ten platform items, expanded privacy notice.
 - ci: install opencv-python-headless so the QR decode tests run in CI.

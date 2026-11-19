@@ -92,7 +92,7 @@ New endpoints, all local and simulated unless real sensors are attached:
 | `GET /api/pair` | LAN mode only, from the host machine only: the pairing URL for a phone and its QR code as module rows. |
 | `GET /api/judge` | Judge page items with status and verification label (kept consistent with the table below by a test). |
 
-**LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
+**LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. In LAN mode requests from the host machine are trusted only when the Host header is `localhost`, `127.0.0.1`, `::1`, the LAN address or the configured host (blocks DNS rebinding). Cloud LLM use needs the `confirm_off_device` flag in the request, which is a consent prompt for the owner and is not enforced against a paired phone. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
 
 ## How to run each mode
 All modes start from `make run` (or `python -m wallhack`) and open `http://127.0.0.1:8000`. Add `--source simulator` to avoid needing hardware.
@@ -175,7 +175,7 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | Twin validation and persistence, RF model determinism and monotonicity, history retention and sessions, status bands, insight rules, scores, game scoring (pytest) | VERIFIED (automated tests, simulated data) |
 | RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
 | LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
-| LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |
+| LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted, loopback client with a foreign Host header refused (DNS rebinding), `/api/pair` refused with an Origin header | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |
 | Demo exports (`history.json`, `twin.json`, `insights.json`, `scores.json`, `scenario.json`, `health.json`), numpy pinned in `vercel.json` | VERIFIED locally (deterministic build); Vercel build with the pinned numpy UNVERIFIED |
 | Mood, perspiration, thoughts, through-wall imaging | NOT BUILT (no valid method; see above) |
 | Smart Home Automation and enterprise analytics (Future) | NOT BUILT (only read-only air-quality status cards exist; nothing controls a device) |
