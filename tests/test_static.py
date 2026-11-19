@@ -99,3 +99,30 @@ def test_view3d_honours_reduced_motion():
     js = (STATIC / "view3d.js").read_text()
     assert "prefers-reduced-motion" in js
     assert "STILL_TIME" in js
+
+
+def test_dashboard_has_digital_twin_panels(client):
+    html = client.get("/").text
+    for element_id in ("scoreStrip", "floorSel", "viewMode", "heatToggle", "tlSlider", "playBadge", "insightsBody",
+                       "insightsReco", "llmExplain", "homeGrid", "healthCard", "dsList", "dsSave", "gameCanvas", "gameCands"):
+        assert f'id="{element_id}"' in html, element_id
+    for script in ("twin.js", "panels.js", "game.js"):
+        assert f'src="/static/{script}"' in html
+
+
+def test_health_mode_labels_unsupported_metrics(client):
+    html = client.get("/").text
+    assert "Not medical data. For research purposes only." in html
+    for label in ("Mood", "Perspiration", "Thoughts", "Through-wall imaging"):
+        assert f"{label}: Not supported" in html, label
+    assert "Experimental" in html
+
+
+def test_llm_panel_is_labelled_unverified(client):
+    assert "UNVERIFIED" in client.get("/").text
+
+
+def test_new_scripts_have_no_inline_handlers_or_scripts(client):
+    html = client.get("/").text
+    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html)
+    assert not re.search(r"\son(click|load|change)=", html)
