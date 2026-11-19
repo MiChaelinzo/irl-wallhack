@@ -47,6 +47,8 @@
       return r.json();
     });
   }
+  // Shared with twin.js, panels.js and game.js, which load after this file.
+  window.Wallhack = { getJson: getJson, demo: DEMO };
   function colorFor(link) {
     var i = linkOrder.indexOf(link);
     if (i < 0) { linkOrder.push(link); i = linkOrder.length - 1; }
@@ -116,7 +118,7 @@
 
   function palette3d() {
     return { bad: css("--bad"), ok: css("--ok"), muted: css("--muted"), line: css("--line"), fg: css("--fg"),
-             accent: css("--accent"), accent2: css("--accent2") };
+             accent: css("--accent"), accent2: css("--accent2"), warn: css("--warn") };
   }
 
   // ---- vitals ------------------------------------------------------------

@@ -87,3 +87,32 @@ def test_quality_helpers(result):
     assert result["qualities"] == ["medium", "high", "medium"]
     assert result["slow"] == "low"
     assert result["fast"] == "high"
+
+
+TWIN_SCRIPT = """
+const v = require(process.argv[1]);
+const twin = { floors: [{ width_m: 10, depth_m: 8, height_m: 2.6, level: 0 }, { width_m: 10, depth_m: 8, height_m: 2.5, level: 1 }] };
+const ext = v.twinExtent(twin), s = v.twinScale(twin);
+console.log(JSON.stringify({
+  scale: s, ext,
+  centre: v.twinPoint(5, 4, 0, s, ext), corner: v.twinPoint(0, 0, 0, s, ext),
+  stacked: [0, 1].map(l => v.floorElevation(twin.floors[l], true, ext, s)),
+  single: v.floorElevation(twin.floors[1], false, ext, s),
+  span: v.openingSpan({ x1: 0, y1: 0, x2: 10, y2: 0 }, { pos: 2, width: 1 }),
+  clipped: v.openingSpan({ x1: 0, y1: 0, x2: 4, y2: 0 }, { pos: 3.5, width: 2 }),
+  heat: [-45, -65, -95].map(r => v.heatColor(r)),
+}));
+"""
+
+
+def test_twin_geometry_helpers():
+    res = subprocess.run(["node", "-e", TWIN_SCRIPT, str(STATIC / "view3d.js")], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["scale"] == pytest.approx(0.6)               # 6 m / 10 m fits the schematic room
+    assert out["centre"] == [0, 0, 0]
+    assert out["corner"][0] < 0 and out["corner"][2] < 0
+    assert out["stacked"][0] == 0 and out["stacked"][1] > 0 and out["single"] == 0
+    assert out["span"] == [[2, 0], [3, 0]]
+    assert out["clipped"] == [[3.5, 0], [4, 0]]
+    assert out["heat"][0] != out["heat"][2]                  # strong and weak signal use different colours
