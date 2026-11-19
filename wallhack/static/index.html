@@ -10,6 +10,10 @@
 <header>
   <h1><span class="logo" aria-hidden="true"></span>Wallhack <span class="sub">WiFi sensing</span></h1>
   <div class="hdr-right">
+    <nav class="nav" aria-label="Pages">
+      <a href="/mobile" data-page="/mobile">Mobile</a>
+      <a href="/judge" data-page="/judge">Judge mode</a>
+    </nav>
     <span id="source" class="chip">source: ?</span>
     <span id="mode" class="chip" hidden></span>
     <span id="conn" class="chip warn">connecting</span>
@@ -188,6 +192,24 @@
     <p class="muted">All signal values are MODEL ESTIMATES from a simple wall-attenuation model. The apartment is a simulated scenario.</p>
   </section>
 
+  <section class="card wide" id="pairCard" aria-labelledby="hPair">
+    <h2 id="hPair">Mobile companion</h2>
+    <p class="muted">See occupancy, sensors and vitals on a phone, with alerts when someone arrives. <a href="/mobile" data-page="/mobile">Open the mobile view</a>.</p>
+    <div class="row tools"><button id="pairShow" type="button">Show pairing QR</button></div>
+    <div class="pair-body">
+      <canvas id="pairQr" width="1" height="1" role="img" aria-label="QR code with the pairing link" hidden></canvas>
+      <div>
+        <code id="pairUrl" class="pair-url" hidden></code>
+        <p id="pairMsg" class="muted" role="status"></p>
+      </div>
+    </div>
+    <ol class="muted pair-steps">
+      <li>Stop Wallhack and start it again with <code>python -m wallhack --lan</code> (or set <code>WALLHACK_LAN=1</code>).</li>
+      <li>Open this dashboard on the computer running Wallhack, press Show pairing QR, and scan it with the phone on the same network.</li>
+    </ol>
+    <p class="muted"><strong>Security.</strong> LAN mode is off by default. When on, the server listens on your whole network and every other device needs the random pairing token in this link. The QR works like a password: anyone who sees it can read your sensing data until you restart Wallhack. Traffic is plain http, so use a network you trust.</p>
+  </section>
+
   <section class="card wide env" id="envSection" aria-labelledby="hEnv">
     <h2 id="hEnv">Environment</h2>
     <div id="envHead" class="env-head"></div>
@@ -267,6 +289,7 @@
 </aside>
 
 <footer class="muted" id="disclaimer">Estimates from signal fluctuations. Not imaging.</footer>
+<script src="/static/common.js"></script>
 <script src="/static/view3d.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/twin.js"></script>

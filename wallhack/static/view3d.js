@@ -22,16 +22,19 @@
   var QUALITY_LEVELS = ["low", "medium", "high"];
   var DEFAULT_QUALITY = "medium";
   // Per level: devicePixelRatio cap, frame cap (0 = display rate), dust particles, wave rings, glow on/off.
+  // flow: WiFi and activity particles per source (0 = none); bloom: additive blending; dof: depth-of-field blur on particles.
   // heatStep: coverage overlay samples every Nth cell, so low quality draws far fewer quads.
   var QUALITY_PROFILES = {
-    low:    { dprCap: 1,   fps: 20, dust: 0,   rings: 2, glow: false, heatStep: 2 },
-    medium: { dprCap: 1.5, fps: 0,  dust: 36,  rings: 3, glow: true,  heatStep: 1 },
-    high:   { dprCap: 2,   fps: 0,  dust: 110, rings: 4, glow: true,  heatStep: 1 }
+    low:    { dprCap: 1,   fps: 20, dust: 0,   rings: 2, glow: false, heatStep: 2, flow: 0,  bloom: false, dof: false },
+    medium: { dprCap: 1.5, fps: 0,  dust: 36,  rings: 3, glow: true,  heatStep: 1, flow: 8,  bloom: false, dof: false },
+    high:   { dprCap: 2,   fps: 0,  dust: 110, rings: 4, glow: true,  heatStep: 1, flow: 22, bloom: true,  dof: true }
   };
   var SLOW_FRAME_MS = 40;          // average frame time above this drops the quality to low
   var FRAME_SAMPLES = 45, WARMUP_FRAMES = 20;
   var DUST_SEED = 0x57A11, DUST_DRIFT = 0.12, DUST_SPEED_MIN = 0.15, DUST_SPEED_SPAN = 0.4;
   var WAVE_SPEED = 0.18, WAVE_RADIUS = 7.5, WAVE_SEGMENTS = 48;
+  var FX_SEED = 0xF10A, FX_SEEDS = 64, FLOW_SPEED = 0.12, FLOW_LIFT = 0.6, FLOW_DOT = 0.035;
+  var RISE_SPEED = 0.18, RISE_HEIGHT = 1.6, RISE_SPREAD = 1.2, DOF_RATE = 0.18, DOF_GROW = 2.2, DOF_FADE = 0.6;
   var STILL_TIME = 2.2;            // frozen animation clock (s) used under prefers-reduced-motion
   var UINT32 = 4294967296;
   var GRID_ALPHA = 0.55, GRID_ALPHA_MIN = 0.1, GRID_FADE = 0.12;
@@ -131,6 +134,16 @@
     return list;
   }
 
+  // Fixed random offsets for the particle effects, so every run draws the same particles.
+  function effectSeeds() {
+    var rnd = seededRandom(FX_SEED), list = [];
+    for (var i = 0; i < FX_SEEDS; i++) { list.push({ a: rnd(), b: rnd(), c: rnd() }); }
+    return list;
+  }
+
+  // Depth-of-field: 0 at the focal depth, growing to 1 as a point gets nearer or farther.
+  function focusBlur(depth, focusDepth) { return clamp(Math.abs(depth - focusDepth) * DOF_RATE, 0, 1); }
+
   function normaliseQuality(name) { return QUALITY_LEVELS.indexOf(name) >= 0 ? name : DEFAULT_QUALITY; }
 
   // Quality to use after observing an average frame time in ms: only ever drops to low.
@@ -177,7 +190,7 @@
   var api = { project: project, twinScale: twinScale, twinPoint: twinPoint, twinExtent: twinExtent, floorElevation: floorElevation,
               openingSpan: openingSpan, heatColor: heatColor, arcPoint: arcPoint, zoneRects: zoneRects, zoneCenter: zoneCenter,
               linkNodePos: linkNodePos, volumeHeight: volumeHeight, pulsePhase: pulsePhase, clamp: clamp,
-              dustParticles: dustParticles, normaliseQuality: normaliseQuality, qualityForFrameTime: qualityForFrameTime,
+              dustParticles: dustParticles, effectSeeds: effectSeeds, focusBlur: focusBlur, QUALITY_PROFILES: QUALITY_PROFILES, normaliseQuality: normaliseQuality, qualityForFrameTime: qualityForFrameTime,
               QUALITY_LEVELS: QUALITY_LEVELS, DEFAULT_QUALITY: DEFAULT_QUALITY, SLOW_FRAME_MS: SLOW_FRAME_MS,
               ROOM: { w: ROOM_W, d: ROOM_D, h: ROOM_H }, MOTION_FULL_SCALE: MOTION_FULL_SCALE };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
@@ -188,6 +201,7 @@
   var pt = { x: 0, y: 0, depth: 0, scale: 0 };
   var pa = { x: 0, y: 0, depth: 0, scale: 0 };
   var tmp = [0, 0, 0], tmpB = [0, 0, 0];
+  var FX_SEEDS_LIST = effectSeeds();
   var autoRotate = true, canvas = null, g = null, view = { w: 0, h: 0 };
   var data = { zones: [], links: [], vitals: null, palette: null };
   // twin: model, floor ("all" stacks every floor), mode ("twin" or "signal"), heat = {floorId: coverage grid},
@@ -293,6 +307,45 @@
       g.beginPath(); g.arc(pt.x, pt.y, Math.max(0.6, pt.scale * DUST_SIZE), 0, TWO_PI); g.fill();
     }
     g.globalAlpha = 1;
+  }
+
+  // One soft particle. With depth-of-field, points away from the focal depth grow, fade and get a halo.
+  function fxDot(p, radius, color, alpha) {
+    if (!project(p, cam, view, pt)) { return; }
+    var blur = profile.dof ? focusBlur(pt.depth, cam.dist * (view.distScale || 1)) : 0;
+    var r = Math.max(0.8, radius * pt.scale * (1 + DOF_GROW * blur));
+    g.fillStyle = color;
+    g.globalAlpha = alpha * (1 - DOF_FADE * blur); g.beginPath(); g.arc(pt.x, pt.y, r, 0, TWO_PI); g.fill();
+    if (blur > 0.15) {
+      g.globalAlpha = alpha * 0.25 * blur; g.beginPath(); g.arc(pt.x, pt.y, r * 1.8, 0, TWO_PI); g.fill();
+    }
+  }
+
+  // WiFi particles flow from each access point along arcs toward the rooms. CSI activity particles rise
+  // from occupied rooms. Both vanish on low quality and hold still under reduced motion (frozen clock).
+  function drawFlows(tSec, pal, sources, targets, active) {
+    var n = profile.flow;
+    if (!n || !targets.length) { return; }
+    g.globalCompositeOperation = profile.bloom ? "lighter" : "source-over";
+    sources.forEach(function (src, si) {
+      for (var k = 0; k < n; k++) {
+        var sd = FX_SEEDS_LIST[(k + si * n) % FX_SEEDS];
+        var phase = (tSec * FLOW_SPEED * (0.6 + sd.b) + sd.a) % 1;
+        arcPoint(src, targets[k % targets.length], phase, FLOW_LIFT, tmp);
+        fxDot(tmp, FLOW_DOT, pal.accent, Math.sin(Math.PI * phase) * 0.8);
+      }
+    });
+    active.forEach(function (c, ci) {
+      for (var k = 0; k < Math.ceil(n / 2); k++) {
+        var sd = FX_SEEDS_LIST[(k * 3 + ci * 7) % FX_SEEDS];
+        var phase = (tSec * RISE_SPEED * (0.6 + sd.b) + sd.a) % 1;
+        tmp[0] = c.p[0] + (sd.c - 0.5) * RISE_SPREAD + Math.sin(tSec + sd.a * TWO_PI) * 0.08;
+        tmp[1] = c.p[1] + phase * RISE_HEIGHT;
+        tmp[2] = c.p[2] + (sd.b - 0.5) * RISE_SPREAD;
+        fxDot(tmp, FLOW_DOT * 0.8, c.color, (1 - phase) * 0.8);
+      }
+    });
+    g.globalCompositeOperation = "source-over"; g.globalAlpha = 1;
   }
 
   function drawZone(r, z, tSec, pal, heartBpm) {
@@ -495,6 +548,23 @@
       g.moveTo(pt.x, pt.y - 6); g.lineTo(pt.x + 6, pt.y); g.lineTo(pt.x, pt.y + 6); g.lineTo(pt.x - 6, pt.y); g.closePath(); g.fill();
       g.fillStyle = pal.muted; g.font = "10px system-ui, sans-serif"; g.textAlign = "center"; g.fillText(sn.id, pt.x, pt.y + 16);
     });
+    if (profile.glow) {      // neon edge on the outer walls
+      g.strokeStyle = pal.accent; g.lineWidth = 2.4; g.globalAlpha = dim * 0.55; setGlow(pal.accent, 10); g.beginPath();
+      floor.walls.forEach(function (w) {
+        if (w.kind === "exterior") { line(twinPoint(w.x1, w.y1, e + wallH, s, ext), twinPoint(w.x2, w.y2, e + wallH, s, ext)); }
+      });
+      g.stroke(); clearGlow(); g.globalAlpha = dim;
+    }
+    var fxTargets = [], fxActive = [];
+    floor.rooms.forEach(function (room) {
+      var zs = zoneState(room.id), c = twinPoint(room.x + room.w / 2, room.y + room.d / 2, e + 0.3, s, ext);
+      fxTargets.push(c);
+      if (active && ((zs && (zs.presence || zs.motion)) || (twin.occupancy !== null && twin.occupancy > 0.5))) {
+        fxActive.push({ p: c, color: zs && zs.motion ? pal.bad : pal.ok });
+      }
+    });
+    drawFlows(tSec, pal, floor.aps.map(function (ap) { return twinPoint(ap.x, ap.y, e + 0.2, s, ext); }), fxTargets, fxActive);
+    g.globalAlpha = dim;
     var pulse = 0.5 + 0.5 * Math.sin(tSec * ROUTER_PULSE);
     floor.aps.forEach(function (ap) {
       var p = twinPoint(ap.x, ap.y, e + 0.2, s, ext);
@@ -524,7 +594,9 @@
     var pal = data.palette;
     g.clearRect(0, 0, view.w, view.h);
     if (twin.model && twin.mode === "twin") {
-      drawTwin(tSec, pal); drawVignette();
+      drawTwin(tSec, pal);
+      if (profile.dust) { drawDust(tSec, pal); }
+      drawVignette();
       return;
     }
     drawFloor(pal);
@@ -543,6 +615,12 @@
     order.forEach(function (o) { drawZone(rectByZone[o.z.zone], o.z, tSec, pal, heartBpm); });
     drawLinks(rects, tSec, pal);
     drawRouter(tSec, pal);
+    var fxTargets = [], fxActive = [];
+    data.zones.forEach(function (z) {
+      var c = zoneCenter(rectByZone[z.zone]); c[1] = 0.3; fxTargets.push(c);
+      if (z.presence || z.motion) { fxActive.push({ p: c, color: zoneColor(z, pal) }); }
+    });
+    drawFlows(tSec, pal, [ROUTER_POS], fxTargets, fxActive);
     drawVignette();
   }
 

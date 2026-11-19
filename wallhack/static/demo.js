@@ -37,7 +37,7 @@
   // REST path -> recorded file. The live API serves the same shapes.
   var FILES = { "/api/twin": "twin.json", "/api/history": "history.json", "/api/insights": "insights.json",
                 "/api/scores": "scores.json", "/api/health": "health.json", "/api/game/scenario": "scenario.json",
-                "/api/rf/coverage": "coverage.json" };
+                "/api/rf/coverage": "coverage.json", "/api/judge": "judge.json" };
   var files = {};
 
   function loadFile(name) {
@@ -57,6 +57,7 @@
     getJson: function (url) {
       var path = url.split("?")[0];
       if (path === "/api/settings") { return loadRecording().then(function (d) { return d.settings; }); }
+      if (path === "/api/status") { return current().then(function (f) { return f.status; }); }
       if (path === "/api/events") { return current().then(function (f) { return f.events; }); }
       if (path === "/api/rf/coverage") {
         var m = /[?&]floor=([^&]+)/.exec(url);

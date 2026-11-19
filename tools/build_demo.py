@@ -20,18 +20,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from wallhack import game, rfmodel  # noqa: E402
+from wallhack import game, judge, rfmodel  # noqa: E402
 from wallhack.config import Config  # noqa: E402
 from wallhack.history import History  # noqa: E402
 from wallhack.runtime import WS_EVENTS_PER_FRAME as EVENTS_PER_FRAME, WS_TICK_S as TICK_S, Runtime  # noqa: E402
 from wallhack.simulator import SAMPLE_HZ  # noqa: E402
 
 STATIC = ROOT / "wallhack" / "static"
-ASSETS = ("style.css", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js")
+ASSETS = ("style.css", "common.js", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js", "mobile.js", "judge.js")
+PAGES = {"index.html": '<script src="view3d.js"></script>', "mobile.html": '<script src="common.js"></script>',
+         "judge.html": '<script src="common.js"></script>'}   # page -> script tag demo.js is loaded before
 REPLAY_NOTE = "Simulated replay recorded from the Wallhack simulator. Nothing here reads your WiFi."
 SCORE_EVERY_TICKS = 20             # refresh trend reference values every 10 s of recording
 DATA_FILES = ("recording.json", "history.json", "twin.json", "insights.json", "scores.json",
-              "scenario.json", "health.json", "coverage.json")
+              "scenario.json", "health.json", "coverage.json", "judge.json")
 
 
 def record(seed: int, scenario: str, seconds: float) -> dict:
@@ -69,17 +71,18 @@ def record(seed: int, scenario: str, seconds: float) -> dict:
             "health.json": {**rt.health(), "meta": meta},
             "scenario.json": game.build_scenario(),
             "coverage.json": rfmodel.twin_coverage(rt.get_twin()),
+            "judge.json": judge.judge_report(),
         }
 
 
-def static_index() -> str:
-    """index.html with relative asset paths (a static host may serve it from a sub-path) and the
-    demo script loaded first so it can mark the page as a replay."""
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
+def static_page(name: str) -> str:
+    """A page with relative asset paths (a static host may serve it from a sub-path) and the demo
+    script loaded first so it can mark the page as a replay."""
+    html = (STATIC / name).read_text(encoding="utf-8")
     html = html.replace('href="/static/', 'href="').replace('src="/static/', 'src="')
-    marker = '<script src="view3d.js"></script>'
+    marker = PAGES[name]
     if marker not in html:
-        raise SystemExit("index.html no longer loads view3d.js; update tools/build_demo.py")
+        raise SystemExit("%s no longer loads %s; update tools/build_demo.py" % (name, marker))
     return html.replace(marker, '<script src="demo.js"></script>\n' + marker)
 
 
@@ -87,15 +90,18 @@ def build(out: Path, seed: int, scenario: str, seconds: float) -> None:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    (out / "index.html").write_text(static_index(), encoding="utf-8")
+    for page in PAGES:
+        (out / page).write_text(static_page(page), encoding="utf-8")
     for name in ASSETS:
         shutil.copyfile(STATIC / name, out / name)
     for name, payload in record(seed, scenario, seconds).items():
         data = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         (out / name).write_text(data + "\n", encoding="utf-8")
-    leftovers = re.findall(r'(?:src|href)="/[^"]*"', (out / "index.html").read_text(encoding="utf-8"))
-    if leftovers:
-        raise SystemExit("absolute asset paths left in index.html: %s" % leftovers)
+    for page in PAGES:
+        # links to other pages carry data-page and are rewritten by common.js; only assets must be relative
+        leftovers = [m for m in re.findall(r'<(?:script|link)[^>]*(?:src|href)="/[^"]*"', (out / page).read_text(encoding="utf-8"))]
+        if leftovers:
+            raise SystemExit("absolute asset paths left in %s: %s" % (page, leftovers))
 
 
 def main() -> int:

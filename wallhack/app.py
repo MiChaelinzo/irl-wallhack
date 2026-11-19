@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
-from . import game, llm, pairing, rfmodel
+from . import game, judge, llm, pairing, qr, rfmodel
 from .runtime import WS_EVENTS_PER_FRAME, WS_TICK_S, Runtime
 from .twin import TwinError
 
@@ -199,7 +199,12 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         if not pairing.is_loopback(request.client.host if request.client else None):
             raise HTTPException(status_code=403, detail="the pairing URL is only shown on the host machine")
         url = f"http://{pairing.lan_address()}:{config.port}{pairing.PAIR_PATH}?token={app.state.pair_token}"
-        return {"url": url, "note": "Open on your phone while on the same network. Treat it like a password."}
+        return {"url": url, "qr": qr.encode(url),
+                "note": "Open on your phone while on the same network. Treat it like a password."}
+
+    @app.get("/api/judge")
+    def judge_data():
+        return judge.judge_report()
 
     @app.get(pairing.PAIR_PATH, include_in_schema=False)
     def pair_exchange(token: str = ""):
@@ -241,6 +246,14 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
             if not page.is_file():
                 raise HTTPException(status_code=404, detail="dashboard not installed")
             return FileResponse(page)
+
+        for route, name in (("/mobile", "mobile.html"), ("/judge", "judge.html")):
+            def page_route(name=name):
+                page = STATIC / name
+                if not page.is_file():
+                    raise HTTPException(status_code=404, detail="page not installed")
+                return FileResponse(page)
+            app.add_api_route(route, page_route, methods=["GET"], include_in_schema=False)
 
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

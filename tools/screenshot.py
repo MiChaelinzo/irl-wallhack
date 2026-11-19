@@ -6,6 +6,8 @@ docs/screenshot-mobile.png (phone width). Needs the optional `playwright` packag
 pip install playwright && playwright install chromium
 With --demo it serves the built static demo (run tools/build_demo.py first) and writes
 docs/screenshot-demo.png instead; it also requires the replay banner.
+Also captures the timeline, insights and game cards and the mobile companion and judge pages
+(docs/screenshot-<name>.png), loading each page and checking it renders.
 Exits non-zero on a JS error, a missing SIMULATED label, or a blank 3D canvas.
 """
 import argparse
@@ -30,6 +32,58 @@ NON_BLANK_JS = """() => {
   return n;
 }"""
 MIN_DRAWN_PIXELS = 500
+CARDS = (("timeline", "#timelineCard"), ("insights", "#insightsCard"), ("game", "#gameCard"), ("pairing", "#pairCard"))
+CANVAS_DRAWN_JS = """(id) => {
+  const c = document.getElementById(id);
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  let n = 0;
+  for (let i = 3; i < d.length; i += 4) { if (d[i] > 0) { n++; } }
+  return n;
+}"""
+MIN_JUDGE_ITEMS = 15
+PAGE_SETTLE_MS = 4000
+
+
+def capture_extras(browser, base, errors, problems, docs, pages, demo=False):
+    """Cards of the dashboard plus the mobile and judge pages. `pages` maps names to relative URLs."""
+    page = browser.new_page(viewport=DESKTOP)
+    watch(page, errors)
+    page.goto(base)
+    page.click("#dismissPrivacy")
+    page.wait_for_timeout(PAGE_SETTLE_MS)
+    prefix = "screenshot-demo-" if demo else "screenshot-"
+    for name, selector in CARDS:
+        if not demo:     # the demo run only adds its own mobile and judge pages
+            page.locator(selector).screenshot(path=str(docs / ("screenshot-%s.png" % name)))
+    if not page.evaluate(CANVAS_DRAWN_JS, "gameCanvas"):
+        problems.append("game canvas is blank")
+    page.close()
+    mobile = browser.new_page(viewport=MOBILE)
+    watch(mobile, errors)
+    mobile.goto(base + pages["mobile"])
+    mobile.wait_for_function("document.getElementById('mConn').textContent.startsWith(%r)" % ("demo" if demo else "live"), timeout=15000)
+    mobile.wait_for_timeout(PAGE_SETTLE_MS)
+    if mobile.inner_text("#mBadge") not in ("Present", "Motion", "No presence"):
+        problems.append("mobile page shows no occupancy")
+    if not mobile.locator("#mSim:visible").count():
+        problems.append("mobile page lacks the SIMULATED label")
+    mobile.screenshot(path=str(docs / (prefix + "mobile-companion.png")), full_page=True)
+    mobile.close()
+    judge = browser.new_page(viewport=DESKTOP)
+    watch(judge, errors)
+    judge.goto(base + pages["judge"])
+    judge.wait_for_selector(".judge-item", timeout=15000)
+    count = judge.locator(".judge-item").count()
+    if count < MIN_JUDGE_ITEMS:
+        problems.append("judge page lists only %d items" % count)
+    judge.screenshot(path=str(docs / (prefix + "judge.png")), full_page=True)
+    judge.close()
+
+
+def watch(page, errors):
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("response", lambda r: errors.append("HTTP %d %s" % (r.status, r.url)) if r.status >= 400 else None)
 
 
 def open_page(browser, viewport, errors):
@@ -86,6 +140,9 @@ def main_demo() -> int:
             page.wait_for_timeout(DEMO_SETTLE_MS)
             check(page, problems, demo=True)
             page.screenshot(path=str(ROOT / "docs" / "screenshot-demo.png"), full_page=True)
+            page.close()
+            capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, ROOT / "docs",
+                           {"mobile": "mobile.html", "judge": "judge.html"}, demo=True)
             browser.close()
         for msg in errors + problems:
             print("FAIL:", msg, file=sys.stderr)
@@ -118,6 +175,8 @@ def main() -> int:
             mobile = open_page(browser, MOBILE, errors)
             check(mobile, problems)
             mobile.screenshot(path=str(docs / "screenshot-mobile.png"), full_page=True)
+            mobile.close()
+            capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, docs, {"mobile": "mobile", "judge": "judge"})
             browser.close()
         for msg in errors + problems:
             print("FAIL:", msg, file=sys.stderr)

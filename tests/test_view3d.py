@@ -116,3 +116,24 @@ def test_twin_geometry_helpers():
     assert out["span"] == [[2, 0], [3, 0]]
     assert out["clipped"] == [[3.5, 0], [4, 0]]
     assert out["heat"][0] != out["heat"][2]                  # strong and weak signal use different colours
+
+
+EFFECTS_SCRIPT = """
+const v = require(process.argv[1]);
+const P = v.QUALITY_PROFILES;
+const a = JSON.stringify(v.effectSeeds()), b = JSON.stringify(v.effectSeeds());
+console.log(JSON.stringify([
+  P.low.flow, P.low.bloom, P.low.dof, P.low.dust, P.medium.flow > 0, P.medium.dof, P.high.flow > P.medium.flow, P.high.bloom, P.high.dof,
+  a === b, v.effectSeeds().length,
+  v.focusBlur(8, 8), v.focusBlur(100, 8), v.focusBlur(9, 8) < v.focusBlur(12, 8)]));
+"""
+
+
+def test_effects_follow_quality_levels_and_are_deterministic():
+    res = subprocess.run(["node", "-e", EFFECTS_SCRIPT, str(STATIC / "view3d.js")], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    (low_flow, low_bloom, low_dof, low_dust, med_flow, med_dof, high_more, high_bloom, high_dof,
+     same, count, at_focus, far, grows) = json.loads(res.stdout)
+    assert low_flow == 0 and not low_bloom and not low_dof and low_dust == 0   # low disables particles and bloom
+    assert med_flow and not med_dof and high_more and high_bloom and high_dof
+    assert same and count == 64 and at_focus == 0 and far == 1 and grows

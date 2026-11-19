@@ -31,7 +31,8 @@ def test_two_builds_are_byte_identical(built):
 
 def test_expected_files(built):
     assert {p.name for p in (built / "a").iterdir()} == {
-        "index.html", "style.css", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js", *build_demo.DATA_FILES}
+        "index.html", "mobile.html", "judge.html", "style.css", "common.js", "view3d.js", "app.js", "demo.js", "twin.js",
+        "panels.js", "game.js", "mobile.js", "judge.js", *build_demo.DATA_FILES}
 
 
 def test_frames_match_live_ws_payload(built, tmp_path):
@@ -90,11 +91,16 @@ def test_demo_shares_tick_constants_with_the_live_app():
     assert build_demo.TICK_S is runtime.WS_TICK_S and build_demo.EVENTS_PER_FRAME is runtime.WS_EVENTS_PER_FRAME
 
 
+def asset_refs(html):
+    """Asset references. Page links carry data-page and are rewritten at run time by common.js href()."""
+    return re.findall(r'(?:src|href)="([^"]+)"', re.sub(r"<a [^>]*data-page=[^>]*>", "", html))
+
+
 def test_static_host_safe_index(built):
     html = (built / "a" / "index.html").read_text()
-    assert not re.search(r'(?:src|href)="/', html)
-    assert html.index("demo.js") < html.index("view3d.js") < html.index("app.js")
-    for ref in re.findall(r'(?:src|href)="([^"]+)"', html):
+    assert not any(ref.startswith("/") for ref in asset_refs(html))
+    assert html.index("common.js") < html.index("demo.js") < html.index("view3d.js") < html.index("app.js")
+    for ref in asset_refs(html):
         assert (built / "a" / ref).is_file(), ref
     assert "cannot literally see through walls" in html and "SIMULATED" in html
     demo = (built / "a" / "demo.js").read_text()
@@ -126,3 +132,15 @@ def test_vercel_config():
     csp = next(h["value"] for e in cfg["headers"] for h in e["headers"] if h["key"] == "Content-Security-Policy")
     assert "default-src 'self'" in csp and "connect-src 'self'" in csp
     assert "dist/" in (ROOT / ".gitignore").read_text().split()
+
+
+def test_mobile_and_judge_pages_work_on_a_static_host(built):
+    for page in ("mobile.html", "judge.html"):
+        html = (built / "a" / page).read_text()
+        assert not any(ref.startswith("/") for ref in asset_refs(html)), page
+        assert html.index("demo.js") < html.index("common.js"), page
+        for ref in asset_refs(html):
+            assert (built / "a" / ref).is_file(), (page, ref)
+    judge = json.loads((built / "a" / "judge.json").read_text())
+    assert {i["status"] for i in judge["items"]} == {"Built", "Experimental", "Future", "Unsupported"}
+    assert "/api/status" in (built / "a" / "demo.js").read_text()

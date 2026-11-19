@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallhack mobile companion</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="page-mobile">
+<header>
+  <h1><span class="logo" aria-hidden="true"></span>Wallhack <span class="sub">mobile</span></h1>
+  <div class="hdr-right">
+    <nav class="nav" aria-label="Pages"><a href="/" data-page="/">Dashboard</a><a href="/judge" data-page="/judge">Judge mode</a></nav>
+    <span id="mConn" class="chip warn">connecting</span>
+  </div>
+</header>
+<main class="mobile-main">
+  <section class="card" aria-labelledby="mHOcc">
+    <span class="ribbon" id="mSim" hidden>SIMULATED</span>
+    <h2 id="mHOcc">Occupancy</h2>
+    <div id="mBadge" class="badge idle">No presence</div>
+    <div class="pills"><span id="mPresence" class="pill off">Presence</span><span id="mMotion" class="pill off">Motion</span></div>
+    <p id="mSub" class="muted">Waiting for data</p>
+  </section>
+  <section class="card" aria-labelledby="mHVit">
+    <h2 id="mHVit">Vitals <span class="chip warn exp-tag">experimental</span></h2>
+    <div class="vital-row">
+      <div class="vital"><div><div class="big" id="mBreath">--</div><div class="muted">breathing, per min</div></div></div>
+      <div class="vital"><div><div class="big" id="mHeart">--</div><div class="muted">heart rate, bpm</div></div></div>
+    </div>
+    <div class="row-center"><span class="muted">Activity</span> <span id="mActivity" class="act empty">empty</span></div>
+    <p class="muted">Not medical data. For research purposes only.</p>
+  </section>
+  <section class="card" aria-labelledby="mHEnv">
+    <h2 id="mHEnv">Sensors</h2>
+    <div id="mEnv" class="home-grid"></div>
+    <p id="mEnvNote" class="muted"></p>
+  </section>
+  <section class="card" aria-labelledby="mHAlert">
+    <h2 id="mHAlert">Alerts</h2>
+    <div class="row tools"><button id="mNotify" type="button">Enable notifications</button></div>
+    <p id="mNotifyNote" class="muted"></p>
+    <ul id="mAlerts" class="events"><li class="muted">No alerts yet</li></ul>
+  </section>
+</main>
+<footer class="muted">Estimates from signal fluctuations. Not imaging. Use only in your own space, with everyone's knowledge.</footer>
+<script src="/static/common.js"></script>
+<script src="/static/mobile.js"></script>
+</body>
+</html>

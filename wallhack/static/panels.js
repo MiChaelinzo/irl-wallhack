@@ -189,6 +189,31 @@
     }).catch(function (e) { $("tlNote").textContent = "History unavailable: " + e.message; });
   }
 
+  // ---- mobile pairing ---------------------------------------------------------
+  var QR_QUIET = 4, QR_PX = 6;   // quiet zone in modules, pixels per module
+  function drawQr(rows) {
+    var cv = $("pairQr"), n = rows.length, size = (n + 2 * QR_QUIET) * QR_PX, c = cv.getContext("2d");
+    cv.width = size; cv.height = size;
+    c.fillStyle = "#fff"; c.fillRect(0, 0, size, size);
+    c.fillStyle = "#000";
+    rows.forEach(function (row, y) {
+      for (var x = 0; x < n; x++) { if (row.charAt(x) === "1") { c.fillRect((x + QR_QUIET) * QR_PX, (y + QR_QUIET) * QR_PX, QR_PX, QR_PX); } }
+    });
+    cv.hidden = false;
+  }
+
+  function showPairing() {
+    var msg = $("pairMsg");
+    if (W.demo) { msg.textContent = "The static demo cannot pair phones. Run Wallhack locally with --lan, or open the simulated mobile view."; return; }
+    W.getJson("/api/pair").then(function (p) {
+      drawQr(p.qr); $("pairUrl").textContent = p.url; $("pairUrl").hidden = false;
+      msg.textContent = p.note;
+    }).catch(function () {
+      $("pairQr").hidden = true; $("pairUrl").hidden = true;
+      msg.textContent = "Pairing is off. LAN mode is not enabled, or this page is not open on the host machine. Follow the steps below.";
+    });
+  }
+
   // ---- wiring ----------------------------------------------------------------
   function refresh() {
     if (document.hidden) { return; }
@@ -205,6 +230,7 @@
     $("llmSelect").addEventListener("change", function () { updateLlmControls(W.llmInfo || {}); });
     $("llmExplain").addEventListener("click", explain);
     $("llmExplain").disabled = true;
+    $("pairShow").addEventListener("click", showPairing);
     refresh(); loadHistory();
     if (!W.demo) { setInterval(refresh, REFRESH_MS); setInterval(function () { if (!playing && !inPlayback) { loadHistory(); } }, REFRESH_MS * 6); }
   }

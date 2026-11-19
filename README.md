@@ -17,7 +17,12 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 
 ![Mobile layout](docs/screenshot-mobile.png)
 
+- **Mobile companion and judge mode**: `/mobile` (occupancy, vitals, sensors, alerts; pair a phone by scanning the QR on the dashboard after starting with `--lan`) and `/judge` (every capability with its Built / Experimental / Future / Unsupported status). Premium glass UI and particle effects follow the quality selector and reduced-motion setting.
+
+![Judge mode](docs/screenshot-judge.png)
+
 ## Not built, on purpose
+- **Smart Home Automation and enterprise analytics**: Future. Only read-only air-quality status cards exist; nothing controls a device.
 - **Mood / emotion**: there is no established way to infer it from WiFi, so nothing is shown.
 - **Perspiration**: no WiFi or listed-sensor method exists.
 - **Through-wall "sights" / body images**: not possible with this hardware and software; the 3D view is schematic.
@@ -84,7 +89,8 @@ New endpoints, all local and simulated unless real sensors are attached:
 | `GET /api/environment` | Now also `status`: Healthy, Warning or Danger per CO2, humidity, temperature, TVOC, PM2.5, PM10, AQI. |
 | `GET /api/health` | Wellness readings plus explicit lists of what is not supported (mood, perspiration, thoughts, through-wall imaging). |
 | `GET /api/game/scenario` | Apartment placement game with precomputed per-candidate RSSI grids; scoring lives in `wallhack/game.py`. |
-| `GET /api/pair` | LAN mode only, from the host machine only: the pairing URL for a phone. |
+| `GET /api/pair` | LAN mode only, from the host machine only: the pairing URL for a phone and its QR code as module rows. |
+| `GET /api/judge` | Judge page items with status and verification label (kept consistent with the table below by a test). |
 
 **LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
 
@@ -128,10 +134,16 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED (low quality and auto-downgrade exist but were never measured on a Pi) |
 | Twin validation and persistence, RF model determinism and monotonicity, history retention and sessions, status bands, insight rules, scores, game scoring (pytest) | VERIFIED (automated tests, simulated data) |
 | RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
-| LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | PARTIALLY VERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
+| LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
 | LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |
 | Demo exports (`history.json`, `twin.json`, `insights.json`, `scores.json`, `scenario.json`, `health.json`), numpy pinned in `vercel.json` | VERIFIED locally (deterministic build); Vercel build with the pinned numpy UNVERIFIED |
-| Mood, perspiration, through-wall imaging | NOT BUILT (no valid method; see above) |
+| Mood, perspiration, thoughts, through-wall imaging | NOT BUILT (no valid method; see above) |
+| Smart Home Automation and enterprise analytics (Future) | NOT BUILT (only read-only air-quality status cards exist; nothing controls a device) |
+| QR pairing code (`wallhack/qr.py`, versions 1-6, level M) | VERIFIED (decoded by OpenCV in tests when installed; never scanned by a phone camera) |
+| Mobile companion page and phone pairing from a real phone | PARTIALLY VERIFIED (loaded in headless Chromium with simulated data; no real phone or Wi-Fi network) |
+| Phone occupancy notifications (Notification API) | UNVERIFIED (not exercised in a browser; blocked on plain http LAN addresses by many browsers) |
+| Premium UI effects (glass cards, glow, particles; low quality and reduced motion switch them off) | PARTIALLY VERIFIED (headless Chromium screenshots and node tests of the helpers; not a Pi 4, no frame-rate measurement) |
+| Judge page statuses (`wallhack/judge.py`) match this table | VERIFIED (automated test compares each item with its row) |
 | Real collectors on Raspberry Pi 4 | UNVERIFIED |
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
 | macOS collector | UNVERIFIED |
