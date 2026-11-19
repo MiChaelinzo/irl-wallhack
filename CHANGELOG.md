@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Digital twin platform (backend)
+- feat: `wallhack/twin.py` building model with validation and atomic save to `data/twin.json`; `GET/PUT /api/twin` (same-origin, JSON only).
+- feat: `wallhack/rfmodel.py` log-distance path loss with per-wall, door and window attenuation and `GET /api/rf/coverage`. A model ESTIMATE.
+- feat: `wallhack/history.py` SQLite history with retention (`history_max_rows`), sessions and `GET /api/history`; Healthy/Warning/Danger `status` in `/api/environment`.
+- feat: `wallhack/insights.py` deterministic rules and `wallhack/llm.py` opt-in rewording (ollama, llama.cpp, OpenAI, Azure; keys from env vars only; cloud needs per-request confirmation). Tested against mocked local servers only; real providers UNVERIFIED.
+- feat: `wallhack/scores.py` RF intelligence scores, `wallhack/game.py` apartment placement scenario, `GET /api/health` with explicit unsupported metrics.
+- feat: opt-in `--lan` / `WALLHACK_LAN=1` with a random pairing token (cookie or bearer) for HTTP and WebSocket; default bind stays 127.0.0.1.
+- feat: `tools/build_demo.py` also exports history, twin, insights, scores, health and scenario JSON, takes tick constants from `wallhack.runtime` instead of copying them, and `vercel.json` pins numpy (PR #4 review notes). A test now asserts the built index has no inline script.
+
 ### Static Vercel demo
 - feat: `tools/build_demo.py` records the real Python Runtime (Simulator, SensingEngine, simulated environment) into `dist/recording.json`, one frame per WebSocket tick, and assembles a static site with relative paths. Deterministic (byte-identical builds). Needs numpy, not fastapi. No processing is ported to JS.
 - feat: `wallhack/static/demo.js` plays the recording in a loop, with a pause button, a persistent "Simulated replay" banner, and read-only settings and calibrate. `app.js` behaves as before when the demo marker is absent.

@@ -70,6 +70,24 @@ A real Vercel deployment has not been tried from this repo (UNVERIFIED, see the 
 
 ![demo](docs/screenshot-demo.png)
 
+## Digital twin, insights and mobile pairing (backend)
+New endpoints, all local and simulated unless real sensors are attached:
+
+| Endpoint | What it serves |
+|---|---|
+| `GET/PUT /api/twin` | Building model (floors, rooms, walls, doors/windows, furniture, sensors, APs). Saved to `data/twin.json` (gitignored). The default is a sample house. |
+| `GET /api/rf/coverage?floor=&cell_m=` | Coverage grid from a log-distance path-loss model with wall attenuation. A model ESTIMATE, not a measurement. |
+| `GET /api/history?from=&to=&step=` | Downsampled SQLite history (`data/history.db`): occupancy, motion, vitals, signal, CSI trend, air. `history_max_rows` bounds it. |
+| `GET /api/insights` | Deterministic rules: signal drop, occupancy trend, air thresholds and peaks, wall attenuation, AP relocation advice. |
+| `POST /api/insights/explain` | Optional LLM rewording of those findings. Off by default (`llm_provider`: `ollama`, `llamacpp`, `openai`, `azure`). Keys only from env vars (`OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`). Cloud providers send finding text off-device and need `confirm_off_device: true` per request. |
+| `GET /api/scores` | Coverage, Signal Health, Environment, Occupancy Confidence, Hardware Status with colour band and trend. |
+| `GET /api/environment` | Now also `status`: Healthy, Warning or Danger per CO2, humidity, temperature, TVOC, PM2.5, PM10, AQI. |
+| `GET /api/health` | Wellness readings plus explicit lists of what is not supported (mood, perspiration, thoughts, through-wall imaging). |
+| `GET /api/game/scenario` | Apartment placement game with precomputed per-candidate RSSI grids; scoring lives in `wallhack/game.py`. |
+| `GET /api/pair` | LAN mode only, from the host machine only: the pairing URL for a phone. |
+
+**LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
+
 ## Privacy and consent
 Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything.
 
@@ -103,9 +121,14 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | 3D view and environment tiles in headless Chromium (simulator data: no JS errors, SIMULATED ribbons, non-blank canvas, three screenshots) | VERIFIED (one run in this sandbox, simulated data only; touch orbit on phones not tried) |
 | 3D upgrade (quality levels, reduced motion, seeded dust helpers) under node tests | VERIFIED (automated tests) |
 | Static demo build (`tools/build_demo.py`, deterministic output, tests) and playback in headless Chromium via `python3 -m http.server` (`docs/screenshot-demo.png`, no JS errors) | VERIFIED (one run in this sandbox, Chromium only) |
-| Demo heart rate | PARTIALLY VERIFIED (experimental; may show `--` in the replay) |
+| Demo heart rate | VERIFIED in the recording (simulated, exaggerated heartbeat; visible in about 40 % of frames of the 145 s loop); real heart rate UNVERIFIED |
 | Actual deployment on Vercel (`vercel.json` build, headers, CSP) | UNVERIFIED (no Vercel access from the sandbox) |
 | 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED (low quality and auto-downgrade exist but were never measured on a Pi) |
+| Twin validation and persistence, RF model determinism and monotonicity, history retention and sessions, status bands, insight rules, scores, game scoring (pytest) | VERIFIED (automated tests, simulated data) |
+| RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
+| LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | PARTIALLY VERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
+| LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |
+| Demo exports (`history.json`, `twin.json`, `insights.json`, `scores.json`, `scenario.json`, `health.json`), numpy pinned in `vercel.json` | VERIFIED locally (deterministic build); Vercel build with the pinned numpy UNVERIFIED |
 | Mood, perspiration, through-wall imaging | NOT BUILT (no valid method; see above) |
 | Real collectors on Raspberry Pi 4 | UNVERIFIED |
 | Windows 11 (collector, `install.ps1`, `install.bat`, `run.bat`) | UNVERIFIED |
