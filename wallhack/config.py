@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 from typing import Optional
 
 log = logging.getLogger("wallhack")
@@ -16,6 +16,7 @@ SENSORS = ("pms5003", "scd4x", "ens160", "ze08", "mlx90614")
 DEFAULT_PMS_PORT = "/dev/serial0"       # Pi primary UART; PMS5003 on GPIO 14/15
 DEFAULT_HCHO_PORT = "/dev/ttyUSB0"      # ZE08-CH2O through a USB-serial adapter
 DEFAULT_I2C_BUS = 1                     # /dev/i2c-1 on Raspberry Pi
+DEFAULT_DATA_DIR = "data"               # gitignored; holds twin.json and history.db
 
 
 @dataclass
@@ -37,6 +38,7 @@ class Config:
     serial_pms: str = DEFAULT_PMS_PORT
     serial_hcho: str = DEFAULT_HCHO_PORT
     i2c_bus: int = DEFAULT_I2C_BUS
+    data_dir: str = field(default_factory=lambda: DEFAULT_DATA_DIR)  # read at call time so tests can redirect it
     background: bool = True       # tests set False and step manually
 
     def sensor_names(self) -> tuple:

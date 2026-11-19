@@ -11,6 +11,7 @@ from .collectors.udp_csi import UdpCsiCollector
 from .config import Config
 from .environment import environment_report
 from .processing import SensingEngine
+from .twin import load_twin, save_twin
 from .sensors.hub import EnvironmentHub, build_hub
 from .simulator import ROOM_ZONE, SAMPLE_HZ, SCENARIOS, SimulatedEnvironment, Simulator
 
@@ -39,6 +40,7 @@ class Runtime:
         # Real sensors are opened once: reconfigure() runs on every settings change and must not
         # reopen serial ports. With no sensors configured and a real source, environment stays None.
         self.hub: Optional[EnvironmentHub] = build_hub(config) if config.sensor_names() else None
+        self.twin = load_twin(config.data_dir)
         self.collectors: List[Collector] = []
         self.source = "simulator"
         self.note = ""
@@ -225,6 +227,17 @@ class Runtime:
             except SourceUnavailableError:
                 pass  # previous setting was also unavailable; runtime stays on the labelled simulator
             raise
+
+    def get_twin(self) -> dict:
+        with self.lock:
+            return self.twin
+
+    def set_twin(self, data) -> dict:
+        """Validate, persist and activate a new building model. Raises TwinError when invalid."""
+        saved = save_twin(self.config.data_dir, data)
+        with self.lock:
+            self.twin = saved
+        return saved
 
     def calibrate(self) -> None:
         """Forget learned baselines and events so the next readings define "quiet".

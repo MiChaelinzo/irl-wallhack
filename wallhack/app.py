@@ -15,7 +15,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
+from . import rfmodel
 from .runtime import Runtime
+from .twin import TwinError
 
 STATIC = Path(__file__).parent / "static"
 WS_INTERVAL_S = 0.5
@@ -98,9 +100,7 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     @app.post("/api/settings")
     async def post_settings(request: Request):
         require_same_origin(request)
-        # Requiring JSON forces a CORS preflight for cross-site pages, which this server never approves.
-        if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
-            raise HTTPException(status_code=415, detail="Content-Type must be application/json")
+        require_json(request)
         try:
             update = SettingsUpdate(**(await request.json()))
         except (ValueError, TypeError) as exc:
@@ -110,6 +110,37 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return runtime.settings()
+
+    def require_json(request: Request) -> None:
+        # Requiring JSON forces a CORS preflight for cross-site pages, which this server never approves.
+        if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+            raise HTTPException(status_code=415, detail="Content-Type must be application/json")
+
+    @app.get("/api/twin")
+    def get_twin():
+        return runtime.get_twin()
+
+    @app.put("/api/twin")
+    async def put_twin(request: Request):
+        require_same_origin(request)
+        require_json(request)
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid JSON: {exc}")
+        try:
+            return await run_in_threadpool(runtime.set_twin, body)
+        except TwinError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get("/api/rf/coverage")
+    def rf_coverage(floor: Optional[str] = None, cell_m: float = Query(rfmodel.DEFAULT_CELL_M, ge=0.1, le=5.0)):
+        """Estimated WiFi coverage grid from the twin. A MODEL, labelled as such."""
+        twin = runtime.get_twin()
+        try:
+            return rfmodel.coverage_grid(twin, floor or twin["floors"][0]["id"], cell_m)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
