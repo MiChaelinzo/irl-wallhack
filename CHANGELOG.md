@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Digital twin platform (dashboard)
+- feat: 3D twin view (`view3d.js`): stacked or single floor, rooms, walls, doors, windows, furniture, sensors, access points, live room occupancy from zones, optional signal heat overlay from `/api/rf/coverage` (MODEL ESTIMATE; low quality samples every other cell). Fixes overlapping link labels (router-a/router-b) in the signal view.
+- feat: `twin.js` designer (add, edit, delete rooms, furniture, doors, windows, sensors, APs; save with `PUT /api/twin`; read-only in the demo). `panels.js`: RF intelligence strip with trend arrows, smart home Healthy/Warning/Danger cards, Health Mode (Experimental banner, "Not medical data. For research purposes only.", mood, perspiration, thoughts and through-wall imaging shown as Not supported), insights copilot with provider selector and cloud disclosure, timeline playback with PLAYBACK badge.
+- feat: `game.js` placement game. JS only takes the per-cell maximum, threshold and cost from server grids; `tests/test_game_parity.py` checks it against `game.score_selection` on all 257 selections.
+- feat: demo serves the new data files through `demo.js`; `tools/build_demo.py` adds `coverage.json`.
+
 ### Digital twin platform (backend)
 - feat: `wallhack/twin.py` building model with validation and atomic save to `data/twin.json`; `GET/PUT /api/twin` (same-origin, JSON only).
 - feat: `wallhack/rfmodel.py` log-distance path loss with per-wall, door and window attenuation and `GET /api/rf/coverage`. A model ESTIMATE.

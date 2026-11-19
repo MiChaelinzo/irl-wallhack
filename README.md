@@ -121,6 +121,8 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | 3D view and environment tiles in headless Chromium (simulator data: no JS errors, SIMULATED ribbons, non-blank canvas, three screenshots) | VERIFIED (one run in this sandbox, simulated data only; touch orbit on phones not tried) |
 | 3D upgrade (quality levels, reduced motion, seeded dust helpers) under node tests | VERIFIED (automated tests) |
 | Static demo build (`tools/build_demo.py`, deterministic output, tests) and playback in headless Chromium via `python3 -m http.server` (`docs/screenshot-demo.png`, no JS errors) | VERIFIED (one run in this sandbox, Chromium only) |
+| Game scoring in JS (`static/game.js`) equals Python `game.score_selection` on all 257 selections (node vs Python) | VERIFIED (automated parity test) |
+| Twin geometry helpers, panels, designer and game UI in headless Chromium (demo build + live simulator, no JS errors, non-blank canvas) | PARTIALLY VERIFIED (screenshot run only; designer save, playback and LLM button not clicked; not a Pi 4) |
 | Demo heart rate | VERIFIED in the recording (simulated, exaggerated heartbeat; visible in about 40 % of frames of the 145 s loop); real heart rate UNVERIFIED |
 | Actual deployment on Vercel (`vercel.json` build, headers, CSP) | UNVERIFIED (no Vercel access from the sandbox) |
 | 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED (low quality and auto-downgrade exist but were never measured on a Pi) |
