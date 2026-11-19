@@ -94,8 +94,48 @@ New endpoints, all local and simulated unless real sensors are attached:
 
 **LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
 
+## How to run each mode
+All modes start from `make run` (or `python -m wallhack`) and open `http://127.0.0.1:8000`. Add `--source simulator` to avoid needing hardware.
+
+| Mode | How |
+|---|---|
+| Live dashboard and 3D view | `python -m wallhack --source simulator`. Quality selector (Low, Medium, High) is in the 3D card; Low turns off blur, bloom and particles, and `prefers-reduced-motion` freezes the effects. |
+| Digital twin designer | Dashboard, Twin card, Edit. Add rooms, furniture, doors, windows, sensors and access points, then Save (`PUT /api/twin`, stored in `data/twin.json`). Read-only in the hosted demo. |
+| Timeline playback | Dashboard, Timeline card. Drag the slider to replay `/api/history`; the PLAYBACK badge shows while you are off live. The demo uses a simulated 08:00 clock. |
+| AI insights | Dashboard, Insights card. Rule findings always work. The "Explain with LLM" button needs a provider (next section). |
+| Placement game | Dashboard, Game card: place access points in the apartment to reach the coverage goal within budget. |
+| Mobile companion | `/mobile` on the same machine. For a phone: `python -m wallhack --lan` (or `WALLHACK_LAN=1`), then scan the QR in the dashboard pairing card with a phone on the same Wi-Fi. Opt-in only; default stays `127.0.0.1`. |
+| Judge page | `/judge` lists every capability with Built, Experimental, Future or Unsupported and its verification label. |
+| Hosted demo | `python tools/build_demo.py`, then `python3 -m http.server -d dist`. Pages: `/`, `/mobile.html`, `/judge.html`. |
+
+## LLM provider configuration
+Off by default (`llm_provider` empty). Set it with `--config`/`config.json` or `WALLHACK_LLM_PROVIDER`; related settings are `WALLHACK_LLM_MODEL`, `WALLHACK_LLM_ENDPOINT` and `WALLHACK_LLM_TIMEOUT_S`. The LLM only rewords rule findings. API keys are read from environment variables only and never sent to the browser.
+
+| Provider | Endpoint (default) | Model | Environment variables |
+|---|---|---|---|
+| `ollama` | `http://localhost:11434` + `/api/chat` | `llama3.2` | none |
+| `llamacpp` | `http://localhost:8080` + `/v1/chat/completions` | `default` | none |
+| `openai` | `https://api.openai.com` + `/v1/chat/completions` | `gpt-4o-mini` | `OPENAI_API_KEY` |
+| `azure` | `$AZURE_OPENAI_ENDPOINT` + `/openai/deployments/<deployment>/chat/completions?api-version=2024-02-01` | deployment name | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` |
+
+`llm_endpoint` / `llm_model` override the defaults (for Azure they replace the endpoint and deployment variables). OpenAI and Azure send finding text to a cloud service, so each request must confirm it (`confirm_off_device`); the UI shows a disclosure. All four providers are UNVERIFIED against real services (mock servers only).
+
+## Status of the ten platform items
+| Item | Status | Notes |
+|---|---|---|
+| Digital twin (3D building, designer) | Complete | PARTIALLY VERIFIED UI (headless Chromium; designer save not clicked). |
+| Timeline playback | Complete | PARTIALLY VERIFIED; playback heat is a model shifted by measured signal change. |
+| AI insights | Partial | Deterministic rules complete and VERIFIED. LLM rewording UNVERIFIED against real providers. |
+| Smart home | Partial | Read-only Healthy/Warning/Danger cards. Device control and enterprise analytics are deferred (Future). |
+| Health mode | Partial | Breathing and experimental heart rate only. Mood, perspiration, thoughts and through-wall imaging are not supported. |
+| Placement game | Complete | JS scoring matches Python on all 257 selections. |
+| Mobile companion | Partial | Works in headless Chromium; real phone, notifications UNVERIFIED. |
+| Premium UI | Complete | PARTIALLY VERIFIED; no Pi 4 frame-rate measurement. |
+| RF intelligence scores | Complete | Model constants are textbook values, UNVERIFIED against real buildings. |
+| Judge mode | Complete | Statuses are checked against this README by a test. |
+
 ## Privacy and consent
-Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything.
+Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything unless you enable an OpenAI or Azure LLM provider, which sends finding text (not raw signals) to that cloud service after a per-request confirmation. `--lan` exposes the dashboard to your network behind a pairing token; use it only on a network you trust. Sensing people without their knowledge may be illegal where you live.
 
 ## Verification status
 | Area | Status |
@@ -157,6 +197,7 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
 
 ## Tests
+The QR tests decode codes with OpenCV and are skipped without it (`pip install opencv-python-headless`; CI installs it).
 ```
 .venv/bin/python -m pip install -r requirements-dev.txt   # pytest and httpx, test-only
 .venv/bin/python -m pytest -q

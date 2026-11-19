@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Docs and polish
+- docs: README run instructions per mode, LLM provider table, status of the ten platform items, expanded privacy notice.
+- ci: install opencv-python-headless so the QR decode tests run in CI.
+- fix: judge page no longer shows a demo Pause button that did nothing; judge status glyphs are decorative (aria-hidden, symbol font fallback) and the status text chips carry the meaning.
+
 ### Mobile companion, premium UI and judge mode
 - feat: `wallhack/qr.py` pure-Python QR encoder (byte mode, level M, versions 1-6, written from the spec, no third-party code). `GET /api/pair` now also returns `qr` module rows; the dashboard pairing card draws them on a canvas with LAN instructions and a security note. Tests decode the codes with OpenCV when installed.
 - feat: `mobile.html` / `mobile.js` (`/mobile`): occupancy, vitals, sensor status, in-page alerts and opt-in Notification API alerts by polling `/api/status`. In the static demo it replays the recording. Notifications UNVERIFIED (blocked on plain http by many browsers).
