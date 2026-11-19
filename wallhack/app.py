@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
-from . import llm, pairing, rfmodel
+from . import game, llm, pairing, rfmodel
 from .runtime import Runtime
 from .twin import TwinError
 
@@ -157,6 +157,13 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
                     "rows": runtime.history.query(t_from, to, step)}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    game_scenario = game.build_scenario()   # deterministic and small, so build it once
+
+    @app.get("/api/game/scenario")
+    def game_scenario_endpoint():
+        """Apartment placement game: precomputed per-candidate RSSI grids (model estimates)."""
+        return game_scenario
 
     @app.get("/api/health")
     def health_mode():
