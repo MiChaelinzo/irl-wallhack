@@ -12,6 +12,7 @@ from .collectors.ping import PingCollector
 from .collectors.udp_csi import UdpCsiCollector
 from .config import Config
 from .environment import EnvironmentReading, environment_report, us_epa_aqi
+from . import insights as insights_mod, llm, rfmodel, scores as scores_mod
 from .history import History
 from .processing import SensingEngine
 from .twin import load_twin, save_twin
@@ -22,6 +23,8 @@ log = logging.getLogger("wallhack")
 REAL_ZONE = "room"
 HISTORY = 6000
 STALE_AFTER_S = 10.0
+SCORE_TREND_WINDOW_S = 60.0     # a score's trend compares against the value about this long ago
+SCORE_COVERAGE_CELL_M = 1.0
 
 
 class SourceUnavailableError(ValueError):
@@ -48,6 +51,8 @@ class Runtime:
             history = History(str(Path(config.data_dir) / "history.db"), config.history_max_rows)
         self.history: Optional[History] = history
         self._history_t = float("-inf")
+        self._score_marks: Deque[tuple] = deque(maxlen=64)   # (engine t, {score id: value})
+        self._coverage_cache: Optional[tuple] = None          # (twin object, mean coverage %)
         self.collectors: List[Collector] = []
         self.source = "simulator"
         self.note = ""
@@ -277,6 +282,49 @@ class Runtime:
         with self.lock:
             self.twin = saved
         return saved
+
+    def llm_info(self) -> dict:
+        return llm.disclosure(self.config.llm_provider)
+
+    def insights(self) -> dict:
+        """Rule-based findings from this session's history, the air status and the twin."""
+        with self.lock:
+            rows = self.history.query(0.0, None, self.config.history_step_s) if self.history else []
+            env = self.environment()
+            twin = self.twin
+        findings = insights_mod.build_insights(rows, (env or {}).get("status"), twin)
+        return {"engine": "rules", "label": insights_mod.LABEL, "history_rows": len(rows),
+                "insights": findings, "llm": self.llm_info()}
+
+    def explain_insights(self, confirm_off_device: bool = False) -> dict:
+        """LLM rewording of the current findings. Raises llm.LlmError when disabled or failing."""
+        findings = self.insights()["insights"]
+        c = self.config
+        return llm.explain(findings, c.llm_provider, c.llm_model, c.llm_endpoint,
+                           timeout_s=c.llm_timeout_s, confirm_off_device=confirm_off_device)
+
+    def _twin_coverage_pct(self) -> Optional[float]:
+        twin = self.twin
+        if self._coverage_cache is None or self._coverage_cache[0] is not twin:
+            pcts = [g["coverage_pct"] for g in rfmodel.twin_coverage(twin, SCORE_COVERAGE_CELL_M).values()]
+            self._coverage_cache = (twin, round(sum(pcts) / len(pcts), 1) if pcts else None)
+        return self._coverage_cache[1]
+
+    def scores(self) -> List[dict]:
+        """The five RF intelligence scores with trend against the value about a minute ago."""
+        with self.lock:
+            status = {"source": self.source, "collectors": [c.name for c in self.collectors],
+                      "environment": self.environment()}
+            if self.source == "real":
+                status["stale_s"] = time.monotonic() - self._last_data
+            now = self.engine.last_t
+            while self._score_marks and self._score_marks[0][0] < now - SCORE_TREND_WINDOW_S:
+                self._score_marks.popleft()
+            previous = self._score_marks[0][1] if self._score_marks and self._score_marks[0][0] < now else None
+            out = scores_mod.compute_scores(status, self._twin_coverage_pct(), self.engine.link_states(), previous)
+            if not self._score_marks or now - self._score_marks[-1][0] >= scores_mod.TREND_MARK_S:
+                self._score_marks.append((now, {s["id"]: s["value"] for s in out}))
+            return out
 
     def calibrate(self) -> None:
         """Forget learned baselines and events so the next readings define "quiet".

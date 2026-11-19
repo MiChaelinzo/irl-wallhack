@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
-from . import rfmodel
+from . import llm, rfmodel
 from .runtime import Runtime
 from .twin import TwinError
 
@@ -153,6 +153,29 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
                     "rows": runtime.history.query(t_from, to, step)}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+
+    @app.get("/api/insights")
+    def insights():
+        return runtime.insights()
+
+    @app.post("/api/insights/explain")
+    async def explain_insights(request: Request):
+        """Optional LLM rewording of the rule findings. Cloud providers need confirm_off_device=true."""
+        require_same_origin(request)
+        require_json(request)
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid JSON: {exc}")
+        confirm = isinstance(body, dict) and body.get("confirm_off_device") is True
+        try:
+            return await run_in_threadpool(runtime.explain_insights, confirm)
+        except llm.LlmError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
+    @app.get("/api/scores")
+    def scores():
+        return {"scores": runtime.scores(), "label": "Coverage is a model estimate; the rest are live readings."}
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
