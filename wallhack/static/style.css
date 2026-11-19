@@ -208,7 +208,7 @@ html[data-quality="low"] .card h2, html[data-quality="low"] .badge { text-shadow
 .judge-legend { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
 .judge-list { list-style:none; margin:0; padding:0; }
 .judge-item { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
-.judge-mark { width:1.6em; font-size:1.2rem; text-align:center; flex:none; }
+.judge-mark { font-family:"Segoe UI Symbol","Noto Sans Symbols","Noto Sans Symbols 2","DejaVu Sans",sans-serif; width:1.6em; font-size:1.2rem; text-align:center; flex:none; }
 .judge-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px; }
 .judge-head a { color:var(--accent); }
 .chip.st-built, .judge-item.st-built .judge-mark { color:var(--ok); }

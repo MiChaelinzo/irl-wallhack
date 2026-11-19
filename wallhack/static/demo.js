@@ -19,7 +19,8 @@
       state.paused = !state.paused; btn.textContent = state.paused ? "Play" : "Pause";
       if (sinks) { sinks.conn(state.paused ? "demo paused" : "demo replay", "ok"); }
     });
-    el.appendChild(p); el.appendChild(btn);
+    el.appendChild(p);
+    if (!document.body.classList.contains("page-judge")) { el.appendChild(btn); }   // the judge page has no replay to pause
     document.body.insertBefore(el, document.body.firstChild);
   }
   document.addEventListener("DOMContentLoaded", banner);

@@ -17,7 +17,9 @@
     });
     data.items.forEach(function (i) {
       var li = el("li", "judge-item st-" + i.status.toLowerCase(), "");
-      li.appendChild(el("span", "judge-mark", MARK[i.status]));
+      var mark = el("span", "judge-mark", MARK[i.status]);
+      mark.setAttribute("aria-hidden", "true");   // decorative: the status text chip carries the meaning
+      li.appendChild(mark);
       var body = el("div", "", "");
       var head = el("div", "judge-head", "");
       var title = i.link ? el("a", "", i.title) : el("strong", "", i.title);
