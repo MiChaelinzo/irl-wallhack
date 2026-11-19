@@ -20,18 +20,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from wallhack import game  # noqa: E402
+from wallhack import game, rfmodel  # noqa: E402
 from wallhack.config import Config  # noqa: E402
 from wallhack.history import History  # noqa: E402
 from wallhack.runtime import WS_EVENTS_PER_FRAME as EVENTS_PER_FRAME, WS_TICK_S as TICK_S, Runtime  # noqa: E402
 from wallhack.simulator import SAMPLE_HZ  # noqa: E402
 
 STATIC = ROOT / "wallhack" / "static"
-ASSETS = ("style.css", "view3d.js", "app.js", "demo.js")
+ASSETS = ("style.css", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js")
 REPLAY_NOTE = "Simulated replay recorded from the Wallhack simulator. Nothing here reads your WiFi."
 SCORE_EVERY_TICKS = 20             # refresh trend reference values every 10 s of recording
 DATA_FILES = ("recording.json", "history.json", "twin.json", "insights.json", "scores.json",
-              "scenario.json", "health.json")
+              "scenario.json", "health.json", "coverage.json")
 
 
 def record(seed: int, scenario: str, seconds: float) -> dict:
@@ -68,6 +68,7 @@ def record(seed: int, scenario: str, seconds: float) -> dict:
             "scores.json": {"scores": rt.scores(), "meta": meta},
             "health.json": {**rt.health(), "meta": meta},
             "scenario.json": game.build_scenario(),
+            "coverage.json": rfmodel.twin_coverage(rt.get_twin()),
         }
 
 

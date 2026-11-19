@@ -31,7 +31,7 @@ def test_two_builds_are_byte_identical(built):
 
 def test_expected_files(built):
     assert {p.name for p in (built / "a").iterdir()} == {
-        "index.html", "style.css", "view3d.js", "app.js", "demo.js", *build_demo.DATA_FILES}
+        "index.html", "style.css", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js", *build_demo.DATA_FILES}
 
 
 def test_frames_match_live_ws_payload(built, tmp_path):
