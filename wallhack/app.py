@@ -7,7 +7,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
-from . import llm, rfmodel
+from . import llm, pairing, rfmodel
 from .runtime import Runtime
 from .twin import TwinError
 
@@ -43,7 +43,11 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
 
     app = FastAPI(title="Wallhack WiFi sensing", version=__version__, lifespan=lifespan)
     app.state.runtime = runtime
-    if config.host in LOCAL_HOSTS:
+    if config.lan:
+        # LAN opt-in: the host names are unknown, so a random pairing token guards every non-loopback request.
+        app.state.pair_token = pairing.new_token()
+        app.add_middleware(pairing.PairingMiddleware, token=app.state.pair_token)
+    elif config.host in LOCAL_HOSTS:
         # Blocks DNS rebinding: a loopback server must only answer to its own names.
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 
@@ -154,6 +158,10 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
+    @app.get("/api/health")
+    def health_mode():
+        return runtime.health()
+
     @app.get("/api/insights")
     def insights():
         return runtime.insights()
@@ -176,6 +184,25 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     @app.get("/api/scores")
     def scores():
         return {"scores": runtime.scores(), "label": "Coverage is a model estimate; the rest are live readings."}
+
+    @app.get("/api/pair")
+    def pair(request: Request):
+        """Pairing URL for the mobile companion. Only the host machine itself may read it."""
+        if not config.lan:
+            raise HTTPException(status_code=404, detail="LAN mode is off. Start with --lan to pair a phone.")
+        if not pairing.is_loopback(request.client.host if request.client else None):
+            raise HTTPException(status_code=403, detail="the pairing URL is only shown on the host machine")
+        url = f"http://{pairing.lan_address()}:{config.port}{pairing.PAIR_PATH}?token={app.state.pair_token}"
+        return {"url": url, "note": "Open on your phone while on the same network. Treat it like a password."}
+
+    @app.get(pairing.PAIR_PATH, include_in_schema=False)
+    def pair_exchange(token: str = ""):
+        """Swap the token in the URL for an HttpOnly cookie, then drop it from the address bar."""
+        if not config.lan or not pairing.token_matches(token, app.state.pair_token):
+            raise HTTPException(status_code=403, detail="invalid pairing token")
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(pairing.COOKIE_NAME, token, httponly=True, samesite="strict")
+        return resp
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):

@@ -12,7 +12,7 @@ from .collectors.ping import PingCollector
 from .collectors.udp_csi import UdpCsiCollector
 from .config import Config
 from .environment import EnvironmentReading, environment_report, us_epa_aqi
-from . import insights as insights_mod, llm, rfmodel, scores as scores_mod
+from . import health, insights as insights_mod, llm, rfmodel, scores as scores_mod
 from .history import History
 from .processing import SensingEngine
 from .twin import load_twin, save_twin
@@ -282,6 +282,10 @@ class Runtime:
         with self.lock:
             self.twin = saved
         return saved
+
+    def health(self) -> dict:
+        with self.lock:
+            return health.health_report(self.vitals(), (self.environment() or {}).get("status"), self.source)
 
     def llm_info(self) -> dict:
         return llm.disclosure(self.config.llm_provider)

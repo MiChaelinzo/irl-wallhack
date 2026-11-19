@@ -37,6 +37,8 @@ def main(argv=None) -> None:
     p.add_argument("--source", choices=["auto", "simulator", "real"])
     p.add_argument("--scenario")
     p.add_argument("--host")
+    p.add_argument("--lan", action="store_true", default=None,
+                   help="opt in to LAN access for the mobile companion (binds 0.0.0.0, requires a pairing token)")
     p.add_argument("--port", type=int)
     p.add_argument("--seed", type=int)
     p.add_argument("--sensitivity", type=float)
@@ -60,7 +62,7 @@ def main(argv=None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(a.config)
     for name in ("source", "scenario", "host", "port", "seed", "sensitivity", "interface", "ping_target", "udp_port", "udp_host", "udp_token", "csi_source", "csi_port",
-                 "sensors", "i2c_bus"):
+                 "sensors", "i2c_bus", "lan"):
         v = getattr(a, name)
         if v is not None:
             setattr(cfg, name, v)
@@ -79,13 +81,15 @@ def main(argv=None) -> None:
             "UDP receiver on %s has no --udp-token: anyone on the network can send fake readings.", cfg.udp_host)
     url = f"http://{cfg.host}:{cfg.port}/"
     print(f"Wallhack dashboard: {url}  (Ctrl+C to stop)")
+    if cfg.lan:
+        print("LAN mode: phones must pair first. Open the dashboard on this machine and use GET /api/pair.")
     if a.open or (not a.no_browser and sys.stdin.isatty()):
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     try:
         app = create_app(cfg)
     except SourceUnavailableError as exc:
         raise SystemExit(f"error: {exc}")
-    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="warning")
+    uvicorn.run(app, host=cfg.bind_host(), port=cfg.port, log_level="warning")
 
 
 if __name__ == "__main__":

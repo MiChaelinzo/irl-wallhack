@@ -47,6 +47,7 @@ class Config:
     llm_model: str = ""
     llm_endpoint: str = ""        # optional base URL override; never a secret
     llm_timeout_s: float = 30.0
+    lan: bool = False             # opt-in: bind all interfaces for the mobile companion; needs the pairing token
     background: bool = True       # tests set False and step manually
 
     def sensor_names(self) -> tuple:
@@ -79,8 +80,15 @@ class Config:
         if not 1 <= self.port <= 65535:
             raise ValueError("port must be 1-65535")
 
+    def bind_host(self) -> str:
+        """Address to bind. Always loopback unless `lan` is on or a host was chosen explicitly."""
+        return "0.0.0.0" if self.lan and self.host in LOCAL_HOSTS else self.host
+
     def warn_if_exposed(self) -> None:
-        if self.host not in LOCAL_HOSTS:
+        if self.lan:
+            log.warning("LAN mode is on: the dashboard is reachable from your network but needs the pairing "
+                        "token shown by /api/pair. Only use it on a network you trust.")
+        elif self.host not in LOCAL_HOSTS:
             log.warning("Binding to %s exposes the dashboard to your network. "
                         "There is no authentication. Use 127.0.0.1 unless you trust the network.", self.host)
 
