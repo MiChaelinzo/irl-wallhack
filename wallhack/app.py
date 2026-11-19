@@ -16,11 +16,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
 from . import game, llm, pairing, rfmodel
-from .runtime import Runtime
+from .runtime import WS_EVENTS_PER_FRAME, WS_TICK_S, Runtime
 from .twin import TwinError
 
 STATIC = Path(__file__).parent / "static"
-WS_INTERVAL_S = 0.5
 log = logging.getLogger("wallhack")
 
 
@@ -230,8 +229,8 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
                     last = new[-1]["seq"]
                 await sock.send_json({"status": runtime.status(), "zones": zones(),
                                       "links": links(), "samples": new,
-                                      "events": events(limit=20)})
-                await asyncio.sleep(WS_INTERVAL_S)
+                                      "events": events(limit=WS_EVENTS_PER_FRAME)})
+                await asyncio.sleep(WS_TICK_S)
         except (WebSocketDisconnect, RuntimeError):
             return
 

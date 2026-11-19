@@ -7,6 +7,7 @@ import math
 from typing import Dict, List, Optional
 
 from . import rfmodel
+from .environment import EnvironmentReading, metric_statuses
 
 LABEL = "Deterministic rules. No AI involved unless you explicitly ask for an LLM explanation."
 SEVERITIES = ("info", "warning", "danger")
@@ -87,6 +88,28 @@ def air_findings(env_status: Optional[dict]) -> List[dict]:
     return out
 
 
+PEAK_METRICS = (("pm25", "pm25", "PM2.5 peaked", "Check what was running then (cooking, candles) and ventilate next time."),
+                ("co2", "co2", "CO2 peaked", "Ventilate more often when the room is occupied."))
+
+
+def air_peaks(rows: List[dict], env_status: Optional[dict]) -> List[dict]:
+    """Past excursions: the session peak of PM2.5 or CO2 was not Healthy. Skipped while the metric is
+    still unhealthy now, because air_findings already reports that."""
+    out = []
+    for column, metric, title, rec in PEAK_METRICS:
+        samples = [r for r in rows if r.get(column) is not None]
+        if not samples or (env_status or {}).get(metric, {}) and env_status[metric]["status"] != "Healthy":
+            continue
+        peak = max(samples, key=lambda r: r[column])
+        status = metric_statuses(EnvironmentReading(**{column: peak[column]}))[metric]
+        if status["status"] != "Healthy":
+            out.append(_finding(f"air_peak_{metric}", "info", title,
+                                f"{metric.upper()} reached {peak[column]:.0f} {status['unit']} ({status['status']}) "
+                                f"at {peak['t']:.0f} s this session.", rec,
+                                peak=peak[column], t=peak["t"], status=status["status"]))
+    return out
+
+
 def ap_attenuation(twin: dict) -> List[dict]:
     """Walls between each AP and each RSSI sensor on the same floor, from the RF model."""
     out = []
@@ -148,5 +171,5 @@ def coverage_findings(twin: dict) -> List[dict]:
 def build_insights(rows: List[dict], env_status: Optional[dict], twin: dict) -> List[dict]:
     """All findings, ordered by severity (danger first) then id, so the output is stable."""
     found = [f for f in (signal_drop(rows), occupancy_trend(rows)) if f]
-    found += air_findings(env_status) + ap_attenuation(twin) + coverage_findings(twin)
+    found += air_findings(env_status) + air_peaks(rows, env_status) + ap_attenuation(twin) + coverage_findings(twin)
     return sorted(found, key=lambda f: (-SEVERITIES.index(f["severity"]), f["id"]))

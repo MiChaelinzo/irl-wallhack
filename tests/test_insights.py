@@ -45,6 +45,16 @@ def test_air_findings():
     assert insights.air_findings(None) == []
 
 
+def test_air_peaks_report_past_excursions_only():
+    r = [{"t": float(i), "pm25": v, "co2": 500.0} for i, v in enumerate([5, 90, 40, 6])]
+    found = insights.air_peaks(r, None)
+    assert [f["id"] for f in found] == ["air_peak_pm25"]
+    assert found[0]["evidence"]["peak"] == 90 and found[0]["severity"] == "info"
+    now_bad = {"pm25": {"value": 60, "unit": "ug/m3", "status": "Danger"}}
+    assert insights.air_peaks(r, now_bad) == []
+    assert insights.air_peaks([{"t": 0.0, "pm25": None, "co2": None}], None) == []
+
+
 def test_ap_attenuation_uses_rf_model():
     t = sample_twin()
     t["floors"][0]["aps"][0].update(x=9.0, y=2.0)           # kitchen

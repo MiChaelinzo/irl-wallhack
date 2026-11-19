@@ -31,7 +31,7 @@ def test_two_builds_are_byte_identical(built):
 
 def test_expected_files(built):
     assert {p.name for p in (built / "a").iterdir()} == {
-        "index.html", "recording.json", "style.css", "view3d.js", "app.js", "demo.js"}
+        "index.html", "style.css", "view3d.js", "app.js", "demo.js", *build_demo.DATA_FILES}
 
 
 def test_frames_match_live_ws_payload(built, tmp_path):
@@ -48,6 +48,46 @@ def test_frames_match_live_ws_payload(built, tmp_path):
     assert first["status"]["environment"]["simulated"] is not None or first["status"]["environment"]
     seqs = [s["seq"] for f in rec["frames"] for s in f["samples"]]
     assert seqs == list(range(1, len(seqs) + 1))
+
+
+def test_new_data_files_are_valid_and_cover_the_whole_session(built):
+    load = lambda n: json.loads((built / "a" / n).read_text())
+    rec, hist = load("recording.json"), load("history.json")
+    assert hist["rows"][0]["t"] == 0 and hist["rows"][-1]["t"] >= SECONDS - 2 * hist["step"]
+    assert len(hist["rows"]) == int(SECONDS / hist["step"])      # every step, not the last 20 events
+    assert load("twin.json")["floors"][0]["id"] == "ground"
+    assert load("insights.json")["engine"] == "rules"
+    assert [s["id"] for s in load("scores.json")["scores"]][0] == "coverage"
+    assert load("scenario.json")["par"]["goal_met"] is True
+    assert {u["id"] for u in load("health.json")["unsupported"]} >= {"mood", "thoughts"}
+    assert rec["meta"]["simulated"] and hist["meta"]["simulated"]
+
+
+def test_demo_data_never_contains_secrets_or_llm_keys(built):
+    blob = "".join(p.read_text() for p in (built / "a").glob("*.json"))
+    for needle in ("api_key", "api-key", "sk-", "Bearer ", "OPENAI_API_KEY", "pair_token"):
+        assert needle not in blob, needle
+
+
+def test_build_ignores_a_saved_developer_twin(tmp_path, monkeypatch):
+    from wallhack import config, twin
+    monkeypatch.setattr(config, "DEFAULT_DATA_DIR", str(tmp_path))
+    custom = twin.sample_twin()
+    custom["name"] = "Private home"
+    twin.save_twin(str(tmp_path), custom)
+    out = tmp_path / "o"
+    build_demo.build(out, 7, "demo", 2.0)
+    assert json.loads((out / "twin.json").read_text())["name"] == "Sample house"
+
+
+def test_heart_rate_is_visible_in_the_full_recording():
+    data = build_demo.record(7, "demo", 90.0)["recording.json"]
+    assert any(f["status"]["heart_bpm"] is not None for f in data["frames"])
+
+
+def test_demo_shares_tick_constants_with_the_live_app():
+    from wallhack import runtime
+    assert build_demo.TICK_S is runtime.WS_TICK_S and build_demo.EVENTS_PER_FRAME is runtime.WS_EVENTS_PER_FRAME
 
 
 def test_static_host_safe_index(built):
@@ -71,10 +111,18 @@ def test_build_script_runs_without_fastapi(tmp_path):
     assert (tmp_path / "o" / "recording.json").is_file()
 
 
+def test_built_index_has_no_inline_script(built):
+    """script-src 'self' blocks inline scripts, so one would pass CI and break in production."""
+    html = (built / "a" / "index.html").read_text()
+    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html)
+    assert not re.search(r"\son\w+\s*=", html)
+
+
 def test_vercel_config():
     cfg = json.loads((ROOT / "vercel.json").read_text())
     assert cfg["outputDirectory"] == "dist"
     assert "tools/build_demo.py" in cfg["buildCommand"]
+    assert re.search(r"numpy==\d+\.\d+\.\d+", cfg["buildCommand"])   # pinned: byte-identical output needs one version
     csp = next(h["value"] for e in cfg["headers"] for h in e["headers"] if h["key"] == "Content-Security-Policy")
     assert "default-src 'self'" in csp and "connect-src 'self'" in csp
     assert "dist/" in (ROOT / ".gitignore").read_text().split()

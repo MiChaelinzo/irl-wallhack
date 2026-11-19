@@ -23,6 +23,8 @@ log = logging.getLogger("wallhack")
 REAL_ZONE = "room"
 HISTORY = 6000
 STALE_AFTER_S = 10.0
+WS_TICK_S = 0.5                 # seconds between /ws frames; the static demo recorder uses the same value
+WS_EVENTS_PER_FRAME = 20        # events included in every /ws frame
 SCORE_TREND_WINDOW_S = 60.0     # a score's trend compares against the value about this long ago
 SCORE_COVERAGE_CELL_M = 1.0
 
