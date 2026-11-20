@@ -83,3 +83,19 @@ def test_empty_tile_hint_reports_actual_sensor_status():
     assert "scd4x error (CRC error)" in errored and "pms5003" not in errored
     assert "ens160 warming" in warming
     assert "--sensors" not in ok_no_data
+
+
+def test_quality_selector_and_persistence_wired():
+    html = (STATIC / "index.html").read_text()
+    assert 'id="quality3d"' in html
+    for level in ("low", "medium", "high"):
+        assert f'<option value="{level}"' in html
+    app_js = (STATIC / "app.js").read_text()
+    assert "wallhack.quality" in app_js
+    assert "Room3D.setQuality" in app_js
+
+
+def test_view3d_honours_reduced_motion():
+    js = (STATIC / "view3d.js").read_text()
+    assert "prefers-reduced-motion" in js
+    assert "STILL_TIME" in js

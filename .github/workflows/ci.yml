@@ -22,3 +22,8 @@ jobs:
       - run: python -m pytest -q
       - run: for f in wallhack/static/*.js; do node --check "$f"; done
       - run: bash -n scripts/pi_setup.sh install.sh run.sh
+      - name: Build static demo
+        run: |
+          python tools/build_demo.py
+          test -s dist/index.html
+          test -s dist/recording.json

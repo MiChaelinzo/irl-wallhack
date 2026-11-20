@@ -9,6 +9,7 @@
   var linkOrder = [];
   var latest = { status: null, zones: [], links: [], events: [] };
   var lastSeq = 0;
+  var DEMO = window.WALLHACK_DEMO || null;  // set only by the static demo build (demo.js)
   var ws = null, retryMs = 500, pollTimer = null, wsOpen = false;
 
   var HISTORY_POINTS = 120;        // client-side sparkline history per environment metric
@@ -40,6 +41,7 @@
   function store(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* storage unavailable */ } }
   function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
   function getJson(url) {
+    if (DEMO) { return DEMO.getJson(url); }
     return fetch(url).then(function (r) {
       if (!r.ok) { throw new Error(url + " returned " + r.status); }
       return r.json();
@@ -414,10 +416,15 @@
     }).catch(function () { setConn("offline", "warn"); $("offline").hidden = false; });
   }
 
-  function startPolling() { if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); } }
+  function resetClient() {
+    series = {}; motionSeries = {}; lastSeq = 0; Object.keys(envHistory).forEach(function (k) { envHistory[k] = []; });
+  }
+
+  function startPolling() { if (DEMO) { return; } if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); } }
   function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
   function connect() {
+    if (DEMO) { DEMO.play(ingest, resetClient, setConn); return; }
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     try { ws = new WebSocket(proto + "//" + location.host + "/ws"); } catch (e) { startPolling(); return; }
     ws.onopen = function () { wsOpen = true; retryMs = 500; stopPolling(); setConn("live", "ok"); };
@@ -453,11 +460,12 @@
   function closeDrawer() { $("drawer").hidden = true; $("settingsBtn").setAttribute("aria-expanded", "false"); }
 
   function applySettings() {
+    if (DEMO) { $("setMsg").textContent = DEMO.readOnlyMessage; return; }
     var body = { source: $("setSource").value, scenario: $("setScenario").value, sensitivity: parseFloat($("setSens").value) };
     fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function (r) {
         if (!r.ok) { return r.json().then(function (e) { throw new Error(JSON.stringify(e.detail)); }); }
-        series = {}; motionSeries = {}; lastSeq = 0; Object.keys(envHistory).forEach(function (k) { envHistory[k] = []; });
+        resetClient();
         $("setMsg").textContent = "Applied.";
       })
       .catch(function (e) { $("setMsg").textContent = "Error: " + e.message; });
@@ -474,6 +482,7 @@
 
   function calibrate() {
     var msg = $("note");
+    if (DEMO) { msg.hidden = false; msg.textContent = DEMO.readOnlyMessage; return; }
     fetch("/api/calibrate", { method: "POST" }).then(function (r) {
       if (!r.ok) { throw new Error("server returned " + r.status); }
       motionSeries = {};
@@ -533,9 +542,16 @@
     $("zoomIn").addEventListener("click", Room3D.zoomIn);
     $("zoomOut").addEventListener("click", Room3D.zoomOut);
     $("resetView").addEventListener("click", Room3D.reset);
-    if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      Room3D.setAutoRotate(false); $("rotateBtn").setAttribute("aria-pressed", "false");
-    }
+    if (!Room3D.isAutoRotating()) { $("rotateBtn").setAttribute("aria-pressed", "false"); }
+    var qualitySel = $("quality3d");
+    var savedQuality = load("wallhack.quality");
+    if (savedQuality) { Room3D.setQuality(savedQuality); }
+    qualitySel.value = Room3D.getQuality();
+    qualitySel.addEventListener("change", function () {
+      Room3D.setQuality(qualitySel.value); store("wallhack.quality", Room3D.getQuality());
+    });
+    // automatic drop on a slow device updates the selector but is not saved as the user's choice
+    Room3D.onQualityChange(function (q) { qualitySel.value = q; });
     drawGauge($("gauge"), null); drawHeat($("heat"), []);
     connect();
     startPolling();

@@ -28,6 +28,11 @@ out.quiet = v.volumeHeight(0, 0, false);
 out.full = v.volumeHeight(1e6, 0, false);
 out.again = v.zoneRects(["b", "a"]).map(r => [r.x0, r.x1]);
 out.again2 = v.zoneRects(["a", "b"]).map(r => [r.x0, r.x1]);
+out.dust = v.dustParticles(5);
+out.dustAgain = v.dustParticles(5);
+out.qualities = ["bogus", "high", null].map(q => v.normaliseQuality(q));
+out.slow = v.qualityForFrameTime("high", v.SLOW_FRAME_MS + 1);
+out.fast = v.qualityForFrameTime("high", 16);
 console.log(JSON.stringify(out));
 """
 
@@ -70,3 +75,15 @@ def test_zone_layout_is_deterministic_and_sorted(result):
 def test_volume_height_scales_and_saturates(result):
     assert result["quiet"] < result["full"]
     assert result["full"] == pytest.approx(2.2)
+
+
+def test_dust_is_seeded_and_inside_room(result):
+    assert result["dust"] == result["dustAgain"]
+    assert len({d["x"] for d in result["dust"]}) == 5
+    assert all(abs(d["x"]) <= 3 and 0 <= d["y"] <= 2.6 and abs(d["z"]) <= 2.5 for d in result["dust"])
+
+
+def test_quality_helpers(result):
+    assert result["qualities"] == ["medium", "high", "medium"]
+    assert result["slow"] == "low"
+    assert result["fast"] == "high"
