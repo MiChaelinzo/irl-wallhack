@@ -14,52 +14,75 @@ import logging
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from wallhack import game, judge, rfmodel  # noqa: E402
 from wallhack.config import Config  # noqa: E402
-from wallhack.runtime import Runtime  # noqa: E402
+from wallhack.history import History  # noqa: E402
+from wallhack.runtime import WS_EVENTS_PER_FRAME as EVENTS_PER_FRAME, WS_TICK_S as TICK_S, Runtime  # noqa: E402
 from wallhack.simulator import SAMPLE_HZ  # noqa: E402
 
 STATIC = ROOT / "wallhack" / "static"
-ASSETS = ("style.css", "view3d.js", "app.js", "demo.js")
-TICK_S = 0.5                       # matches WS_INTERVAL_S in wallhack/app.py
+ASSETS = ("style.css", "common.js", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js", "mobile.js", "judge.js")
+PAGES = {"index.html": '<script src="view3d.js"></script>', "mobile.html": '<script src="common.js"></script>',
+         "judge.html": '<script src="common.js"></script>'}   # page -> script tag demo.js is loaded before
 REPLAY_NOTE = "Simulated replay recorded from the Wallhack simulator. Nothing here reads your WiFi."
-EVENTS_PER_FRAME = 20              # matches the live /ws payload
+SCORE_EVERY_TICKS = 20             # refresh trend reference values every 10 s of recording
+DATA_FILES = ("recording.json", "history.json", "twin.json", "insights.json", "scores.json",
+              "scenario.json", "health.json", "coverage.json", "judge.json")
 
 
 def record(seed: int, scenario: str, seconds: float) -> dict:
-    """Run the real runtime and capture the same payload the /ws endpoint sends each tick."""
+    """Run the real runtime and capture what the live API serves: the /ws payload each tick, plus the
+    whole-session history, the twin, the insights, the scores, the health data and the game scenario.
+    Returns {file name: JSON-serialisable data}."""
     logging.getLogger("wallhack").setLevel(logging.ERROR)  # the runtime warns that data is simulated
-    rt = Runtime(Config(source="simulator", scenario=scenario, seed=seed, background=False))
-    per_tick = int(round(TICK_S * SAMPLE_HZ))
-    frames = []
-    last_seq = 0
-    for _ in range(int(round(seconds / TICK_S))):
-        rt.step_sim(per_tick)
-        status = rt.status()
-        status["note"] = REPLAY_NOTE
-        new = [s for s in rt.samples if s["seq"] > last_seq]
-        if new:
-            last_seq = new[-1]["seq"]
-        events = [e.as_dict() for e in list(rt.engine.events)[-EVENTS_PER_FRAME:]][::-1]
-        frames.append({"status": status, "zones": list(rt.engine.zones().values()),
-                       "links": rt.engine.link_states(), "samples": new, "events": events})
-    return {"meta": {"seed": seed, "scenario": scenario, "seconds": seconds, "tick_s": TICK_S,
-                     "simulated": True, "generator": "tools/build_demo.py"},
-            "settings": rt.settings(), "frames": frames}
+    with tempfile.TemporaryDirectory() as data_dir:   # empty: never reads a developer's saved twin
+        cfg = Config(source="simulator", scenario=scenario, seed=seed, background=False, data_dir=data_dir)
+        rt = Runtime(cfg, history=History(":memory:", cfg.history_max_rows))
+        per_tick = int(round(TICK_S * SAMPLE_HZ))
+        frames = []
+        last_seq = 0
+        for tick in range(int(round(seconds / TICK_S))):
+            rt.step_sim(per_tick)
+            status = rt.status()
+            status["note"] = REPLAY_NOTE
+            new = [s for s in rt.samples if s["seq"] > last_seq]
+            if new:
+                last_seq = new[-1]["seq"]
+            events = [e.as_dict() for e in list(rt.engine.events)[-EVENTS_PER_FRAME:]][::-1]
+            frames.append({"status": status, "zones": list(rt.engine.zones().values()),
+                           "links": rt.engine.link_states(), "samples": new, "events": events})
+            if tick % SCORE_EVERY_TICKS == 0:
+                rt.scores()
+        meta = {"seed": seed, "scenario": scenario, "seconds": seconds, "tick_s": TICK_S,
+                "simulated": True, "generator": "tools/build_demo.py"}
+        return {
+            "recording.json": {"meta": meta, "settings": rt.settings(), "frames": frames},
+            "history.json": {"meta": meta, "step": cfg.history_step_s,
+                             "rows": rt.history.query(0.0, None, cfg.history_step_s)},
+            "twin.json": rt.get_twin(),
+            "insights.json": {**rt.insights(), "meta": meta},
+            "scores.json": {"scores": rt.scores(), "meta": meta},
+            "health.json": {**rt.health(), "meta": meta},
+            "scenario.json": game.build_scenario(),
+            "coverage.json": rfmodel.twin_coverage(rt.get_twin()),
+            "judge.json": judge.judge_report(),
+        }
 
 
-def static_index() -> str:
-    """index.html with relative asset paths (a static host may serve it from a sub-path) and the
-    demo script loaded first so it can mark the page as a replay."""
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
+def static_page(name: str) -> str:
+    """A page with relative asset paths (a static host may serve it from a sub-path) and the demo
+    script loaded first so it can mark the page as a replay."""
+    html = (STATIC / name).read_text(encoding="utf-8")
     html = html.replace('href="/static/', 'href="').replace('src="/static/', 'src="')
-    marker = '<script src="view3d.js"></script>'
+    marker = PAGES[name]
     if marker not in html:
-        raise SystemExit("index.html no longer loads view3d.js; update tools/build_demo.py")
+        raise SystemExit("%s no longer loads %s; update tools/build_demo.py" % (name, marker))
     return html.replace(marker, '<script src="demo.js"></script>\n' + marker)
 
 
@@ -67,14 +90,18 @@ def build(out: Path, seed: int, scenario: str, seconds: float) -> None:
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    (out / "index.html").write_text(static_index(), encoding="utf-8")
+    for page in PAGES:
+        (out / page).write_text(static_page(page), encoding="utf-8")
     for name in ASSETS:
         shutil.copyfile(STATIC / name, out / name)
-    data = json.dumps(record(seed, scenario, seconds), sort_keys=True, separators=(",", ":"))
-    (out / "recording.json").write_text(data + "\n", encoding="utf-8")
-    leftovers = re.findall(r'(?:src|href)="/[^"]*"', (out / "index.html").read_text(encoding="utf-8"))
-    if leftovers:
-        raise SystemExit("absolute asset paths left in index.html: %s" % leftovers)
+    for name, payload in record(seed, scenario, seconds).items():
+        data = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        (out / name).write_text(data + "\n", encoding="utf-8")
+    for page in PAGES:
+        # links to other pages carry data-page and are rewritten by common.js; only assets must be relative
+        leftovers = [m for m in re.findall(r'<(?:script|link)[^>]*(?:src|href)="/[^"]*"', (out / page).read_text(encoding="utf-8"))]
+        if leftovers:
+            raise SystemExit("absolute asset paths left in %s: %s" % (page, leftovers))
 
 
 def main() -> int:
@@ -87,7 +114,7 @@ def main() -> int:
     out = Path(args.out)
     out = out if out.is_absolute() else ROOT / out
     build(out, args.seed, args.scenario, args.seconds)
-    print("wrote %s (%d bytes recording)" % (out, (out / "recording.json").stat().st_size))
+    print("wrote %s (%s)" % (out, ", ".join("%s %d B" % (n, (out / n).stat().st_size) for n in DATA_FILES)))
     return 0
 
 

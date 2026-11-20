@@ -19,6 +19,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements-dev.txt
+      - run: pip install opencv-python-headless   # lets the QR decode tests run instead of skipping
       - run: python -m pytest -q
       - run: for f in wallhack/static/*.js; do node --check "$f"; done
       - run: bash -n scripts/pi_setup.sh install.sh run.sh

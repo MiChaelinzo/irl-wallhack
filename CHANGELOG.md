@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### Review fixes
+- fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
+- fix: JSON bodies on `PUT /api/twin`, `POST /api/settings` and `POST /api/insights/explain` are capped at 1 MB (413).
+- fix: judge item `mobile` is PARTIALLY VERIFIED and tracks the real-phone README row. A test asserts `config.LLM_PROVIDERS == llm.PROVIDERS`.
+- docs: `confirm_off_device` is a client-side consent flag, not a server-enforced policy (documented, not changed).
+
+### Docs and polish
+- docs: README run instructions per mode, LLM provider table, status of the ten platform items, expanded privacy notice.
+- ci: install opencv-python-headless so the QR decode tests run in CI.
+- fix: judge page no longer shows a demo Pause button that did nothing; judge status glyphs are decorative (aria-hidden, symbol font fallback) and the status text chips carry the meaning.
+
+### Mobile companion, premium UI and judge mode
+- feat: `wallhack/qr.py` pure-Python QR encoder (byte mode, level M, versions 1-6, written from the spec, no third-party code). `GET /api/pair` now also returns `qr` module rows; the dashboard pairing card draws them on a canvas with LAN instructions and a security note. Tests decode the codes with OpenCV when installed.
+- feat: `mobile.html` / `mobile.js` (`/mobile`): occupancy, vitals, sensor status, in-page alerts and opt-in Notification API alerts by polling `/api/status`. In the static demo it replays the recording. Notifications UNVERIFIED (blocked on plain http by many browsers).
+- feat: `judge.html` / `judge.js` (`/judge`) fed by `wallhack/judge.py` (`GET /api/judge`, `judge.json` in the demo): Built, Experimental, Future, Unsupported per item. Smart Home Automation and Enterprise analytics are Future, LLM is Experimental and UNVERIFIED. `tests/test_judge.py` compares every item with its README verification row.
+- feat: premium UI. `common.js` (shared JSON loading, quality attribute, seeded ambient particles), glass cards with `@supports` fallback, animated ambient background, depth blur on high quality. `view3d.js` adds WiFi flow particles, CSI activity particles, neon wall edges, additive bloom and depth-of-field on high. Low quality turns all of it off, reduced motion freezes it.
+- test: `tools/screenshot.py` also captures the timeline, insights, game and pairing cards and the mobile and judge pages (live and demo) and fails on JS errors or blank canvases.
+
+### Digital twin platform (dashboard)
+- feat: 3D twin view (`view3d.js`): stacked or single floor, rooms, walls, doors, windows, furniture, sensors, access points, live room occupancy from zones, optional signal heat overlay from `/api/rf/coverage` (MODEL ESTIMATE; low quality samples every other cell). Fixes overlapping link labels (router-a/router-b) in the signal view.
+- feat: `twin.js` designer (add, edit, delete rooms, furniture, doors, windows, sensors, APs; save with `PUT /api/twin`; read-only in the demo). `panels.js`: RF intelligence strip with trend arrows, smart home Healthy/Warning/Danger cards, Health Mode (Experimental banner, "Not medical data. For research purposes only.", mood, perspiration, thoughts and through-wall imaging shown as Not supported), insights copilot with provider selector and cloud disclosure, timeline playback with PLAYBACK badge.
+- feat: `game.js` placement game. JS only takes the per-cell maximum, threshold and cost from server grids; `tests/test_game_parity.py` checks it against `game.score_selection` on all 257 selections.
+- feat: demo serves the new data files through `demo.js`; `tools/build_demo.py` adds `coverage.json`.
+
+### Digital twin platform (backend)
+- feat: `wallhack/twin.py` building model with validation and atomic save to `data/twin.json`; `GET/PUT /api/twin` (same-origin, JSON only).
+- feat: `wallhack/rfmodel.py` log-distance path loss with per-wall, door and window attenuation and `GET /api/rf/coverage`. A model ESTIMATE.
+- feat: `wallhack/history.py` SQLite history with retention (`history_max_rows`), sessions and `GET /api/history`; Healthy/Warning/Danger `status` in `/api/environment`.
+- feat: `wallhack/insights.py` deterministic rules and `wallhack/llm.py` opt-in rewording (ollama, llama.cpp, OpenAI, Azure; keys from env vars only; cloud needs per-request confirmation). Tested against mocked local servers only; real providers UNVERIFIED.
+- feat: `wallhack/scores.py` RF intelligence scores, `wallhack/game.py` apartment placement scenario, `GET /api/health` with explicit unsupported metrics.
+- feat: opt-in `--lan` / `WALLHACK_LAN=1` with a random pairing token (cookie or bearer) for HTTP and WebSocket; default bind stays 127.0.0.1.
+- feat: `tools/build_demo.py` also exports history, twin, insights, scores, health and scenario JSON, takes tick constants from `wallhack.runtime` instead of copying them, and `vercel.json` pins numpy (PR #4 review notes). A test now asserts the built index has no inline script.
+
 ### Static Vercel demo
 - feat: `tools/build_demo.py` records the real Python Runtime (Simulator, SensingEngine, simulated environment) into `dist/recording.json`, one frame per WebSocket tick, and assembles a static site with relative paths. Deterministic (byte-identical builds). Needs numpy, not fastapi. No processing is ported to JS.
 - feat: `wallhack/static/demo.js` plays the recording in a loop, with a pause button, a persistent "Simulated replay" banner, and read-only settings and calibrate. `app.js` behaves as before when the demo marker is absent.

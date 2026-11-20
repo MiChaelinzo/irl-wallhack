@@ -87,3 +87,53 @@ def test_quality_helpers(result):
     assert result["qualities"] == ["medium", "high", "medium"]
     assert result["slow"] == "low"
     assert result["fast"] == "high"
+
+
+TWIN_SCRIPT = """
+const v = require(process.argv[1]);
+const twin = { floors: [{ width_m: 10, depth_m: 8, height_m: 2.6, level: 0 }, { width_m: 10, depth_m: 8, height_m: 2.5, level: 1 }] };
+const ext = v.twinExtent(twin), s = v.twinScale(twin);
+console.log(JSON.stringify({
+  scale: s, ext,
+  centre: v.twinPoint(5, 4, 0, s, ext), corner: v.twinPoint(0, 0, 0, s, ext),
+  stacked: [0, 1].map(l => v.floorElevation(twin.floors[l], true, ext, s)),
+  single: v.floorElevation(twin.floors[1], false, ext, s),
+  span: v.openingSpan({ x1: 0, y1: 0, x2: 10, y2: 0 }, { pos: 2, width: 1 }),
+  clipped: v.openingSpan({ x1: 0, y1: 0, x2: 4, y2: 0 }, { pos: 3.5, width: 2 }),
+  heat: [-45, -65, -95].map(r => v.heatColor(r)),
+}));
+"""
+
+
+def test_twin_geometry_helpers():
+    res = subprocess.run(["node", "-e", TWIN_SCRIPT, str(STATIC / "view3d.js")], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    assert out["scale"] == pytest.approx(0.6)               # 6 m / 10 m fits the schematic room
+    assert out["centre"] == [0, 0, 0]
+    assert out["corner"][0] < 0 and out["corner"][2] < 0
+    assert out["stacked"][0] == 0 and out["stacked"][1] > 0 and out["single"] == 0
+    assert out["span"] == [[2, 0], [3, 0]]
+    assert out["clipped"] == [[3.5, 0], [4, 0]]
+    assert out["heat"][0] != out["heat"][2]                  # strong and weak signal use different colours
+
+
+EFFECTS_SCRIPT = """
+const v = require(process.argv[1]);
+const P = v.QUALITY_PROFILES;
+const a = JSON.stringify(v.effectSeeds()), b = JSON.stringify(v.effectSeeds());
+console.log(JSON.stringify([
+  P.low.flow, P.low.bloom, P.low.dof, P.low.dust, P.medium.flow > 0, P.medium.dof, P.high.flow > P.medium.flow, P.high.bloom, P.high.dof,
+  a === b, v.effectSeeds().length,
+  v.focusBlur(8, 8), v.focusBlur(100, 8), v.focusBlur(9, 8) < v.focusBlur(12, 8)]));
+"""
+
+
+def test_effects_follow_quality_levels_and_are_deterministic():
+    res = subprocess.run(["node", "-e", EFFECTS_SCRIPT, str(STATIC / "view3d.js")], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    (low_flow, low_bloom, low_dof, low_dust, med_flow, med_dof, high_more, high_bloom, high_dof,
+     same, count, at_focus, far, grows) = json.loads(res.stdout)
+    assert low_flow == 0 and not low_bloom and not low_dof and low_dust == 0   # low disables particles and bloom
+    assert med_flow and not med_dof and high_more and high_bloom and high_dof
+    assert same and count == 64 and at_focus == 0 and far == 1 and grows

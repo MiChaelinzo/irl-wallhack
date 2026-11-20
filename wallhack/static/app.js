@@ -40,13 +40,9 @@
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
   function store(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* storage unavailable */ } }
   function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
-  function getJson(url) {
-    if (DEMO) { return DEMO.getJson(url); }
-    return fetch(url).then(function (r) {
-      if (!r.ok) { throw new Error(url + " returned " + r.status); }
-      return r.json();
-    });
-  }
+  function getJson(url) { return window.WallhackCommon.getJson(url); }   // common.js: demo-aware
+  // Shared with twin.js, panels.js and game.js, which load after this file.
+  window.Wallhack = { getJson: getJson, demo: DEMO };
   function colorFor(link) {
     var i = linkOrder.indexOf(link);
     if (i < 0) { linkOrder.push(link); i = linkOrder.length - 1; }
@@ -116,7 +112,7 @@
 
   function palette3d() {
     return { bad: css("--bad"), ok: css("--ok"), muted: css("--muted"), line: css("--line"), fg: css("--fg"),
-             accent: css("--accent"), accent2: css("--accent2") };
+             accent: css("--accent"), accent2: css("--accent2"), warn: css("--warn") };
   }
 
   // ---- vitals ------------------------------------------------------------
@@ -547,11 +543,13 @@
     var savedQuality = load("wallhack.quality");
     if (savedQuality) { Room3D.setQuality(savedQuality); }
     qualitySel.value = Room3D.getQuality();
+    window.WallhackCommon.setQuality(Room3D.getQuality());
     qualitySel.addEventListener("change", function () {
       Room3D.setQuality(qualitySel.value); store("wallhack.quality", Room3D.getQuality());
+      window.WallhackCommon.setQuality(Room3D.getQuality());
     });
     // automatic drop on a slow device updates the selector but is not saved as the user's choice
-    Room3D.onQualityChange(function (q) { qualitySel.value = q; });
+    Room3D.onQualityChange(function (q) { qualitySel.value = q; window.WallhackCommon.setQuality(q); });
     drawGauge($("gauge"), null); drawHeat($("heat"), []);
     connect();
     startPolling();

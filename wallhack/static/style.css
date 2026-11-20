@@ -131,3 +131,87 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
 /* static demo build only (demo.js inserts #demoBanner) */
 .banner.demo { display:flex; align-items:center; gap:14px; background:var(--info-bg); border-color:var(--accent); }
 .banner.demo p { margin:0; flex:1; }
+
+/* digital twin platform panels */
+.scores { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
+.score { background:var(--idle-bg); border:1px solid var(--line); border-left:4px solid var(--muted); border-radius:12px; padding:10px 12px; }
+.score.green { border-left-color:var(--ok); } .score.yellow { border-left-color:var(--warn); } .score.red { border-left-color:var(--bad); }
+.score .label, .home-card .label, .tl-val .label { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.score .val, .tl-val .val { font-size:1.5rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.trend { font-size:1.1rem; color:var(--accent); }
+.home-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:10px; }
+.home-card { background:var(--idle-bg); border:1px solid var(--line); border-left:4px solid var(--muted); border-radius:12px; padding:10px 12px; }
+.home-card.healthy { border-left-color:var(--ok); } .home-card.warning { border-left-color:var(--warn); } .home-card.danger { border-left-color:var(--bad); }
+.home-card .val { font-size:1.3rem; font-weight:700; } .home-card .status { font-size:.8rem; }
+.home-card.healthy .status { color:var(--ok); } .home-card.warning .status { color:var(--warn); } .home-card.danger .status { color:var(--bad); }
+.warn-banner { margin:0 0 12px; }
+.insight-cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; }
+.plain { margin:0; padding-left:18px; }
+.llm-row { margin-top:10px; }
+#tlSlider { margin:6px 0; }
+.tl-values, .game-score { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:8px; margin:8px 0; }
+.designer { display:grid; grid-template-columns:minmax(200px, 1fr) 2fr; gap:12px; margin:8px 0; }
+.designer select[size] { height:auto; }
+.ds-fields { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; align-content:start; }
+.ds-fields label { display:flex; flex-direction:column; gap:3px; font-size:.85rem; }
+.ds-fields input { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px; font:inherit; }
+.cand-row { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+#gameCanvas { max-width:720px; }
+@media (max-width:700px) { .designer { grid-template-columns:1fr; } }
+
+/* ---- premium UI -------------------------------------------------------------------------------
+   Effects follow the quality setting (html[data-quality], set by common.js). Low turns off blur,
+   glow and the animated background. prefers-reduced-motion stops all animation. */
+#fx { position:fixed; inset:0; width:100%; height:100%; z-index:-1; pointer-events:none; }
+#fx[hidden] { display:none; }
+body::before { content:""; position:fixed; inset:-20%; z-index:-2; pointer-events:none; opacity:.55;
+  background:radial-gradient(40% 35% at 20% 30%, var(--glow), transparent), radial-gradient(35% 30% at 80% 70%, var(--glow2), transparent);
+  animation:ambient 40s ease-in-out infinite alternate; }
+@keyframes ambient { from { transform:translate3d(-3%,-2%,0) scale(1); } to { transform:translate3d(3%,2%,0) scale(1.12); } }
+.card { background-image:linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,0) 45%); box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.08);
+  -webkit-backdrop-filter:blur(10px) saturate(1.2); backdrop-filter:blur(10px) saturate(1.2); transition:box-shadow var(--ease), border-color var(--ease); }
+.card:hover { border-color:rgba(45,212,191,.45); box-shadow:var(--shadow), 0 0 22px rgba(45,212,191,.14), inset 0 1px 0 rgba(255,255,255,.1); }
+header { -webkit-backdrop-filter:blur(12px) saturate(1.2); backdrop-filter:blur(12px) saturate(1.2); }
+h1 .logo { animation:logo-glow 4s ease-in-out infinite alternate; }
+@keyframes logo-glow { from { box-shadow:0 0 8px var(--accent2); } to { box-shadow:0 0 20px var(--accent), 0 0 34px var(--accent2); } }
+.card h2 { text-shadow:0 0 12px rgba(45,212,191,.35); }
+.badge.present, .badge.moving { text-shadow:0 0 14px currentColor; }
+.nav { display:flex; gap:6px; }
+.nav a { color:var(--fg); text-decoration:none; padding:3px 11px; border:1px solid var(--line); border-radius:999px; font-size:.8rem; background:var(--card); }
+.nav a:hover, .nav a:focus-visible { border-color:var(--accent); box-shadow:0 0 12px rgba(45,212,191,.3); }
+:root[data-theme="light"] .card { background-image:none; }
+:root[data-theme="light"] #fx { opacity:.5; }
+/* no backdrop-filter support: use solid cards so text stays readable */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  .card, header { background:var(--card-solid); }
+}
+/* depth-of-field style blur: the ambient background is softly blurred, strongest on high */
+html[data-quality="high"] body::before { filter:blur(36px); }
+html[data-quality="high"] .card { -webkit-backdrop-filter:blur(16px) saturate(1.35); backdrop-filter:blur(16px) saturate(1.35); }
+html[data-quality="high"] #drawer { -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); }
+/* low: flat and cheap for a Raspberry Pi 4 */
+html[data-quality="low"] body::before, html[data-quality="low"] h1 .logo { animation:none; }
+html[data-quality="low"] body::before { display:none; }
+html[data-quality="low"] .card, html[data-quality="low"] header { -webkit-backdrop-filter:none; backdrop-filter:none; background-image:none; }
+html[data-quality="low"] .card { background:var(--card-solid); box-shadow:none; }
+html[data-quality="low"] .card:hover { box-shadow:none; }
+html[data-quality="low"] .card h2, html[data-quality="low"] .badge { text-shadow:none; }
+@media (prefers-reduced-motion: reduce) { body::before, h1 .logo { animation:none !important; } }
+
+/* ---- mobile companion and judge pages ---- */
+.mobile-main { max-width:520px; grid-template-columns:1fr; }
+.judge-main { max-width:1000px; }
+.pair-body { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; margin:10px 0; }
+#pairQr { width:200px; height:200px; image-rendering:pixelated; background:#fff; border-radius:8px; }
+.pair-url { display:block; word-break:break-all; font-size:.8rem; max-width:420px; }
+.pair-steps { margin:6px 0; padding-left:20px; }
+.judge-legend { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+.judge-list { list-style:none; margin:0; padding:0; }
+.judge-item { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+.judge-mark { font-family:"Segoe UI Symbol","Noto Sans Symbols","Noto Sans Symbols 2","DejaVu Sans",sans-serif; width:1.6em; font-size:1.2rem; text-align:center; flex:none; }
+.judge-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px; }
+.judge-head a { color:var(--accent); }
+.chip.st-built, .judge-item.st-built .judge-mark { color:var(--ok); }
+.chip.st-experimental, .judge-item.st-experimental .judge-mark { color:var(--warn); }
+.chip.st-future, .judge-item.st-future .judge-mark { color:var(--muted); }
+.chip.st-unsupported, .judge-item.st-unsupported .judge-mark { color:var(--bad); }

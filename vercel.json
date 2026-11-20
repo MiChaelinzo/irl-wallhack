@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pip install numpy && python3 tools/build_demo.py",
+  "buildCommand": "pip install numpy==2.4.6 && python3 tools/build_demo.py",
   "outputDirectory": "dist",
   "installCommand": "true",
   "cleanUrls": true,

@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 from typing import Optional
 
 log = logging.getLogger("wallhack")
@@ -16,6 +16,8 @@ SENSORS = ("pms5003", "scd4x", "ens160", "ze08", "mlx90614")
 DEFAULT_PMS_PORT = "/dev/serial0"       # Pi primary UART; PMS5003 on GPIO 14/15
 DEFAULT_HCHO_PORT = "/dev/ttyUSB0"      # ZE08-CH2O through a USB-serial adapter
 DEFAULT_I2C_BUS = 1                     # /dev/i2c-1 on Raspberry Pi
+LLM_PROVIDERS = ("", "ollama", "llamacpp", "openai", "azure")   # keep in sync with llm.PROVIDERS
+DEFAULT_DATA_DIR = "data"               # gitignored; holds twin.json and history.db
 
 
 @dataclass
@@ -37,6 +39,15 @@ class Config:
     serial_pms: str = DEFAULT_PMS_PORT
     serial_hcho: str = DEFAULT_HCHO_PORT
     i2c_bus: int = DEFAULT_I2C_BUS
+    data_dir: str = field(default_factory=lambda: DEFAULT_DATA_DIR)  # read at call time so tests can redirect it
+    history_enabled: bool = True  # keep a local SQLite history under data_dir
+    history_step_s: float = 5.0   # seconds of sensing time between history rows
+    history_max_rows: int = 17280  # retention limit: oldest rows are deleted beyond this
+    llm_provider: str = ""        # "" = off; ollama | llamacpp (local) | openai | azure (cloud). Keys: env vars only
+    llm_model: str = ""
+    llm_endpoint: str = ""        # optional base URL override; never a secret
+    llm_timeout_s: float = 30.0
+    lan: bool = False             # opt-in: bind all interfaces for the mobile companion; needs the pairing token
     background: bool = True       # tests set False and step manually
 
     def sensor_names(self) -> tuple:
@@ -58,11 +69,26 @@ class Config:
             raise ValueError(f"csi_source must be one of {CSI_SOURCES}")
         if not 1 <= self.csi_port <= 65535:
             raise ValueError("csi_port must be 1-65535")
+        if self.llm_provider not in LLM_PROVIDERS:
+            raise ValueError(f"llm_provider must be one of {LLM_PROVIDERS}")
+        if self.llm_timeout_s <= 0:
+            raise ValueError("llm_timeout_s must be greater than 0")
+        if self.history_step_s <= 0:
+            raise ValueError("history_step_s must be greater than 0")
+        if self.history_max_rows < 1:
+            raise ValueError("history_max_rows must be at least 1")
         if not 1 <= self.port <= 65535:
             raise ValueError("port must be 1-65535")
 
+    def bind_host(self) -> str:
+        """Address to bind. Always loopback unless `lan` is on or a host was chosen explicitly."""
+        return "0.0.0.0" if self.lan and self.host in LOCAL_HOSTS else self.host
+
     def warn_if_exposed(self) -> None:
-        if self.host not in LOCAL_HOSTS:
+        if self.lan:
+            log.warning("LAN mode is on: the dashboard is reachable from your network but needs the pairing "
+                        "token shown by /api/pair. Only use it on a network you trust.")
+        elif self.host not in LOCAL_HOSTS:
             log.warning("Binding to %s exposes the dashboard to your network. "
                         "There is no authentication. Use 127.0.0.1 unless you trust the network.", self.host)
 

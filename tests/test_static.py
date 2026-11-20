@@ -99,3 +99,69 @@ def test_view3d_honours_reduced_motion():
     js = (STATIC / "view3d.js").read_text()
     assert "prefers-reduced-motion" in js
     assert "STILL_TIME" in js
+
+
+def test_dashboard_has_digital_twin_panels(client):
+    html = client.get("/").text
+    for element_id in ("scoreStrip", "floorSel", "viewMode", "heatToggle", "tlSlider", "playBadge", "insightsBody",
+                       "insightsReco", "llmExplain", "homeGrid", "healthCard", "dsList", "dsSave", "gameCanvas", "gameCands"):
+        assert f'id="{element_id}"' in html, element_id
+    for script in ("twin.js", "panels.js", "game.js"):
+        assert f'src="/static/{script}"' in html
+
+
+def test_health_mode_labels_unsupported_metrics(client):
+    html = client.get("/").text
+    assert "Not medical data. For research purposes only." in html
+    for label in ("Mood", "Perspiration", "Thoughts", "Through-wall imaging"):
+        assert f"{label}: Not supported" in html, label
+    assert "Experimental" in html
+
+
+def test_llm_panel_is_labelled_unverified(client):
+    assert "UNVERIFIED" in client.get("/").text
+
+
+def test_new_scripts_have_no_inline_handlers_or_scripts(client):
+    html = client.get("/").text
+    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html)
+    assert not re.search(r"\son(click|load|change)=", html)
+
+
+def test_mobile_and_judge_pages_served_without_inline_script(client):
+    for path, ids in (("/mobile", ("mBadge", "mNotify", "mAlerts", "mEnv", "mSim")), ("/judge", ("jItems", "jVerified", "jUnverified", "jUnbuilt"))):
+        html = client.get(path).text
+        for element_id in ids:
+            assert f'id="{element_id}"' in html, (path, element_id)
+        assert not re.search(r"<script(?![^>]*\bsrc=)", html) and not re.search(r"\son\w+=", html), path
+        for ref in re.findall(r'src="(/static/[^"]+)"', html) + re.findall(r'href="(/static/[^"]+)"', html):
+            assert client.get(ref).status_code == 200, ref
+
+
+def test_dashboard_has_pairing_card_and_nav(client):
+    html = client.get("/").text
+    for element_id in ("pairShow", "pairQr", "pairUrl"):
+        assert f'id="{element_id}"' in html
+    assert 'src="/static/common.js"' in html and 'data-page="/judge"' in html and 'data-page="/mobile"' in html
+    assert "--lan" in html and "Security." in html
+
+
+def test_premium_css_respects_quality_and_reduced_motion():
+    css = (STATIC / "style.css").read_text()
+    assert "@supports not" in css and "backdrop-filter" in css
+    assert 'html[data-quality="low"]' in css and 'html[data-quality="high"]' in css
+    assert css.count("prefers-reduced-motion") >= 2
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_common_particles_follow_quality_and_are_seeded():
+    script = (
+        'const c = require(process.argv[1]);'
+        'console.log(JSON.stringify([c.particleCount("low"), c.particleCount("medium"), c.particleCount("high"), c.particleCount("bogus"),'
+        ' JSON.stringify(c.particles(5)) === JSON.stringify(c.particles(5)), c.particles(64).every(p => p.x >= 0 && p.x < 1 && p.y >= 0 && p.y < 1)]));'
+    )
+    res = subprocess.run(["node", "-e", script, str(STATIC / "common.js")], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    import json
+    low, medium, high, bogus, same, inside = json.loads(res.stdout)
+    assert low == 0 and 0 < medium < high and bogus == medium and same and inside
