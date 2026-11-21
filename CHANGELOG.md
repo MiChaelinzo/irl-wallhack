@@ -12,6 +12,16 @@
 - feat: `RFEngine.compareScenarios` (per-cell dB delta, deltas, explainable optimisation score).
 - feat: `static/rf-optimizer.js` Smart WiFi Planner: issue detection, greedy AP placement, AP count, overpowered/underpowered APs, channel plan, and a model-sensitivity confidence score in [0, 1].
 
+### RF planner page (`/planner`)
+- feat: floor-plan editor (`planner-editor.js`): draw walls by dragging or by dropping a material from the palette, move, rotate (15 degree steps, Shift for free), endpoint and midpoint handles, grid snapping (0.1, 0.25, 0.5, 1 m) and endpoint snapping, room labels, access points, multi-select box, right-click menu, keyboard shortcuts (`?` lists them), pan, wheel zoom and pinch, floors selector.
+- feat: project state (`planner-state.js`): versioned JSON (`schema_version` 1) validated on import with field-level errors, command based undo/redo (200 steps, drags coalesce into one step), autosave to localStorage with quota handling.
+- feat: floor-plan image import (downscaled to 2048 px, kept as a data URL, never uploaded) and two-click scale calibration.
+- feat: `rf-worker.js` computes the heat map in a Web Worker in 16x16 cell tiles: coarse pass first, then refinement; per-AP cache so an AP move recomputes only that AP and a wall edit only the tiles it can affect; stale requests are dropped. Falls back to time slices on the main thread with a visible notice. `RFEngine.computeApRegion` computes one tile.
+- feat: `planner-heat.js`: WebGL renderer (RSSI texture, colour LUT, bilinear smoothing, banded mode, dead-zone hatch) with canvas 2D fallback, band contour lines (marching squares), colour-blind safe palette, legend with dBm ranges, hover and keyboard tooltip (RSSI, throughput estimate, distance, obstruction count, best AP), mini-map. Heat maps are always labelled MODEL ESTIMATE, not a measurement.
+- feat: `/planner` is linked from the dashboard, mobile and judge pages and is part of the static demo (`vercel.json` CSP gains `worker-src 'self'`).
+- test: `tests/test_planner_state.py`, `tests/test_rf_worker.py`, `tests/test_planner_heat.py`, `tools/planner_smoke.py` (Playwright).
+- docs: `docs/perf-rf.md` with measured numbers (`tools/perf_rf.js`, `tools/perf_rf_browser.py`).
+
 ### Review fixes
 - fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
 - fix: JSON bodies on `PUT /api/twin`, `POST /api/settings` and `POST /api/insights/explain` are capped at 1 MB (413).

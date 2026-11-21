@@ -99,6 +99,20 @@ opening attenuation changed by +3 dB, -3 dB, +20 % and -20 %. For power findings
 A recommendation with no gain scores 0. A small gain that disappears under perturbation scores low. A large gain that survives scores near 1.
 The optional LLM explanation endpoint is not implemented. The deterministic texts work offline and in the static demo.
 
+## Planner page
+
+`/planner` (`planner.html` in the static demo) is the interactive front end of this engine. All heat maps on it are labelled MODEL ESTIMATE, not a measurement.
+
+Files: `planner-state.js` (project JSON, undo/redo, persistence), `planner-editor.js` (canvas editor and geometry), `rf-worker.js` (tiled incremental computation), `planner-heat.js` (renderer, contours, legend, tooltip text, mini-map), `planner.js` (wiring).
+
+Project JSON is the digital twin format plus `schema_version`, per-floor `labels`, and an optional background image (`background` data URL, `bg_px`, `bg_opacity`, `scale_m_per_px`). Import errors name the field, for example `floors[0].walls[3].x1: must be between 0 and 10`.
+
+Worker protocol: `init {config}`, `setProject {project, mode, band}`, `update {ops}` (the same operations the undo history stores: `wall.add|set|remove`, `ap.*`, `label.*`, `floor.set`, plus `{t:"mode"}` and `{t:"band"}`), `compute {id, floor, cell_m}`, `cancel {id}`. Replies: `progress` (stage `coarse` then `fine`, a transferred Float32Array), `result` (grid, coverage and dead-zone percent, tile statistics), `cancelled`, `error`.
+
+Dirty tiles: a tile of an AP's grid is recomputed after a wall edit only if the bounding box of the AP and the tile meets the wall's old or new bounding box. In basic mode a ray cannot leave that box, so the rule is exact in the sense of never missing a change. Enhanced and multipath modes add reflected and diffracted paths, so any wall edit recomputes everything in those modes. Measured costs are in `perf-rf.md`.
+
+Rendering: WebGL when available, otherwise canvas 2D (`?renderer=canvas2d` forces it). `?worker=0` forces the main-thread fallback. Opened from `file://` the page cannot load its config or start a Worker and says so.
+
 ## Extending
 `rfmodel.register_mode(id, fn)` and `RFEngine.registerMode(id, fn)` add a mode;
 `RFEngine.registerMaterials(table)` adds materials. See the ADR in `docs/adr-rf-engine.md`.
