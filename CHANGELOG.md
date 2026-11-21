@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+### RF planner engine
+- fix: the editor, note box and scenario names allowed 80 characters while the validator allowed 64, so a 65 to 80 character label made the saved project fail to reload. All of them now read `limits.max_text_chars` from `rf-config.json` (input `maxlength`, `PlannerState.clipText`, a visible "shortened" message). On import, wall, AP and device names, labels, note text and scenario names longer than the limit are truncated instead of rejected, so projects saved by earlier builds load; ids and other fields stay strict.
+- fix: an AP with an unknown band and no band list in the options raised a TypeError; it is now a `ProjectError`. The module-level mutable text limit is gone: the limit is passed explicitly, and `makeScenario`, `renameScenario`, `duplicateScenario` and `validateCapacity` take it as an argument.
+- fix: knife-edge diffraction used `v = sqrt(2 delta / lambda)`; the Fresnel-Kirchhoff parameter is `sqrt(4 delta / lambda)` (`engine.knife_edge.v_scale` is now 4.0). Enhanced and multipath modes lose about 3 dB more behind wall corners; basic mode and legacy numbers are unchanged. New test with a hand-computed J(v) case.
+- fix: planner project import validates custom materials, rooms, furniture and sensors, checks AP channels against the band, uses prototype-free lookups so ids such as `constructor` work, and shares its limits with `twin.py` through `rf-config.json` `limits` (other lists are capped at 200 items).
+- fix: the 200-item cap also applied to walls, so a planner project with 1000+ walls could be neither imported nor saved to `/api/twin`. `rf-config.json` `limits` now has `max_walls_per_floor` and `max_openings_per_floor` (both 5000, read by `twin.py` and `planner-state.js`); a 5000-wall, 5000-opening twin is about 0.8 MB and fits the 1 MB request cap. Tests import 1000 and 5000 walls in JS and Python and check the over-limit error.
+- fix: a stale worker error no longer shows a notice; unsaved scenario or capacity edits are tracked with a revision instead of poisoning the saved position.
+- feat: `wallhack/static/rf-config.json` holds every RF number (bands 2.4/5/6 GHz, six wall materials with per-band attenuation and reflection loss, openings, floor loss, quality bands, rate tables). Values are typical planning estimates.
+- feat: `rfmodel` is frequency-aware, takes an optional wall `material`, per-AP `band`/`channel`, and modes `basic` (default), `enhanced` (single reflection, knife-edge diffraction) and `multipath` (incoherent power sum). Defaults are bit-identical to before (golden fixture `tests/fixtures/rf_legacy_golden.json`).
+- feat: `static/rf-engine.js` ports the model with a uniform-grid spatial index; `tests/test_rf_parity.py` checks it against Python within 0.1 dB and the index against brute force on 1000 walls.
+- feat: `GET /api/rf/coverage?band=&mode=`, `GET /api/rf/config`, `/planner` route. `validate_twin` accepts the new optional fields.
+- docs: `docs/adr-rf-engine.md`, `docs/rf-planner.md` (propagation model).
+- feat: analytics (coverage, quality bands, weak area, dead-zone regions, best-AP map, AP overlap, roaming zones, throughput, client capacity, channel utilisation) in `rfmodel.analytics` and `RFEngine.analytics`, plus a point probe for tooltips. Throughput, capacity and utilisation are labelled ESTIMATES.
+- feat: `RFEngine.compareScenarios` (per-cell dB delta, deltas, explainable optimisation score).
+- feat: `static/rf-optimizer.js` Smart WiFi Planner: issue detection, greedy AP placement, AP count, overpowered/underpowered APs, channel plan, and a model-sensitivity confidence score in [0, 1].
+
+### RF planner page (`/planner`)
+- feat: floor-plan editor (`planner-editor.js`): draw walls by dragging or by dropping a material from the palette, move, rotate (15 degree steps, Shift for free), endpoint and midpoint handles, grid snapping (0.1, 0.25, 0.5, 1 m) and endpoint snapping, room labels, access points, multi-select box, right-click menu, keyboard shortcuts (`?` lists them), pan, wheel zoom and pinch, floors selector.
+- feat: project state (`planner-state.js`): versioned JSON (`schema_version` 1) validated on import with field-level errors, command based undo/redo (200 steps, drags coalesce into one step), autosave to localStorage with quota handling.
+- feat: floor-plan image import (downscaled to 2048 px, kept as a data URL, never uploaded) and two-click scale calibration.
+- feat: `rf-worker.js` computes the heat map in a Web Worker in 16x16 cell tiles: coarse pass first, then refinement; per-AP cache so an AP move recomputes only that AP and a wall edit only the tiles it can affect; stale requests are dropped. Falls back to time slices on the main thread with a visible notice. `RFEngine.computeApRegion` computes one tile.
+- feat: `planner-heat.js`: WebGL renderer (RSSI texture, colour LUT, bilinear smoothing, banded mode, dead-zone hatch) with canvas 2D fallback, band contour lines (marching squares), colour-blind safe palette, legend with dBm ranges, hover and keyboard tooltip (RSSI, throughput estimate, distance, obstruction count, best AP), mini-map. Heat maps are always labelled MODEL ESTIMATE, not a measurement.
+- feat: `/planner` is linked from the dashboard, mobile and judge pages and is part of the static demo (`vercel.json` CSP gains `worker-src 'self'`).
+- test: `tests/test_planner_state.py`, `tests/test_rf_worker.py`, `tests/test_planner_heat.py`, `tools/planner_smoke.py` (Playwright).
+- docs: `docs/perf-rf.md` with measured numbers (`tools/perf_rf.js`, `tools/perf_rf_browser.py`).
+
+### RF planner integration
+- chore: `tsconfig.json` and `make typecheck` (tsc `checkJs`, dev only); JSDoc fixes in `rf-engine.js` and `rf-optimizer.js`.
+- test: `tools/screenshot.py` captures the planner (main, analytics, compare, light, phone width, plus `-demo` variants) and fails on a blank heat map.
+- docs: requirement Status table, typed interfaces section, README verification rows and screenshots.
+
+### RF planner analysis, scenarios and exports
+- feat: analytics dashboard (coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming zones, per-AP throughput, client capacity and channel utilisation, all labelled ESTIMATE, tables as text equivalents).
+- feat: scenarios saved with the project, side by side, delta and slider comparison, metric diff, optimisation score breakdown and ranking.
+- feat: Smart planner panel in the worker with progress and cancel, confidence per recommendation, ghost preview, undoable Apply and Apply all.
+- feat: `PlannerExport.register` with PNG, CSV (formula-injection safe), project JSON (schema_version 2, drag and drop), hand-built PDF report, print stylesheet and annotations (text, arrow, pin).
+- feat: bonus modes: multi-floor stack with Add floor, 3D building view (reuses `Room3D`), mesh backhaul, capacity planning, IoT placement, enterprise lattice with bill of quantities CSV. See `docs/rf-planner.md` for what each does and does not model.
+- fix: undo of a property removal (for example resetting an AP channel) did not restore the old value because absent values were dropped by the history copy; they are now recorded as `null`.
+- feat: `rf-optimizer.js` and the new planner scripts are part of the static demo build.
+- test: `tests/test_planner_panels.py`, worker job tests, planner smoke extended (analytics, plan, apply, scenario, compare, exports, annotations, modes).
+
 ### Review fixes
 - fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
 - fix: JSON bodies on `PUT /api/twin`, `POST /api/settings` and `POST /api/insights/explain` are capped at 1 MB (413).

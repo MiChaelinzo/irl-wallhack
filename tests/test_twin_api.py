@@ -43,3 +43,39 @@ def test_rf_coverage_endpoint(client):
     assert j["floor"] == "upper" and j["cols"] == 10 and "ESTIMATE" in j["label"]
     assert client.get("/api/rf/coverage?floor=zzz").status_code == 404
     assert client.get("/api/rf/coverage?cell_m=0").status_code == 422
+
+
+def test_rf_coverage_band_and_mode(client):
+    j = client.get("/api/rf/coverage?floor=ground&cell_m=1&band=5&mode=multipath").json()
+    assert j["band"] == "5" and j["mode"] == "multipath" and "MODEL ESTIMATE" in j["label"]
+    base = client.get("/api/rf/coverage?floor=ground&cell_m=1").json()
+    assert "mode" not in base and j["rssi"] != base["rssi"]
+
+
+def test_rf_coverage_rejects_bad_band_and_mode(client):
+    assert client.get("/api/rf/coverage?band=60").status_code == 422
+    assert client.get("/api/rf/coverage?mode=magic").status_code == 422
+
+
+def test_rf_config_endpoint(client):
+    j = client.get("/api/rf/config").json()
+    assert set(j["bands"]) == {"2.4", "5", "6"} and "drywall" in j["materials"] and "typical" in j["source"].lower()
+
+
+def test_planner_route_does_not_error(client):
+    assert client.get("/planner").status_code in (200, 404)
+
+
+def test_put_twin_accepts_5000_walls_under_the_body_cap(client):
+    import json
+    from wallhack.app import MAX_BODY_BYTES
+    t = sample_twin()
+    f = t["floors"][0]
+    f["width_m"] = f["depth_m"] = 200
+    f["walls"] = [{"id": f"w{i}", "x1": 1.2345 + (i % 100) * 1.5, "y1": 1.2345 + (i // 100) * 3.25,
+                   "x2": 2.5678 + (i % 100) * 1.5, "y2": 1.2345 + (i // 100) * 3.25, "kind": "interior"} for i in range(5000)]
+    f["openings"] = [{"id": f"o{i}", "kind": "door", "wall": f"w{i}", "pos": 0.2, "width": 0.9} for i in range(5000)]
+    size = len(json.dumps(t, separators=(",", ":")))
+    assert size < MAX_BODY_BYTES * 0.9, size     # leaves room for rooms, APs and a small background
+    assert client.put("/api/twin", json=t).status_code == 200
+    assert len(client.get("/api/twin").json()["floors"][0]["walls"]) == 5000

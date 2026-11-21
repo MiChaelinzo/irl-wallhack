@@ -156,13 +156,28 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc))
 
     @app.get("/api/rf/coverage")
-    def rf_coverage(floor: Optional[str] = None, cell_m: float = Query(rfmodel.DEFAULT_CELL_M, ge=0.1, le=5.0)):
-        """Estimated WiFi coverage grid from the twin. A MODEL, labelled as such."""
+    def rf_coverage(floor: Optional[str] = None, cell_m: float = Query(rfmodel.DEFAULT_CELL_M, ge=0.1, le=5.0),
+                    band: Optional[str] = None, mode: str = "basic"):
+        """Estimated WiFi coverage grid from the twin. A MODEL, labelled as such.
+
+        `band` (2.4, 5 or 6) overrides every AP's band; `mode` is basic, enhanced or multipath.
+        """
+        try:
+            if band is not None:
+                rfmodel.check_band(band)
+            rfmodel.check_mode(mode)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
         twin = runtime.get_twin()
         try:
-            return rfmodel.coverage_grid(twin, floor or twin["floors"][0]["id"], cell_m)
+            return rfmodel.coverage_grid(twin, floor or twin["floors"][0]["id"], cell_m, band=band, mode=mode)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/api/rf/config")
+    def rf_config():
+        """The shared RF configuration (bands, materials, tables). Typical estimates, not measurements."""
+        return rfmodel.CONFIG
 
     @app.get("/api/history")
     def history(t_from: float = Query(0.0, alias="from", ge=0), to: Optional[float] = Query(None, ge=0),
@@ -266,7 +281,7 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail="dashboard not installed")
             return FileResponse(page)
 
-        for route, name in (("/mobile", "mobile.html"), ("/judge", "judge.html")):
+        for route, name in (("/mobile", "mobile.html"), ("/judge", "judge.html"), ("/planner", "planner.html")):
             def page_route(name=name):
                 page = STATIC / name
                 if not page.is_file():

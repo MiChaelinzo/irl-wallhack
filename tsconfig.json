@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "target": "ES2017",
+    "lib": ["ES2017", "DOM", "DOM.Iterable", "WebWorker.ImportScripts"],
+    "module": "commonjs",
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": [
+    "wallhack/static/rf-engine.js",
+    "wallhack/static/rf-optimizer.js",
+    "wallhack/static/planner-state.js"
+  ]
+}

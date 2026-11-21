@@ -1,3 +1,4 @@
+import json
 import re
 import shutil
 import subprocess
@@ -165,3 +166,26 @@ def test_common_particles_follow_quality_and_are_seeded():
     import json
     low, medium, high, bogus, same, inside = json.loads(res.stdout)
     assert low == 0 and 0 < medium < high and bogus == medium and same and inside
+
+
+def test_planner_page_is_served_with_only_same_origin_scripts(client):
+    html = client.get("/planner").text
+    for element_id in ("cEdit", "cHeat", "cBase", "cOver", "estimateLabel", "legend", "minimap", "undoBtn", "palette", "imageFile", "themeBtn"):
+        assert f'id="{element_id}"' in html, element_id
+    assert "MODEL ESTIMATE, not a measurement" in html
+    assert not re.search(r"<script(?![^>]*\bsrc=)", html) and not re.search(r"\son\w+=", html)
+    assert not re.search(r"https?://", re.sub(r"docs/rf-planner\.md", "", html)), "planner must work offline, no external URLs"
+    scripts = re.findall(r'<script[^>]*src="([^"]+)"', html)
+    assert scripts and all(s.startswith("/static/") for s in scripts)
+    for ref in scripts + re.findall(r'href="(/static/[^"]+)"', html):
+        assert client.get(ref).status_code == 200, ref
+
+
+def test_planner_is_linked_from_every_page(client):
+    for path in ("/", "/judge", "/mobile", "/planner"):
+        assert 'data-page="/planner"' in client.get(path).text, path
+
+
+def test_vercel_csp_allows_same_origin_workers():
+    csp = json.loads((STATIC.parent.parent / "vercel.json").read_text())["headers"][0]["headers"][0]["value"]
+    assert "worker-src 'self'" in csp and "script-src 'self'" in csp and "unsafe-eval" not in csp

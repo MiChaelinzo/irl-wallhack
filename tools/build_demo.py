@@ -27,9 +27,10 @@ from wallhack.runtime import WS_EVENTS_PER_FRAME as EVENTS_PER_FRAME, WS_TICK_S 
 from wallhack.simulator import SAMPLE_HZ  # noqa: E402
 
 STATIC = ROOT / "wallhack" / "static"
-ASSETS = ("style.css", "common.js", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js", "mobile.js", "judge.js")
+ASSETS = ("style.css", "common.js", "view3d.js", "app.js", "demo.js", "twin.js", "panels.js", "game.js", "mobile.js", "judge.js",
+          "rf-engine.js", "rf-optimizer.js", "rf-worker.js", "planner-panels.js", "planner-export.js", "planner-modes.js", "rf-config.json", "planner-state.js", "planner-editor.js", "planner-heat.js", "planner.js")
 PAGES = {"index.html": '<script src="view3d.js"></script>', "mobile.html": '<script src="common.js"></script>',
-         "judge.html": '<script src="common.js"></script>'}   # page -> script tag demo.js is loaded before
+         "judge.html": '<script src="common.js"></script>', "planner.html": '<script src="common.js"></script>'}   # page -> script tag demo.js is loaded before
 REPLAY_NOTE = "Simulated replay recorded from the Wallhack simulator. Nothing here reads your WiFi."
 SCORE_EVERY_TICKS = 20             # refresh trend reference values every 10 s of recording
 DATA_FILES = ("recording.json", "history.json", "twin.json", "insights.json", "scores.json",
