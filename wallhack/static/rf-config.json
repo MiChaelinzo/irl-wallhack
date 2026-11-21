@@ -1,0 +1,523 @@
+{
+ "schema_version": 1,
+ "label": "MODEL ESTIMATE: typical values for planning, not measurements",
+ "source": "Typical estimates only. Frequency scaling follows free-space loss, 20*log10(f/2.4 GHz). Material attenuation values are rounded typical figures in the range reported by ITU-R P.2040 (building material properties) and published indoor measurements (for example NIST and vendor site-survey guides). Real walls vary by thickness, moisture, reinforcement and construction, so calibrate with a site survey before relying on them. Rate tables are typical 802.11n/ac/ax minimum-sensitivity style figures for one spatial stream, not vendor guarantees.",
+ "engine": {
+  "speed_of_light_mps": 299792458.0,
+  "min_distance_m": 1.0,
+  "no_signal_dbm": -120.0,
+  "max_reflector_range_m": 30.0,
+  "parallel_epsilon": 1e-12,
+  "corner_match_epsilon_m": 1e-09,
+  "default_cell_m": 0.5,
+  "knife_edge": {
+   "offset_db": 6.9,
+   "v_offset": 0.1,
+   "v_min": -0.78,
+   "log_scale": 20.0,
+   "v_scale": 2.0
+  }
+ },
+ "bands": {
+  "2.4": {
+   "ghz": 2.4,
+   "pl0_db": 40.0,
+   "path_loss_exponent": 3.0,
+   "channels": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ],
+   "default_channel": 6,
+   "default_width_mhz": 20,
+   "widths_mhz": [
+    20,
+    40
+   ]
+  },
+  "5": {
+   "ghz": 5.5,
+   "pl0_db": 47.2,
+   "path_loss_exponent": 3.1,
+   "channels": [
+    36,
+    40,
+    44,
+    48,
+    52,
+    56,
+    60,
+    64,
+    100,
+    104,
+    108,
+    112,
+    116,
+    120,
+    124,
+    128,
+    132,
+    136,
+    140,
+    149,
+    153,
+    157,
+    161,
+    165
+   ],
+   "default_channel": 36,
+   "default_width_mhz": 80,
+   "widths_mhz": [
+    20,
+    80
+   ]
+  },
+  "6": {
+   "ghz": 6.5,
+   "pl0_db": 48.7,
+   "path_loss_exponent": 3.2,
+   "channels": [
+    1,
+    5,
+    9,
+    13,
+    17,
+    21,
+    25,
+    29,
+    33,
+    37,
+    41,
+    45,
+    49,
+    53,
+    57,
+    61,
+    65,
+    69,
+    73,
+    77,
+    81,
+    85,
+    89,
+    93
+   ],
+   "default_channel": 5,
+   "default_width_mhz": 80,
+   "widths_mhz": [
+    20,
+    80
+   ]
+  }
+ },
+ "materials": {
+  "glass": {
+   "label": "Glass",
+   "attenuation_db": {
+    "2.4": 3.0,
+    "5": 4.0,
+    "6": 4.5
+   },
+   "reflection_loss_db": {
+    "2.4": 10.0,
+    "5": 9.0,
+    "6": 9.0
+   }
+  },
+  "drywall": {
+   "label": "Drywall",
+   "attenuation_db": {
+    "2.4": 4.0,
+    "5": 5.0,
+    "6": 5.5
+   },
+   "reflection_loss_db": {
+    "2.4": 12.0,
+    "5": 11.0,
+    "6": 11.0
+   }
+  },
+  "wood": {
+   "label": "Wood",
+   "attenuation_db": {
+    "2.4": 5.0,
+    "5": 6.5,
+    "6": 7.0
+   },
+   "reflection_loss_db": {
+    "2.4": 11.0,
+    "5": 10.0,
+    "6": 10.0
+   }
+  },
+  "brick": {
+   "label": "Brick",
+   "attenuation_db": {
+    "2.4": 9.0,
+    "5": 11.0,
+    "6": 12.0
+   },
+   "reflection_loss_db": {
+    "2.4": 8.0,
+    "5": 7.0,
+    "6": 7.0
+   }
+  },
+  "concrete": {
+   "label": "Concrete",
+   "attenuation_db": {
+    "2.4": 13.0,
+    "5": 17.0,
+    "6": 19.0
+   },
+   "reflection_loss_db": {
+    "2.4": 6.0,
+    "5": 5.0,
+    "6": 5.0
+   }
+  },
+  "metal": {
+   "label": "Metal",
+   "attenuation_db": {
+    "2.4": 26.0,
+    "5": 30.0,
+    "6": 32.0
+   },
+   "reflection_loss_db": {
+    "2.4": 1.0,
+    "5": 1.0,
+    "6": 1.0
+   }
+  }
+ },
+ "kind_defaults": {
+  "interior": "drywall",
+  "exterior": "brick"
+ },
+ "openings": {
+  "door": {
+   "label": "Door",
+   "attenuation_db": {
+    "2.4": 2.0,
+    "5": 2.5,
+    "6": 3.0
+   }
+  },
+  "window": {
+   "label": "Window",
+   "attenuation_db": {
+    "2.4": 3.0,
+    "5": 4.0,
+    "6": 4.5
+   }
+  }
+ },
+ "floor_loss_db": {
+  "2.4": 13.0,
+  "5": 16.0,
+  "6": 18.0
+ },
+ "analytics": {
+  "coverage_dbm": -70.0,
+  "dead_zone_dbm": -85.0,
+  "quality_bands": [
+   {
+    "id": "excellent",
+    "min_dbm": -55.0
+   },
+   {
+    "id": "good",
+    "min_dbm": -65.0
+   },
+   {
+    "id": "fair",
+    "min_dbm": -75.0
+   },
+   {
+    "id": "poor",
+    "min_dbm": -85.0
+   },
+   {
+    "id": "none",
+    "min_dbm": null
+   }
+  ],
+  "noise_floor_dbm": {
+   "2.4": -95.0,
+   "5": -92.0,
+   "6": -92.0
+  },
+  "mac_efficiency": 0.65,
+  "per_client_demand_mbps": 5.0
+ },
+ "mcs_tables": {
+  "2.4": {
+   "20": [
+    {
+     "min_dbm": -82,
+     "phy_mbps": 6.5
+    },
+    {
+     "min_dbm": -79,
+     "phy_mbps": 13
+    },
+    {
+     "min_dbm": -77,
+     "phy_mbps": 19.5
+    },
+    {
+     "min_dbm": -74,
+     "phy_mbps": 26
+    },
+    {
+     "min_dbm": -70,
+     "phy_mbps": 39
+    },
+    {
+     "min_dbm": -66,
+     "phy_mbps": 52
+    },
+    {
+     "min_dbm": -65,
+     "phy_mbps": 58.5
+    },
+    {
+     "min_dbm": -64,
+     "phy_mbps": 65
+    }
+   ],
+   "40": [
+    {
+     "min_dbm": -79,
+     "phy_mbps": 13.5
+    },
+    {
+     "min_dbm": -76,
+     "phy_mbps": 27
+    },
+    {
+     "min_dbm": -74,
+     "phy_mbps": 40.5
+    },
+    {
+     "min_dbm": -71,
+     "phy_mbps": 54
+    },
+    {
+     "min_dbm": -67,
+     "phy_mbps": 81
+    },
+    {
+     "min_dbm": -63,
+     "phy_mbps": 108
+    },
+    {
+     "min_dbm": -62,
+     "phy_mbps": 121.5
+    },
+    {
+     "min_dbm": -61,
+     "phy_mbps": 135
+    }
+   ]
+  },
+  "5": {
+   "20": [
+    {
+     "min_dbm": -82,
+     "phy_mbps": 6.5
+    },
+    {
+     "min_dbm": -79,
+     "phy_mbps": 13
+    },
+    {
+     "min_dbm": -77,
+     "phy_mbps": 19.5
+    },
+    {
+     "min_dbm": -74,
+     "phy_mbps": 26
+    },
+    {
+     "min_dbm": -70,
+     "phy_mbps": 39
+    },
+    {
+     "min_dbm": -66,
+     "phy_mbps": 52
+    },
+    {
+     "min_dbm": -65,
+     "phy_mbps": 58.5
+    },
+    {
+     "min_dbm": -64,
+     "phy_mbps": 65
+    },
+    {
+     "min_dbm": -59,
+     "phy_mbps": 78
+    },
+    {
+     "min_dbm": -57,
+     "phy_mbps": 86.7
+    }
+   ],
+   "80": [
+    {
+     "min_dbm": -76,
+     "phy_mbps": 29.3
+    },
+    {
+     "min_dbm": -73,
+     "phy_mbps": 58.5
+    },
+    {
+     "min_dbm": -71,
+     "phy_mbps": 87.8
+    },
+    {
+     "min_dbm": -68,
+     "phy_mbps": 117
+    },
+    {
+     "min_dbm": -64,
+     "phy_mbps": 175.5
+    },
+    {
+     "min_dbm": -60,
+     "phy_mbps": 234
+    },
+    {
+     "min_dbm": -59,
+     "phy_mbps": 263.3
+    },
+    {
+     "min_dbm": -58,
+     "phy_mbps": 292.5
+    },
+    {
+     "min_dbm": -53,
+     "phy_mbps": 351
+    },
+    {
+     "min_dbm": -51,
+     "phy_mbps": 390
+    }
+   ]
+  },
+  "6": {
+   "20": [
+    {
+     "min_dbm": -82,
+     "phy_mbps": 8.6
+    },
+    {
+     "min_dbm": -79,
+     "phy_mbps": 17.2
+    },
+    {
+     "min_dbm": -77,
+     "phy_mbps": 25.8
+    },
+    {
+     "min_dbm": -74,
+     "phy_mbps": 34.4
+    },
+    {
+     "min_dbm": -70,
+     "phy_mbps": 51.6
+    },
+    {
+     "min_dbm": -66,
+     "phy_mbps": 68.8
+    },
+    {
+     "min_dbm": -65,
+     "phy_mbps": 77.4
+    },
+    {
+     "min_dbm": -64,
+     "phy_mbps": 86
+    },
+    {
+     "min_dbm": -59,
+     "phy_mbps": 103.2
+    },
+    {
+     "min_dbm": -57,
+     "phy_mbps": 114.7
+    },
+    {
+     "min_dbm": -55,
+     "phy_mbps": 129
+    },
+    {
+     "min_dbm": -53,
+     "phy_mbps": 143.4
+    }
+   ],
+   "80": [
+    {
+     "min_dbm": -76,
+     "phy_mbps": 36
+    },
+    {
+     "min_dbm": -73,
+     "phy_mbps": 72
+    },
+    {
+     "min_dbm": -71,
+     "phy_mbps": 108
+    },
+    {
+     "min_dbm": -68,
+     "phy_mbps": 144
+    },
+    {
+     "min_dbm": -64,
+     "phy_mbps": 216
+    },
+    {
+     "min_dbm": -60,
+     "phy_mbps": 288
+    },
+    {
+     "min_dbm": -59,
+     "phy_mbps": 324
+    },
+    {
+     "min_dbm": -58,
+     "phy_mbps": 360
+    },
+    {
+     "min_dbm": -53,
+     "phy_mbps": 432
+    },
+    {
+     "min_dbm": -51,
+     "phy_mbps": 480
+    },
+    {
+     "min_dbm": -49,
+     "phy_mbps": 540
+    },
+    {
+     "min_dbm": -47,
+     "phy_mbps": 600
+    }
+   ]
+  }
+ }
+}
