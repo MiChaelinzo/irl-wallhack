@@ -100,7 +100,6 @@ def page_run(browser, base, query, label):
                     "frame_interval_median_ms": round(pct(iv, 0.5), 1), "frame_interval_p95_ms": round(pct(iv, 0.95), 1),
                    "frame_interval_max_ms": round(max(iv), 1), "exec_median_ms": round(pct(drag["execMs"], 0.5), 2), "exec_max_ms": round(max(drag["execMs"]), 2),
                    "settle_ms": round(drag["settleMs"], 1), "final_tiles_computed": drag["final"]["tiles_computed"], "final_tiles_total": drag["final"]["tiles_total"] * APS_FOR_PAGE}
-    page.screenshot(path=str(ROOT / ".scratch" / ("perf-%s.png" % label)))
     page.close()
     if errors:
         raise SystemExit("FAIL: console errors during perf run: %s" % errors)
@@ -113,7 +112,6 @@ def main() -> int:
     args = ap.parse_args()
     from playwright.sync_api import sync_playwright
 
-    (ROOT / ".scratch").mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         node_json = Path(tmp) / "node.json"
         node_out = subprocess.run(["node", str(ROOT / "tools" / "perf_rf.js"), "--json", str(node_json), "--repeat", str(REPEAT)], capture_output=True, text=True, check=True).stdout
