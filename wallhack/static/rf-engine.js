@@ -277,7 +277,7 @@
              brute: !!opts.brute };
   }
 
-  function fillApGrid(out, env, floor, ap, floorsApart, o, prepCache) {
+  function fillApGrid(out, env, floor, ap, floorsApart, o, prepCache, region) {
     var band = checkBand(env, o.band || ap.band || DEFAULT_BAND);
     var key = floor.id + "|" + band;
     var prep = prepCache[key] || (prepCache[key] = prepareFloor(env, floor, band, o.brute));
@@ -286,6 +286,12 @@
     if (o.mode !== DEFAULT_MODE) { ctx.reflectors = reflectorsNear(env, prep, ap.x, ap.y); }
     var floorLoss = env.config.floor_loss_db[band] * floorsApart;
     var ax = gridAxes(floor, o.cellM), i = 0;
+    if (region) {   // cells [c0,c1) x [r0,r1) only, written at their place in the full row-major grid
+      for (var rr = region.r0; rr < region.r1; rr++) {
+        for (var cc = region.c0; cc < region.c1; cc++) { out[rr * ax.cols + cc] = fn(ctx, (cc + 0.5) * o.cellM, (rr + 0.5) * o.cellM) - floorLoss; }
+      }
+      return out;
+    }
     for (var r = 0; r < ax.rows; r++) {
       for (var c = 0; c < ax.cols; c++) { out[i++] = fn(ctx, (c + 0.5) * o.cellM, (r + 0.5) * o.cellM) - floorLoss; }
     }
@@ -300,6 +306,17 @@
   function computeApGrid(floor, ap, opts) {
     var o = optionsOf(opts), ax = gridAxes(floor, o.cellM);
     return fillApGrid(new Float32Array(ax.cols * ax.rows), o.env, floor, ap, opts.floorsApart || 0, o, {});
+  }
+
+  /**
+   * Fill only the cells of `region` {c0,r0,c1,r1} (end exclusive) of one AP's grid into `out`, a full
+   * row-major array (Float32Array or Float64Array). Same values as computeApGrid for those cells. The
+   * Web Worker uses it for tiles. opts as computeApGrid plus prepCache (object reused between calls so the
+   * wall index is built once) and floorsApart.
+   */
+  function computeApRegion(floor, ap, opts, region, out) {
+    var o = optionsOf(opts);
+    return fillApGrid(out, o.env, floor, ap, opts.floorsApart || 0, o, opts.prepCache || {}, region);
   }
 
   /** Per-cell maximum of several grids, never below the no-signal level. */
@@ -634,7 +651,7 @@
   }
 
   var api = { makeEnv: makeEnv, registerMode: registerMode, registerMaterials: registerMaterials, modeIds: modeIds,
-              prepareFloor: prepareFloor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid,
+              prepareFloor: prepareFloor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid, computeApRegion: computeApRegion,
               mergeBest: mergeBest, coverageGrid: coverageGrid, apGrids: apGrids, analytics: analytics,
               analyzeFloor: analyzeFloor, probeAt: probeAt, scoreAnalytics: scoreAnalytics,
               compareScenarios: compareScenarios, phyRateMbps: phyRateMbps, throughputMbps: throughputMbps,
