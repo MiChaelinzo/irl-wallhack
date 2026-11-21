@@ -29,7 +29,7 @@ def run_js(body, payload=None):
 
 def test_sample_twin_validates_and_round_trips():
     r = run_js("const p = mk(); out({ids: p.floors.map(f => f.id), v: p.schema_version, again: S.parseProjectJson(S.exportProjectJson(p)).floors[0].walls.length, n: p.floors[0].walls.length})")
-    assert r["ids"] == ["ground", "upper"] and r["v"] == 1 and r["again"] == r["n"]
+    assert r["ids"] == ["ground", "upper"] and r["v"] == 2 and r["again"] == r["n"]
 
 
 def test_undo_redo_restores_exact_state():

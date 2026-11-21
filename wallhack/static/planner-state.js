@@ -4,9 +4,11 @@
 // tests/test_planner_state.py. The project format is the digital twin format (wallhack/twin.py)
 // plus a schema_version and a few planner fields (floor labels, background image placement).
 (function (root) {
-  var SCHEMA_VERSION = 1;
+  var SCHEMA_VERSION = 2;   // 2 adds annotations, devices, scenarios, capacity and ap.mesh_parent; version 1 files still load
   var HISTORY_CAP = 200;
   var MAX_FLOORS = 6, MAX_WALLS = 5000, MAX_APS = 64, MAX_LABELS = 500, MAX_FLOOR_M = 200, MIN_FLOOR_M = 1;
+  var MAX_ANNOTATIONS = 200, MAX_DEVICES = 500, MAX_SCENARIOS = 20, MAX_CAPACITY_ZONES = 200, MAX_USERS = 5000;
+  var ANNOTATION_KINDS = ["text", "arrow", "pin"];
   var TX_DBM_MIN = 0, TX_DBM_MAX = 30, SCALE_RANGE = [0.0001, 100];
   var BACKGROUND_PATTERN = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
   var STORAGE_KEY = "wallhack.planner.project";
@@ -67,7 +69,7 @@
       throw ProjectError("floors: must be a list of 1 to " + MAX_FLOORS + " floors");
     }
     var out = { schema_version: SCHEMA_VERSION, name: typeof data.name === "string" && data.name ? data.name.slice(0, 80) : "Untitled",
-                units: "m", sample: !!data.sample, floors: [], scenarios: Array.isArray(data.scenarios) ? clone(data.scenarios) : [] };
+                units: "m", sample: !!data.sample, floors: [], scenarios: [], capacity: {} };
     if (data.materials !== undefined) { out.materials = clone(data.materials); }
     if (data.mode !== undefined) {
       if (opts.modes && opts.modes.indexOf(data.mode) < 0) { throw ProjectError("mode: must be one of " + opts.modes.join(", ")); }
@@ -80,7 +82,7 @@
       var width = num(f.width_m, p + ".width_m", MIN_FLOOR_M, MAX_FLOOR_M), depth = num(f.depth_m, p + ".depth_m", MIN_FLOOR_M, MAX_FLOOR_M);
       var floor = { id: text(f, "id", p), name: text(f, "name", p), level: Math.round(num(f.level === undefined ? fi : f.level, p + ".level", -5, 50)),
                     height_m: num(f.height_m === undefined ? 2.5 : f.height_m, p + ".height_m", 2, 6),
-                    width_m: width, depth_m: depth, rooms: [], walls: [], openings: [], furniture: [], sensors: [], aps: [], labels: [] };
+                    width_m: width, depth_m: depth, rooms: [], walls: [], openings: [], furniture: [], sensors: [], aps: [], labels: [], annotations: [], devices: [] };
       if (f.scale_m_per_px !== undefined) { floor.scale_m_per_px = num(f.scale_m_per_px, p + ".scale_m_per_px", SCALE_RANGE[0], SCALE_RANGE[1]); }
       if (f.background !== undefined) {
         if (typeof f.background !== "string" || !BACKGROUND_PATTERN.test(f.background)) {
@@ -128,6 +130,7 @@
           ap.band = a.band;
         }
         if (a.channel !== undefined) { ap.channel = num(a.channel, q + ".channel", 1, 233); }
+        if (a.mesh_parent !== undefined && a.mesh_parent !== null) { ap.mesh_parent = text(a, "mesh_parent", q); }
         floor.aps.push(ap);
       });
       list(f, "labels", p, MAX_LABELS).forEach(function (l, i) {
@@ -135,12 +138,70 @@
         if (!l || typeof l !== "object") { throw ProjectError(q + ": must be an object"); }
         floor.labels.push({ id: text(l, "id", q), text: text(l, "text", q), x: num(l.x, q + ".x", 0, width), y: num(l.y, q + ".y", 0, depth) });
       });
+      list(f, "annotations", p, MAX_ANNOTATIONS).forEach(function (a, i) {
+        var q = p + ".annotations[" + i + "]";
+        if (!a || typeof a !== "object") { throw ProjectError(q + ": must be an object"); }
+        if (ANNOTATION_KINDS.indexOf(a.kind) < 0) { throw ProjectError(q + ".kind: must be one of " + ANNOTATION_KINDS.join(", ")); }
+        var note = { id: text(a, "id", q), kind: a.kind, x: num(a.x, q + ".x", 0, width), y: num(a.y, q + ".y", 0, depth) };
+        if (a.kind === "arrow") { note.x2 = num(a.x2, q + ".x2", 0, width); note.y2 = num(a.y2, q + ".y2", 0, depth); }
+        if (a.text !== undefined) { note.text = text(a, "text", q); } else if (a.kind === "text") { throw ProjectError(q + ".text: required for a text note"); }
+        floor.annotations.push(note);
+      });
+      list(f, "devices", p, MAX_DEVICES).forEach(function (d, i) {
+        var q = p + ".devices[" + i + "]";
+        if (!d || typeof d !== "object") { throw ProjectError(q + ": must be an object"); }
+        var cls = text(d, "cls", q);
+        if (opts.deviceClasses && opts.deviceClasses.indexOf(cls) < 0) { throw ProjectError(q + ".cls: must be one of " + opts.deviceClasses.join(", ")); }
+        var dev = { id: text(d, "id", q), cls: cls, x: num(d.x, q + ".x", 0, width), y: num(d.y, q + ".y", 0, depth) };
+        if (d.name !== undefined) { dev.name = String(d.name).slice(0, 80); }
+        floor.devices.push(dev);
+      });
       unique(floor.aps.map(function (a) { return a.id; }), p + ".aps");
       unique(floor.labels.map(function (l) { return l.id; }), p + ".labels");
+      unique(floor.annotations.map(function (a) { return a.id; }), p + ".annotations");
+      unique(floor.devices.map(function (d) { return d.id; }), p + ".devices");
       out.floors.push(floor);
     });
     unique(out.floors.map(function (f) { return f.id; }), "floors");
     unique(out.floors.map(function (f) { return String(f.level); }), "floors.level");
+    var apIds = {};
+    out.floors.forEach(function (f) { f.aps.forEach(function (a) { apIds[a.id] = a; }); });
+    Object.keys(apIds).forEach(function (id) {
+      var seen = {}, cur = apIds[id];
+      while (cur && cur.mesh_parent !== undefined) {
+        if (!apIds[cur.mesh_parent]) { throw ProjectError("aps: mesh_parent '" + cur.mesh_parent + "' of '" + cur.id + "' is not an access point"); }
+        if (seen[cur.id]) { throw ProjectError("aps: mesh backhaul of '" + id + "' loops back on itself"); }
+        seen[cur.id] = true; cur = apIds[cur.mesh_parent];
+      }
+    });
+    if (data.capacity !== undefined) { out.capacity = validateCapacity(data.capacity); }
+    if (data.scenarios !== undefined) {
+      if (!Array.isArray(data.scenarios) || data.scenarios.length > MAX_SCENARIOS) { throw ProjectError("scenarios: must be a list of at most " + MAX_SCENARIOS + " scenarios"); }
+      data.scenarios.forEach(function (sc, i) {
+        var q = "scenarios[" + i + "]";
+        if (!sc || typeof sc !== "object") { throw ProjectError(q + ": must be an object"); }
+        var inner = validateProject({ name: "scenario", floors: sc.floors, materials: out.materials }, opts);
+        var item = { id: text(sc, "id", q), name: text(sc, "name", q), created: typeof sc.created === "string" ? sc.created.slice(0, 40) : "", floors: inner.floors };
+        if (sc.settings && typeof sc.settings === "object") { item.settings = { mode: typeof sc.settings.mode === "string" ? sc.settings.mode : undefined, band: typeof sc.settings.band === "string" ? sc.settings.band : null }; }
+        out.scenarios.push(item);
+      });
+      unique(out.scenarios.map(function (sc) { return sc.id; }), "scenarios");
+    }
+    return out;
+  }
+
+  /** Capacity planning input: {"floorId/roomId": {users, profile}}. */
+  function validateCapacity(c) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) { throw ProjectError("capacity: must be an object"); }
+    var keys = Object.keys(c), out = {};
+    if (keys.length > MAX_CAPACITY_ZONES) { throw ProjectError("capacity: at most " + MAX_CAPACITY_ZONES + " zones"); }
+    keys.forEach(function (k) {
+      var z = c[k], q = "capacity[" + JSON.stringify(k) + "]";
+      if (!z || typeof z !== "object") { throw ProjectError(q + ": must be an object"); }
+      var users = num(z.users, q + ".users", 0, MAX_USERS);
+      if (Math.floor(users) !== users) { throw ProjectError(q + ".users: must be a whole number"); }
+      out[k] = { users: users, profile: text(z, "profile", q) };
+    });
     return out;
   }
 
@@ -179,13 +240,20 @@
   // ------------------------------------------------------------------ operations
   // An operation is plain data. applyOp mutates the project, invertOp returns the operation that
   // undoes it. Builders (below) capture everything an inverse needs, so no operation reads state later.
-  var LISTS = { wall: "walls", ap: "aps", label: "labels" };
+  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices" };
 
   function setProps(target, props) {
-    Object.keys(props).forEach(function (k) { if (props[k] === undefined) { delete target[k]; } else { target[k] = clone(props[k]); } });
+    Object.keys(props).forEach(function (k) { if (props[k] === undefined || props[k] === null) { delete target[k]; } else { target[k] = clone(props[k]); } });
   }
 
   function applyOp(project, op) {
+    if (op.t === "floors.add") { project.floors.splice(Math.min(op.index, project.floors.length), 0, clone(op.item)); return; }
+    if (op.t === "floors.remove") {
+      var fi = indexById(project.floors, op.id);
+      if (fi < 0) { throw new Error("floor '" + op.id + "' not found"); }
+      project.floors.splice(fi, 1);
+      return;
+    }
     var floor = findFloor(project, op.floor), parts = op.t.split("."), kind = parts[0], verb = parts[1];
     if (kind === "floor") { setProps(floor, op.after); return; }
     var items = floor[LISTS[kind]];
@@ -208,6 +276,8 @@
   }
 
   function invertOp(op) {
+    if (op.t === "floors.add") { return { t: "floors.remove", id: op.item.id, item: op.item, index: op.index }; }
+    if (op.t === "floors.remove") { return { t: "floors.add", item: op.item, index: op.index }; }
     var parts = op.t.split("."), kind = parts[0], verb = parts[1];
     if (kind === "floor") { return { t: op.t, floor: op.floor, before: op.after, after: op.before }; }
     if (verb === "set") { return { t: op.t, floor: op.floor, id: op.id, before: op.after, after: op.before }; }
@@ -234,11 +304,22 @@
     var floor = findFloor(project, floorId), target = kind === "floor" ? floor : floor[LISTS[kind]][indexById(floor[LISTS[kind]], id)];
     if (!target) { throw new Error(kind + " '" + id + "' not found on floor '" + floorId + "'"); }
     var before = {}, keep = {};
+    // An absent value is recorded as null (JSON keeps null, it would drop undefined, which broke undo of "remove channel").
+    function orNull(v) { return v === undefined ? null : clone(v); }
     Object.keys(after).forEach(function (k) {
-      if (JSON.stringify(target[k]) !== JSON.stringify(after[k])) { before[k] = clone(target[k]); keep[k] = clone(after[k]); }
+      if (JSON.stringify(orNull(target[k])) !== JSON.stringify(orNull(after[k]))) { before[k] = orNull(target[k]); keep[k] = orNull(after[k]); }
     });
     return kind === "floor" ? { t: "floor.set", floor: floorId, before: before, after: keep }
                             : { t: kind + ".set", floor: floorId, id: id, before: before, after: keep };
+  }
+  /** Operation that appends a new empty floor (a whole floor record, see newFloor). */
+  function addFloorOp(project, floor) { return { t: "floors.add", item: clone(floor), index: project.floors.length }; }
+  /** An empty floor above the highest level, same footprint as the first floor. */
+  function newFloor(project) {
+    var top = project.floors.reduce(function (m, f) { return Math.max(m, f.level); }, -Infinity), first = project.floors[0];
+    var id = nextId(project.floors, "f"), n = project.floors.length + 1;
+    return { id: id, name: "Floor " + n, level: top + 1, height_m: first.height_m, width_m: first.width_m, depth_m: first.depth_m,
+             rooms: [], walls: [], openings: [], furniture: [], sensors: [], aps: [], labels: [], annotations: [], devices: [] };
   }
   function isNoop(op) { return op.t.slice(-4) === ".set" && !Object.keys(op.after).length; }
 
@@ -261,6 +342,7 @@
     }
     function prune() {
       var ids = {};
+      if (indexById(store.project.floors, floorId) < 0) { floorId = store.project.floors[0].id; selection.walls = []; selection.ap = null; selection.label = null; }
       var floor = findFloor(store.project, floorId);
       floor.walls.forEach(function (w) { ids[w.id] = true; });
       selection.walls = selection.walls.filter(function (id) { return ids[id]; });
@@ -319,6 +401,12 @@
         emit({ source: "redo", ops: entry.ops.slice(), label: entry.label });
         return true;
       },
+      /** Replace project.scenarios or project.capacity. Not part of undo history: it marks the project unsaved and emits "meta". */
+      setMeta: function (key, value) {
+        if (key !== "scenarios" && key !== "capacity") { throw new Error("unknown project field " + key); }
+        store.project[key] = clone(value); savedPos = NaN;
+        emit({ source: "meta", key: key, ops: [] });
+      },
       historyLength: function () { return past.length; },
       isDirty: function () { return savedPos !== past.length; },
       markSaved: function () { savedPos = past.length; },
@@ -330,6 +418,44 @@
       }
     };
     return store;
+  }
+
+  // ------------------------------------------------------------------ scenarios
+  // A scenario is a named snapshot of the floors (without floor-plan images, which stay in the project)
+  // plus the heat map settings. They live in project.scenarios, so they are saved with the project.
+  function snapshotFloors(project) {
+    return project.floors.map(function (f) { var c = clone(f); delete c.background; delete c.bg_px; delete c.bg_opacity; return c; });
+  }
+  function makeScenario(project, name, settings, now) {
+    return { id: nextId(project.scenarios || [], "s"), name: String(name || "Scenario").slice(0, 80) || "Scenario", created: now || "",
+             floors: snapshotFloors(project), settings: settings ? { mode: settings.mode, band: settings.band || null } : undefined };
+  }
+  /** The project a scenario describes: its floors, with the live project's images carried over by floor id. */
+  function scenarioProject(project, scenario) {
+    var out = clone(project);
+    out.scenarios = []; out.floors = clone(scenario.floors); out.name = scenario.name;
+    out.floors.forEach(function (f) {
+      var live = project.floors.filter(function (g) { return g.id === f.id; })[0];
+      if (live && live.background) { f.background = live.background; f.bg_opacity = live.bg_opacity; if (live.bg_px) { f.bg_px = clone(live.bg_px); } }
+    });
+    return out;
+  }
+  /** Project with images and scenarios removed, for computation (worker messages). */
+  function computeProject(project) {
+    var out = Object.assign({}, project, { scenarios: [] });
+    out.floors = project.floors.map(function (f) { var c = Object.assign({}, f); delete c.background; return c; });
+    return out;
+  }
+  function renameScenario(list, id, name) {
+    return list.map(function (s) { return s.id === id ? Object.assign({}, s, { name: String(name).slice(0, 80) || s.name }) : s; });
+  }
+  function deleteScenario(list, id) { return list.filter(function (s) { return s.id !== id; }); }
+  function duplicateScenario(list, id, now) {
+    var src = list.filter(function (s) { return s.id === id; })[0];
+    if (!src) { throw new Error("scenario '" + id + "' not found"); }
+    var copy = clone(src);
+    copy.id = nextId(list, "s"); copy.name = (src.name + " copy").slice(0, 80); copy.created = now || "";
+    return list.concat([copy]);
   }
 
   // ------------------------------------------------------------------ persistence
@@ -359,7 +485,10 @@
               DEFAULT_BG_OPACITY: DEFAULT_BG_OPACITY, validateProject: validateProject, parseProjectJson: parseProjectJson,
               exportProjectJson: exportProjectJson, findFloor: findFloor, nextId: nextId, wallLength: wallLength, wallBox: wallBox,
               applyOp: applyOp, invertOp: invertOp, addOp: addOp, removeOp: removeOp, setOp: setOp, createStore: createStore,
-              saveProject: saveProject, loadSavedProject: loadSavedProject, clone: clone };
+              saveProject: saveProject, loadSavedProject: loadSavedProject, clone: clone,
+              addFloorOp: addFloorOp, newFloor: newFloor, makeScenario: makeScenario, scenarioProject: scenarioProject, computeProject: computeProject,
+              renameScenario: renameScenario, deleteScenario: deleteScenario, duplicateScenario: duplicateScenario, validateCapacity: validateCapacity,
+              MAX_SCENARIOS: MAX_SCENARIOS };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.PlannerState = api;
 })(typeof self !== "undefined" ? self : this);

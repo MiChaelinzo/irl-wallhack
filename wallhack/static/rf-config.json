@@ -600,5 +600,70 @@
    "weight_magnitude": 0.3,
    "full_gain_pct": 10.0
   }
+ },
+ "planner_modes": {
+  "label": "ESTIMATE: planning aids built on the propagation model, typical values, not measurements",
+  "mesh": {
+   "hop_throughput_factor": 0.5,
+   "weak_backhaul_dbm": -70.0,
+   "max_hops_advised": 2
+  },
+  "iot_classes": {
+   "sensor": {
+    "label": "Battery sensor",
+    "min_dbm": -90.0
+   },
+   "smart_plug": {
+    "label": "Smart plug",
+    "min_dbm": -80.0
+   },
+   "thermostat": {
+    "label": "Thermostat",
+    "min_dbm": -80.0
+   },
+   "camera": {
+    "label": "IP camera",
+    "min_dbm": -70.0
+   },
+   "wearable": {
+    "label": "Wearable",
+    "min_dbm": -75.0
+   }
+  },
+  "iot": {
+   "marginal_margin_db": 6.0,
+   "suggest_offset_m": 2.0
+  },
+  "capacity_profiles": {
+   "light": {
+    "label": "Light (messaging, browsing)",
+    "mbps": 1.0
+   },
+   "office": {
+    "label": "Office (web, cloud, calls)",
+    "mbps": 3.0
+   },
+   "video": {
+    "label": "Video (streaming, conferencing)",
+    "mbps": 8.0
+   },
+   "heavy": {
+    "label": "Heavy (large transfers, 4K)",
+    "mbps": 20.0
+   }
+  },
+  "enterprise": {
+   "spacing_m": {
+    "2.4": 14.0,
+    "5": 10.0,
+    "6": 9.0
+   },
+   "default_band": "5",
+   "default_tx_dbm": 17.0,
+   "avg_cable_run_m": 30.0,
+   "cable_spare_pct": 10.0,
+   "switch_ports": 24,
+   "spare_port_pct": 20.0
+  }
  }
 }

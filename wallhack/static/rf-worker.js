@@ -3,6 +3,9 @@
 // unavailable (file://, blocked), the same core runs on the main thread in short time slices.
 // MODEL ESTIMATE, not a measurement. Messages in: init, setProject, update, compute, cancel.
 // Messages out: ready, progress (coarse then refinements), result, cancelled, error.
+// Analysis jobs (analyze, compare, rank, plan, stack) run as a chain of steps with a pause between steps, so a
+// newer request or a cancel message takes effect at the next step boundary. Results: analysis, comparison,
+// ranking, plan, stack; progress messages carry {job, step, steps, text}.
 //
 // How it stays fast: the floor is cut into tiles of TILE x TILE cells. Each access point keeps its own
 // grid with a per-tile valid flag, once at COARSE_FACTOR x the cell size and once at the requested
@@ -19,7 +22,7 @@
   var BOX_PAD_M = 0.05;          // padding on wall boxes in the dirty test
 
   var inWorker = typeof importScripts === "function" && typeof root.document === "undefined";
-  if (inWorker) { root.importScripts("rf-engine.js", "planner-state.js"); }
+  if (inWorker) { root.importScripts("rf-engine.js", "planner-state.js", "rf-optimizer.js"); }
 
   function Stale() { this.stale = true; }
 
@@ -28,7 +31,7 @@
    * the returned object's handle(message) receives requests.
    */
   function createCore(deps, post, hooks) {
-    var RF = deps.RF, State = deps.State, clock = (hooks && hooks.now) || function () { return Date.now(); };
+    var RF = deps.RF, State = deps.State, Opt = deps.Opt, clock = (hooks && hooks.now) || function () { return Date.now(); };
     var pause = (hooks && hooks.pause) || function () { return new Promise(function (r) { setTimeout(r, 0); }); };
     var config = null, env = null, project = null, matsSig = "{}", mode = "basic", band = null;
     var cache = {};              // "receivingFloor|apFloor|apId" -> entry
@@ -242,6 +245,92 @@
       return steps;
     }
 
+
+    // ------------------------------------------------------------ analysis jobs (analytics, compare, rank, plan, stack)
+    // Each job is a list of steps {text, run}. A step runs, then the core yields so cancel or a newer job of the same
+    // kind is noticed. Results are plain data. All figures are MODEL ESTIMATES.
+    var jobLatest = {}, jobCancelled = {};
+    function slim(an) { var o = Object.assign({}, an); delete o.throughput_mbps; return o; }
+    function flat(rows) { var cols = rows[0] ? rows[0].length : 0, out = new Float32Array(rows.length * cols); rows.forEach(function (r, i) { out.set(r, i * cols); }); return out; }
+    function settings(msg) { return { env: env, cellM: msg.cell_m, band: msg.band === undefined ? band : msg.band, mode: msg.mode || mode }; }
+    function scoreRow(item, an, cfg) {
+      var sc = RF.scoreAnalytics(an, cfg);
+      return { id: item.id, name: item.name, score: sc.score, breakdown: sc.breakdown, coverage_pct: an.coverage_pct, avg_rssi_dbm: an.avg_rssi_dbm,
+               dead_zone_pct: an.dead_zone_pct, overlap_pct: an.overlap.pct, mean_throughput_mbps: an.mean_throughput_mbps, aps: an.aps.length,
+               client_capacity: an.total_client_capacity };
+    }
+
+    function buildJob(msg) {
+      var steps = [], result = {}, o;
+      if (msg.type === "analyze") {
+        steps.push({ text: "analysing", run: function () { result = { type: "analysis", floor: msg.floor, analytics: slim(RF.analyzeFloor(project, msg.floor, settings(msg))) }; } });
+      } else if (msg.type === "compare") {
+        steps.push({ text: "comparing", run: function () {
+          o = settings(msg);
+          var c = RF.compareScenarios(msg.a, msg.b, { config: config, floorId: msg.floor, cellM: o.cellM, band: o.band, mode: o.mode });
+          result = { type: "comparison", floor: msg.floor, cols: c.a.grid.cols, rows: c.a.grid.rows, cell_m: c.a.grid.cell_m, label: c.label,
+                     rssi_a: flat(c.a.grid.rssi), rssi_b: flat(c.b.grid.rssi), delta: flat(c.delta_db),
+                     a: { analytics: slim(c.a.analytics), score: c.a.score }, b: { analytics: slim(c.b.analytics), score: c.b.score },
+                     coverage_delta_pct: c.coverage_delta_pct, mean_rssi_delta_db: c.mean_rssi_delta_db, dead_zone_delta_m2: c.dead_zone_delta_m2,
+                     mean_throughput_delta_mbps: c.mean_throughput_delta_mbps, ap_count_delta: c.ap_count_delta, score_delta: c.score_delta };
+        } });
+      } else if (msg.type === "rank") {
+        result = { type: "ranking", floor: msg.floor, rows: [] };
+        msg.items.forEach(function (item) {
+          steps.push({ text: "scoring " + item.name, run: function () {
+            var s = settings(msg), env2 = RF.makeEnv(config, item.project.materials);
+            var an = RF.analyzeFloor(item.project, msg.floor, { env: env2, cellM: s.cellM, band: s.band, mode: s.mode });
+            result.rows.push(scoreRow(item, an, config));
+          } });
+        });
+        steps.push({ text: "ranking", run: function () { result.rows.sort(function (p, q) { return (q.score - p.score) || (p.name < q.name ? -1 : 1); }); } });
+      } else if (msg.type === "stack") {
+        result = { type: "stack", floors: [] };
+        project.floors.forEach(function (f) {
+          steps.push({ text: "analysing " + f.name, run: function () {
+            var s = settings(msg), all = RF.analyzeFloor(project, f.id, s);
+            var own = State.clone(project); own.floors.forEach(function (g) { if (g.id !== f.id) { g.aps = []; } });
+            var alone = RF.analyzeFloor(own, f.id, s);
+            result.floors.push({ id: f.id, name: f.name, level: f.level, aps: f.aps.length, coverage_pct: all.coverage_pct, own_coverage_pct: alone.coverage_pct,
+                                 avg_rssi_dbm: all.avg_rssi_dbm, dead_zone_pct: all.dead_zone_pct });
+          } });
+        });
+      } else if (msg.type === "plan") {
+        if (!Opt) { throw new Error("the smart planner is not loaded (rf-optimizer.js)"); }
+        o = settings(msg);
+        var po = { env: env, band: o.band, mode: o.mode }, target = msg.target_pct || config.planner.target_coverage_pct, maxAps = msg.max_aps || 12;
+        result = { type: "plan", floor: msg.floor, target_pct: target };
+        [["finding coverage issues", function () { var r = Opt.detectIssues(project, msg.floor, po); result.issues = r.issues; result.label = r.label; result.analytics = slim(r.analytics); }],
+         ["suggesting AP positions", function () { result.placements = Opt.suggestPlacements(project, msg.floor, Object.assign({ targetPct: target }, po)); }],
+         ["estimating the AP count", function () { result.count = Opt.recommendApCount(project, msg.floor, target, maxAps, po); }],
+         ["checking transmit power", function () { result.power = Opt.detectPowerIssues(project, msg.floor, po); }],
+         ["planning channels", function () { result.channels = Opt.planChannels(project, msg.floor, po); }]
+        ].forEach(function (s) { steps.push({ text: s[0], run: s[1] }); });
+      } else { throw new Error("unknown job type " + msg.type); }
+      return { steps: steps, result: function () { return result; } };
+    }
+
+    function startJob(msg) {
+      var job;
+      try { job = buildJob(msg); } catch (e) { post({ type: "error", id: msg.id, job: msg.type, message: String(e && e.message || e) }); return Promise.resolve(); }
+      jobLatest[msg.type] = msg.id;
+      var i = 0;
+      function alive() { return jobLatest[msg.type] === msg.id && !jobCancelled[msg.id]; }
+      function next() {
+        if (!alive()) { post({ type: "cancelled", id: msg.id, job: msg.type }); return null; }
+        if (i >= job.steps.length) { post(Object.assign({ id: msg.id }, job.result())); return null; }
+        var step = job.steps[i];
+        post({ type: "progress", job: msg.type, id: msg.id, step: i, steps: job.steps.length, text: step.text });
+        i += 1;
+        return pause().then(function () {
+          if (!alive()) { return next(); }
+          step.run();
+          return next();
+        });
+      }
+      return Promise.resolve().then(next).catch(function (e) { post({ type: "error", id: msg.id, job: msg.type, message: String(e && e.message || e) }); });
+    }
+
     function handle(msg) {
       try {
         if (msg.type === "init") { config = msg.config; env = RF.makeEnv(config); post({ type: "ready" }); }
@@ -251,7 +340,8 @@
           if (msg.mode) { mode = msg.mode; }
           if (msg.band !== undefined) { band = msg.band || null; }
         } else if (msg.type === "update") { applyDelta(msg.ops); }
-        else if (msg.type === "cancel") { cancelled[msg.id] = true; }
+        else if (msg.type === "cancel") { cancelled[msg.id] = true; jobCancelled[msg.id] = true; }
+        else if (msg.type === "analyze" || msg.type === "compare" || msg.type === "rank" || msg.type === "plan" || msg.type === "stack") { return startJob(msg); }
         else if (msg.type === "compute") {
           latestId = msg.id;
           return run({ id: msg.id, floor: msg.floor, cell_m: msg.cell_m }).catch(function (e) {
@@ -268,7 +358,7 @@
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFWorkerCore = api;
   if (inWorker) {
-    var core = createCore({ RF: root.RFEngine, State: root.PlannerState }, function (m, t) { root.postMessage(m, t || []); });
+    var core = createCore({ RF: root.RFEngine, State: root.PlannerState, Opt: root.RFOptimizer }, function (m, t) { root.postMessage(m, t || []); });
     root.onmessage = function (e) { core.handle(e.data); };
   }
 })(typeof self !== "undefined" ? self : this);
