@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### RF planner engine
+- feat: `wallhack/static/rf-config.json` holds every RF number (bands 2.4/5/6 GHz, six wall materials with per-band attenuation and reflection loss, openings, floor loss, quality bands, rate tables). Values are typical planning estimates.
+- feat: `rfmodel` is frequency-aware, takes an optional wall `material`, per-AP `band`/`channel`, and modes `basic` (default), `enhanced` (single reflection, knife-edge diffraction) and `multipath` (incoherent power sum). Defaults are bit-identical to before (golden fixture `tests/fixtures/rf_legacy_golden.json`).
+- feat: `static/rf-engine.js` ports the model with a uniform-grid spatial index; `tests/test_rf_parity.py` checks it against Python within 0.1 dB and the index against brute force on 1000 walls.
+- feat: `GET /api/rf/coverage?band=&mode=`, `GET /api/rf/config`, `/planner` route. `validate_twin` accepts the new optional fields.
+- docs: `docs/adr-rf-engine.md`, `docs/rf-planner.md` (propagation model).
+
 ### Review fixes
 - fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
 - fix: JSON bodies on `PUT /api/twin`, `POST /api/settings` and `POST /api/insights/explain` are capped at 1 MB (413).
