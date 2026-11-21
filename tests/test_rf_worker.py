@@ -121,3 +121,43 @@ def test_region_computation_matches_whole_grid():
       out({bad, set});
     """, random_project(2, 20))
     assert r == {"bad": 0, "set": 49}
+
+
+JOB_PRELUDE = """
+const O = require(D + '/rf-optimizer.js');
+const jobCore = W.createCore({ RF: E, State: S, Opt: O }, (m) => msgs.push(m));
+jobCore.handle({ type: 'init', config });
+"""
+
+
+def test_analysis_jobs_in_worker_core():
+    project = {"name": "T", "floors": [{"id": "f0", "name": "f0", "level": 0, "width_m": 24, "depth_m": 10, "aps": [{"id": "a", "x": 2, "y": 5, "tx_dbm": 8}],
+                                        "walls": [{"id": "w", "x1": 12, "y1": 0, "x2": 12, "y2": 10, "kind": "exterior"}]}]}
+    r = run_js(JOB_PRELUDE + """
+      const p = S.validateProject(P.project);
+      jobCore.handle({ type: 'setProject', project: p });
+      msgs.length = 0;
+      await jobCore.handle({ type: 'analyze', id: 1000001, floor: 'f0', cell_m: 1 });
+      const analysis = msgs.filter(m => m.type === 'analysis')[0];
+      msgs.length = 0;
+      await jobCore.handle({ type: 'plan', id: 1000002, floor: 'f0', target_pct: 90, max_aps: 4 });
+      const plan = msgs.filter(m => m.type === 'plan')[0], steps = msgs.filter(m => m.type === 'progress').map(m => m.text);
+      // a cancel posted while a job waits between steps stops it
+      msgs.length = 0;
+      const pending = jobCore.handle({ type: 'plan', id: 1000003, floor: 'f0' });
+      jobCore.handle({ type: 'cancel', id: 1000003 });
+      await pending;
+      const cancelled = msgs.filter(m => m.type === 'cancelled').length, planned = msgs.filter(m => m.type === 'plan').length;
+      // the same analysis computed directly
+      const direct = E.analyzeFloor(p, 'f0', { env, cellM: 1 });
+      msgs.length = 0;
+      await jobCore.handle({ type: 'rank', id: 1000004, floor: 'f0', cell_m: 1, items: [{ id: 'x', name: 'X', project: p }, { id: 'y', name: 'Y', project: Object.assign({}, p, { floors: [Object.assign({}, p.floors[0], { aps: p.floors[0].aps.concat([{ id: 'b', x: 20, y: 5, tx_dbm: 8 }]) })] }) }] });
+      const rank = msgs.filter(m => m.type === 'ranking')[0];
+      out({ coverage: analysis.analytics.coverage_pct, direct: direct.coverage_pct, hasGrid: 'throughput_mbps' in analysis.analytics, steps, placements: plan.placements.recommendations.length,
+            keys: Object.keys(plan), cancelled, planned, rank: rank.rows.map(x => [x.id, x.score]) });
+    """, project)
+    assert r["coverage"] == r["direct"] and not r["hasGrid"]
+    assert len(r["steps"]) == 5 and r["steps"][0] == "finding coverage issues" and r["placements"] >= 1
+    assert {"issues", "placements", "count", "power", "channels"} <= set(r["keys"])
+    assert r["cancelled"] == 1 and r["planned"] == 0
+    assert [x[0] for x in r["rank"]] == ["y", "x"] and r["rank"][0][1] > r["rank"][1][1]

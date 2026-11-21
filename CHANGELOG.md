@@ -22,6 +22,16 @@
 - test: `tests/test_planner_state.py`, `tests/test_rf_worker.py`, `tests/test_planner_heat.py`, `tools/planner_smoke.py` (Playwright).
 - docs: `docs/perf-rf.md` with measured numbers (`tools/perf_rf.js`, `tools/perf_rf_browser.py`).
 
+### RF planner analysis, scenarios and exports
+- feat: analytics dashboard (coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming zones, per-AP throughput, client capacity and channel utilisation, all labelled ESTIMATE, tables as text equivalents).
+- feat: scenarios saved with the project, side by side, delta and slider comparison, metric diff, optimisation score breakdown and ranking.
+- feat: Smart planner panel in the worker with progress and cancel, confidence per recommendation, ghost preview, undoable Apply and Apply all.
+- feat: `PlannerExport.register` with PNG, CSV (formula-injection safe), project JSON (schema_version 2, drag and drop), hand-built PDF report, print stylesheet and annotations (text, arrow, pin).
+- feat: bonus modes: multi-floor stack with Add floor, 3D building view (reuses `Room3D`), mesh backhaul, capacity planning, IoT placement, enterprise lattice with bill of quantities CSV. See `docs/rf-planner.md` for what each does and does not model.
+- fix: undo of a property removal (for example resetting an AP channel) did not restore the old value because absent values were dropped by the history copy; they are now recorded as `null`.
+- feat: `rf-optimizer.js` and the new planner scripts are part of the static demo build.
+- test: `tests/test_planner_panels.py`, worker job tests, planner smoke extended (analytics, plan, apply, scenario, compare, exports, annotations, modes).
+
 ### Review fixes
 - fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
 - fix: JSON bodies on `PUT /api/twin`, `POST /api/settings` and `POST /api/insights/explain` are capped at 1 MB (413).

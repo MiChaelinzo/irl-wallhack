@@ -107,11 +107,39 @@ Files: `planner-state.js` (project JSON, undo/redo, persistence), `planner-edito
 
 Project JSON is the digital twin format plus `schema_version`, per-floor `labels`, and an optional background image (`background` data URL, `bg_px`, `bg_opacity`, `scale_m_per_px`). Import errors name the field, for example `floors[0].walls[3].x1: must be between 0 and 10`.
 
-Worker protocol: `init {config}`, `setProject {project, mode, band}`, `update {ops}` (the same operations the undo history stores: `wall.add|set|remove`, `ap.*`, `label.*`, `floor.set`, plus `{t:"mode"}` and `{t:"band"}`), `compute {id, floor, cell_m}`, `cancel {id}`. Replies: `progress` (stage `coarse` then `fine`, a transferred Float32Array), `result` (grid, coverage and dead-zone percent, tile statistics), `cancelled`, `error`.
+Worker protocol (heat map): `init {config}`, `setProject {project, mode, band}`, `update {ops}` (the same operations the undo history stores: `wall.add|set|remove`, `ap.*`, `label.*`, `floor.set`, plus `{t:"mode"}` and `{t:"band"}`), `compute {id, floor, cell_m}`, `cancel {id}`. Replies: `progress` (stage `coarse` then `fine`, a transferred Float32Array), `result` (grid, coverage and dead-zone percent, tile statistics), `cancelled`, `error`.
 
 Dirty tiles: a tile of an AP's grid is recomputed after a wall edit only if the bounding box of the AP and the tile meets the wall's old or new bounding box. In basic mode a ray cannot leave that box, so the rule is exact in the sense of never missing a change. Enhanced and multipath modes add reflected and diffracted paths, so any wall edit recomputes everything in those modes. Measured costs are in `perf-rf.md`.
 
 Rendering: WebGL when available, otherwise canvas 2D (`?renderer=canvas2d` forces it). `?worker=0` forces the main-thread fallback. Opened from `file://` the page cannot load its config or start a Worker and says so.
+
+## Analysis, scenarios, planner panel and exports
+
+Below the plan, a tab strip holds Analytics, Scenarios, Smart planner, Modes and Export (`planner-panels.js`, `planner-modes.js`, `planner-export.js`). Everything is a MODEL ESTIMATE. Throughput, client capacity and channel utilisation are labelled ESTIMATE wherever they appear. Every chart has a table as its text equivalent.
+
+Worker jobs (added to `rf-worker.js`; ids start at 1,000,000 so they never collide with heat map ids): `analyze {floor, cell_m}` replies `analysis`; `compare {floor, a, b}` replies `comparison` (flat `rssi_a`, `rssi_b`, `delta`, both analytics, both scores); `rank {items}` replies `ranking`; `stack` replies `stack`; `plan {floor, target_pct, max_aps}` replies `plan` (issues, placements, count, power, channels). Jobs run as steps with a pause between steps and send `progress {job, step, steps, text}`. A newer job of the same kind or `cancel {id}` takes effect at the next step boundary, so a single long step (for example the placement search on a very large floor) is not interrupted midway.
+
+Analytics tab: coverage, average RSSI, weak area, dead zones with a Locate button, overlap table, roaming candidates (optional overlay of the zone bounding boxes), per-AP usable throughput, client capacity, expected clients and channel utilisation.
+
+Scenarios: a scenario is a named snapshot of the floors and mode (floor-plan images stay with the project). Scenarios live in `project.scenarios` (at most 20), so they are saved in browser storage and in exported JSON. Save, rename, duplicate, delete, restore (restoring clears undo history), download and import a scenarios file. Compare A against B (either can be the current plan) as side by side heat maps with shared pan and zoom, a delta heat map (blue where B is weaker, orange where B is stronger, saturating at 15 dB), or a before/after slider. The metric table and the optimisation score breakdown come from `RFEngine.compareScenarios`; "Rank all by score" scores the current plan and every scenario. Scenario changes are not part of undo history. The two plans must have the same floor size.
+
+Smart planner tab: runs the planner in the worker, then lists recommendations with confidence and reason. Preview draws a ghost AP, Apply and Apply all are single undoable steps. Confidence is model sensitivity, not accuracy, and channel changes have no confidence ("n/a"). Results are marked stale after any edit.
+
+Exports register through `PlannerExport.register(id, {label, run(ctx)})`; the built-ins `png`, `csv`, `json`, `pdf`, `print` and `boq` use it. CSV cells that are text starting with `=`, `+`, `-`, `@`, tab or CR get an apostrophe prefix; real numbers (including negative ones) are written as they are. The PNG is a composite of the plan, heat map, legend and annotations. The PDF is written by hand (PDF 1.4, Helvetica, the heat map as a DCTDecode JPEG, an xref table); non-Latin-1 characters become `?`. `print` uses the print stylesheet. Annotations (text, arrow, pin) are stored in `floor.annotations` and are undoable; dropping a project `.json` file on the plan imports it.
+
+Project JSON `schema_version` is 2 (version 1 files still load). New optional fields: `scenarios`, `capacity` (`"floorId/roomId": {users, profile}`), per floor `annotations` and `devices`, per AP `mesh_parent`. `rf-config.json` gains `planner_modes` (mesh, IoT classes, capacity profiles, enterprise defaults).
+
+### Bonus modes
+| Mode | Status | Notes |
+| --- | --- | --- |
+| Multi-floor and vertical penetration | complete | Floor selector, undoable Add floor (empty floor above), floor stack table (coverage with all APs against own APs only), flat configured loss per floor crossed and band. No slab geometry. |
+| 3D building | complete (reuse) | Loads `view3d.js` on demand and shows the project (walls, APs, per-floor signal map) with `Room3D`. No editing in 3D. |
+| Mesh simulation | complete (simple model) | `mesh_parent` per AP. Backhaul RSSI from the engine (walls and floors between the APs), end-to-end rate = slowest link x 0.5^hops, flagged weak links and long chains, client-side throughput capped by backhaul. Single radio assumption, no contention between branches. |
+| Capacity planning | complete (simple model) | Users per room and demand profile, demand is assigned to the AP serving the room centre, over-capacity APs flagged against usable throughput. |
+| IoT placement | complete (simple model) | Device tool or add at probe point, class sensitivities in `rf-config.json`, status ok, marginal or fail, fix text (raise power or add an AP). Uses the strongest AP; no uplink asymmetry. |
+| Enterprise planner | complete (simple model) | Square lattice with channel colouring `(col + 2 row) mod n`, evaluate (coverage, capacity), undoable apply, bill of quantities CSV from planning rules of thumb. No cable routing or ceiling constraints. |
+
+Not done: editing doors and windows in the UI, a "save to local twin" button (the twin API caps size, planner projects stay in the browser and in JSON files), a GPU measurement, touch and Raspberry Pi verification.
 
 ## Extending
 `rfmodel.register_mode(id, fn)` and `RFEngine.registerMode(id, fn)` add a mode;

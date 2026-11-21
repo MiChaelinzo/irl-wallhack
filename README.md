@@ -21,7 +21,7 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 
 ![Judge mode](docs/screenshot-judge.png)
 
-- **RF planner**: `/planner` is a floor-plan editor with a model-based signal heat map (MODEL ESTIMATE, not a measurement): draw walls, place access points, import a floor-plan image and calibrate its scale, undo/redo, contours, dead zones, quality bands and hover readouts. Details in `docs/rf-planner.md`, measured speed in `docs/perf-rf.md`.
+- **RF planner**: `/planner` is a floor-plan editor with a model-based signal heat map (MODEL ESTIMATE, not a measurement): draw walls, place access points, import a floor-plan image and calibrate its scale, undo/redo, contours, dead zones, quality bands and hover readouts, plus an analytics dashboard, scenario comparison, a smart planner (AP placement, power and channel advice with confidence), PNG, CSV, JSON and PDF export, and mesh, capacity, IoT and enterprise planning modes. Details in `docs/rf-planner.md`, measured speed in `docs/perf-rf.md`.
 
 ![RF planner](docs/screenshot-planner.png)
 
