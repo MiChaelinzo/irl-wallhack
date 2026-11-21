@@ -22,6 +22,11 @@
 - test: `tests/test_planner_state.py`, `tests/test_rf_worker.py`, `tests/test_planner_heat.py`, `tools/planner_smoke.py` (Playwright).
 - docs: `docs/perf-rf.md` with measured numbers (`tools/perf_rf.js`, `tools/perf_rf_browser.py`).
 
+### RF planner integration
+- chore: `tsconfig.json` and `make typecheck` (tsc `checkJs`, dev only); JSDoc fixes in `rf-engine.js` and `rf-optimizer.js`.
+- test: `tools/screenshot.py` captures the planner (main, analytics, compare, light, phone width, plus `-demo` variants) and fails on a blank heat map.
+- docs: requirement Status table, typed interfaces section, README verification rows and screenshots.
+
 ### RF planner analysis, scenarios and exports
 - feat: analytics dashboard (coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming zones, per-AP throughput, client capacity and channel utilisation, all labelled ESTIMATE, tables as text equivalents).
 - feat: scenarios saved with the project, side by side, delta and slider comparison, metric diff, optimisation score breakdown and ranking.

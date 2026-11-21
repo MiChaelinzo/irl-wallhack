@@ -141,6 +141,26 @@ Project JSON `schema_version` is 2 (version 1 files still load). New optional fi
 
 Not done: editing doors and windows in the UI, a "save to local twin" button (the twin API caps size, planner projects stay in the browser and in JSON files), a GPU measurement, touch and Raspberry Pi verification.
 
+## Status
+Against the original mission list. "complete" means the code exists and is covered by tests or the browser smoke; accuracy against real buildings is UNVERIFIED throughout.
+
+| Mission item | Status | Detail and reason |
+| --- | --- | --- |
+| Advanced RF Simulation | complete | Frequency-aware model for 2.4, 5 and 6 GHz, per-band material attenuation, openings, floor loss, basic, enhanced (one reflection, knife-edge diffraction) and multipath (incoherent sum) modes, per-AP band and channel. Not ray tracing; no polarisation, no moving objects. |
+| Interactive Floor Planning | partial | Draw, move, rotate, snap, delete walls, materials, APs, labels, floors, image import with scale calibration, undo/redo, pan and zoom. Deferred: add, edit and remove doors and windows in the UI (the engine honours twin openings, they are shown but not editable). |
+| Visualization Enhancements | partial | WebGL heat map with canvas 2D fallback, quality bands, contours, dead-zone hatch, colour-blind palette, legend, hover and keyboard probe, mini-map, light and dark themes. Deferred: exact roaming-zone cell overlay (bounding boxes are drawn). |
+| Analytics Dashboard | complete | Coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming candidates, per-AP throughput, client capacity, channel utilisation, all with table equivalents. Throughput, capacity and utilisation are ESTIMATES from a rate table. |
+| Performance Optimization | complete | Web Worker, 16x16 tiles, coarse then fine pass, per-AP cache, dirty-tile edits, spatial index, main-thread fallback. Measured in `perf-rf.md` (SwiftShader, Xeon). Deferred: cancelling inside one long planner step; real GPU and Pi 4 numbers UNVERIFIED. |
+| Scenario Comparison | complete | Saved scenarios, side by side, delta and slider views, metric diff, explainable optimisation score, ranking. |
+| Smart WiFi Planner | partial | Issue detection, greedy AP placement, AP count, power and channel advice, confidence (model sensitivity, not accuracy), undoable apply. Deferred: optional LLM explain endpoint (the deterministic texts work offline); adjacent-channel interference is simplified. |
+| Modern UI/UX | partial | Glass dark and light themes, keyboard shortcuts, tooltips, responsive layout without horizontal overflow at 390 px, ARIA labels. Touch and pinch code exists but was never exercised by a test or a device. |
+| Export Features | partial | PNG, CSV, project JSON, PDF, print and BoQ CSV through `PlannerExport.register`. Deferred: a "Save to local twin" button (the twin API caps size at 200 items and 600k characters); PDF and PNG not opened in a real viewer. |
+| Architecture Improvements | complete | Engine (`rfmodel.py`, `rf-engine.js`, `rf-optimizer.js`) separate from UI files, `rf-config.json` materials and tables, registries (modes, materials, exports), JSDoc types checked by `make typecheck`, ADR and docs. |
+| Bonus Features | complete | Multi-floor, 3D building, mesh, capacity, IoT and enterprise modes, each a simple model (see the table above). |
+
+## Typed interfaces
+`tsconfig.json` (`allowJs`, `checkJs`, `noEmit`, not strict) covers `rf-engine.js`, `rf-optimizer.js` and `planner-state.js`. Run `make typecheck` (`npx -p typescript tsc -p tsconfig.json`). TypeScript is a dev tool only: `node_modules` is gitignored and nothing needs it at runtime. The check currently passes with no errors; JSDoc function types must use arrow syntax, for example `(ctx:Object,x:number)=>number`.
+
 ## Extending
 `rfmodel.register_mode(id, fn)` and `RFEngine.registerMode(id, fn)` add a mode;
 `RFEngine.registerMaterials(table)` adds materials. See the ADR in `docs/adr-rf-engine.md`.

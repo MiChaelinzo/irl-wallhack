@@ -25,6 +25,13 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 
 ![RF planner](docs/screenshot-planner.png)
 
+![Planner analytics](docs/screenshot-planner-analytics.png)
+![Scenario comparison](docs/screenshot-planner-compare.png)
+![Planner, light theme](docs/screenshot-planner-light.png)
+![Planner on a phone](docs/screenshot-planner-mobile.png)
+
+Type check (dev only, needs `npx` and network once, nothing is installed into the repo): `make typecheck` runs `tsc` with `checkJs` over `rf-engine.js`, `rf-optimizer.js` and `planner-state.js`. The app itself has no build step and no Node dependency.
+
 ## Not built, on purpose
 - **Smart Home Automation and enterprise analytics**: Future. Only read-only air-quality status cards exist; nothing controls a device.
 - **Mood / emotion**: there is no established way to infer it from WiFi, so nothing is shown.
@@ -178,6 +185,11 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED (low quality and auto-downgrade exist but were never measured on a Pi) |
 | Twin validation and persistence, RF model determinism and monotonicity, history retention and sessions, status bands, insight rules, scores, game scoring (pytest) | VERIFIED (automated tests, simulated data) |
 | RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
+| RF planner engine maths (bands, materials, modes, analytics, optimiser, scenario compare), Python and JavaScript parity | VERIFIED (hand-computed cases and parity tests within 0.1 dB) |
+| RF planner propagation accuracy against real buildings, throughput and capacity numbers | UNVERIFIED (planning estimates only) |
+| RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
+| RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |
+| RF planner PDF and PNG exports opened in a real viewer | UNVERIFIED (structure and signature checked by script only) |
 | LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
 | LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted, loopback client with a foreign Host header refused (DNS rebinding), `/api/pair` refused with an Origin header | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |
 | Demo exports (`history.json`, `twin.json`, `insights.json`, `scores.json`, `scenario.json`, `health.json`), numpy pinned in `vercel.json` | VERIFIED locally (deterministic build); Vercel build with the pinned numpy UNVERIFIED |
