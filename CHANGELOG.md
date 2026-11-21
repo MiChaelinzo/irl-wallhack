@@ -8,6 +8,9 @@
 - feat: `static/rf-engine.js` ports the model with a uniform-grid spatial index; `tests/test_rf_parity.py` checks it against Python within 0.1 dB and the index against brute force on 1000 walls.
 - feat: `GET /api/rf/coverage?band=&mode=`, `GET /api/rf/config`, `/planner` route. `validate_twin` accepts the new optional fields.
 - docs: `docs/adr-rf-engine.md`, `docs/rf-planner.md` (propagation model).
+- feat: analytics (coverage, quality bands, weak area, dead-zone regions, best-AP map, AP overlap, roaming zones, throughput, client capacity, channel utilisation) in `rfmodel.analytics` and `RFEngine.analytics`, plus a point probe for tooltips. Throughput, capacity and utilisation are labelled ESTIMATES.
+- feat: `RFEngine.compareScenarios` (per-cell dB delta, deltas, explainable optimisation score).
+- feat: `static/rf-optimizer.js` Smart WiFi Planner: issue detection, greedy AP placement, AP count, overpowered/underpowered APs, channel plan, and a model-sensitivity confidence score in [0, 1].
 
 ### Review fixes
 - fix: LAN mode keeps a Host allow-list for loopback clients (localhost, 127.0.0.1, ::1, the LAN IP, the configured host), closing DNS rebinding against `/api/pair`. `/api/pair` also refuses requests with an `Origin` header.
