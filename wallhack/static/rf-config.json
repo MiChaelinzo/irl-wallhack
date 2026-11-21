@@ -16,6 +16,11 @@
    "v_min": -0.78,
    "log_scale": 20.0,
    "v_scale": 2.0
+  },
+  "spatial_index": {
+   "target_walls_per_cell": 2.0,
+   "min_cell_m": 1.0,
+   "bbox_pad_m": 1e-06
   }
  },
  "bands": {
