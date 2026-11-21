@@ -64,3 +64,18 @@ def test_rf_config_endpoint(client):
 
 def test_planner_route_does_not_error(client):
     assert client.get("/planner").status_code in (200, 404)
+
+
+def test_put_twin_accepts_5000_walls_under_the_body_cap(client):
+    import json
+    from wallhack.app import MAX_BODY_BYTES
+    t = sample_twin()
+    f = t["floors"][0]
+    f["width_m"] = f["depth_m"] = 200
+    f["walls"] = [{"id": f"w{i}", "x1": 1.2345 + (i % 100) * 1.5, "y1": 1.2345 + (i // 100) * 3.25,
+                   "x2": 2.5678 + (i % 100) * 1.5, "y2": 1.2345 + (i // 100) * 3.25, "kind": "interior"} for i in range(5000)]
+    f["openings"] = [{"id": f"o{i}", "kind": "door", "wall": f"w{i}", "pos": 0.2, "width": 0.9} for i in range(5000)]
+    size = len(json.dumps(t, separators=(",", ":")))
+    assert size < MAX_BODY_BYTES * 0.9, size     # leaves room for rooms, APs and a small background
+    assert client.put("/api/twin", json=t).status_code == 200
+    assert len(client.get("/api/twin").json()["floors"][0]["walls"]) == 5000

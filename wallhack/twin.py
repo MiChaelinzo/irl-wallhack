@@ -23,6 +23,10 @@ TWIN_FILE = "twin.json"
 # Limits shared with the browser planner live in rf-config.json ("limits").
 MAX_FLOORS = rfmodel.LIMITS["max_floors"]
 MAX_ITEMS_PER_LIST = rfmodel.LIMITS["max_items_per_list"]
+MAX_WALLS_PER_FLOOR = rfmodel.LIMITS["max_walls_per_floor"]
+MAX_OPENINGS_PER_FLOOR = rfmodel.LIMITS["max_openings_per_floor"]
+# Walls and openings have their own, larger limits (large plans); every other list uses MAX_ITEMS_PER_LIST.
+ITEM_LIMITS = {"walls": MAX_WALLS_PER_FLOOR, "openings": MAX_OPENINGS_PER_FLOOR}
 MAX_TEXT_CHARS = rfmodel.LIMITS["max_text_chars"]
 TX_DBM_RANGE = (0.0, 30.0)
 MAX_CUSTOM_MATERIALS = rfmodel.LIMITS["max_custom_materials"]
@@ -131,8 +135,9 @@ def _custom_materials(data: Any) -> Dict[str, dict]:
 
 def _items(floor: dict, key: str, path: str) -> List[dict]:
     items = floor.get(key, [])
-    if not isinstance(items, list) or len(items) > MAX_ITEMS_PER_LIST:
-        raise TwinError(f"{path}.{key}: must be a list of at most {MAX_ITEMS_PER_LIST} items")
+    limit = ITEM_LIMITS.get(key, MAX_ITEMS_PER_LIST)
+    if not isinstance(items, list) or len(items) > limit:
+        raise TwinError(f"{path}.{key}: must be a list of at most {limit} items")
     for i, it in enumerate(items):
         if not isinstance(it, dict):
             raise TwinError(f"{path}.{key}[{i}]: must be an object")

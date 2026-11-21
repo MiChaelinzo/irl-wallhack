@@ -28,7 +28,9 @@
   function configOf(opts) {
     if (opts.config) { return opts.config; }
     if (!nodeConfig) {
+      // @ts-ignore require exists only under Node (tests); the browser passes opts.config. No @types/node by design.
       if (typeof require !== "function") { throw ProjectError("validateProject needs opts.config (the rf-config.json content)"); }
+      // @ts-ignore see above
       nodeConfig = require("./rf-config.json");
     }
     return nodeConfig;
@@ -83,6 +85,7 @@
   function validateProject(data, opts) {
     opts = opts || {};
     var cfg = configOf(opts), limits = cfg.limits, maxItems = limits.max_items_per_list;
+    var maxWalls = limits.max_walls_per_floor, maxOpenings = limits.max_openings_per_floor;
     maxText = limits.max_text_chars;
     if (!data || typeof data !== "object" || Array.isArray(data)) { throw ProjectError("project: must be a JSON object"); }
     var version = data.schema_version === undefined ? SCHEMA_VERSION : data.schema_version;
@@ -139,7 +142,7 @@
         object(r, q);
         floor.sensors.push({ id: text(r, "id", q), kind: choice(r, "kind", limits.sensor_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth) });
       });
-      list(f, "walls", p, maxItems).forEach(function (w, i) {
+      list(f, "walls", p, maxWalls).forEach(function (w, i) {
         var q = p + ".walls[" + i + "]";
         object(w, q);
         var wall = { id: text(w, "id", q), x1: num(w.x1, q + ".x1", 0, width), y1: num(w.y1, q + ".y1", 0, depth),
@@ -157,7 +160,7 @@
       unique(wallIds, p + ".walls");
       var wallById = Object.create(null);
       floor.walls.forEach(function (w) { wallById[w.id] = w; });
-      list(f, "openings", p, maxItems).forEach(function (o, i) {
+      list(f, "openings", p, maxOpenings).forEach(function (o, i) {
         var q = p + ".openings[" + i + "]";
         if (!o || typeof o !== "object" || !wallById[o.wall]) { throw ProjectError(q + ".wall: unknown wall id " + JSON.stringify(o && o.wall)); }
         if (o.kind !== "door" && o.kind !== "window") { throw ProjectError(q + ".kind: must be door or window"); }

@@ -261,7 +261,7 @@ def _rejects(mutate, message):
     ("d.floors[0].aps[0].channel = 149", "aps[0].channel"),
     ("d.floors[0].aps[0].band = '5'; d.floors[0].aps[0].channel = 6", "aps[0].channel"),
     ("d.floors[0].labels = Array.from({length: 201}, (_, i) => ({id: 'l' + i, text: 't', x: 1, y: 1}))", "at most 200"),
-    ("d.floors[0].walls = Array.from({length: 201}, (_, i) => ({id: 'w' + i, x1: 0, y1: 0, x2: 1, y2: 1, kind: 'interior'}))", "at most 200"),
+    ("d.floors[0].furniture = Array.from({length: 201}, (_, i) => ({id: 'f' + i, kind: 'sofa', x: 1, y: 1, w: 1, d: 1}))", "at most 200"),
     ("d.floors[0].background = 'data:image/png;base64,' + 'A'.repeat(600001)", "at most 600000"),
     ("d.floors[0].openings[0].pos = 50", "pos"),
     ("d.floors[0].openings[0].width = 50", "extends past"),
@@ -334,3 +334,41 @@ def test_dirty_flag_survives_meta_changes_and_returns_to_clean_on_undo():
       out(states);
     """)
     assert r == [False, True, False, True, False, True, False]
+
+
+def _big_twin(n_walls, n_openings=None):
+    """A valid twin with n_walls walls (and as many openings, one per wall) on a 200 x 200 m floor."""
+    d = twin.sample_twin()
+    f = d["floors"][0]
+    f["width_m"] = f["depth_m"] = 200
+    f["walls"] = [{"id": f"w{i}", "x1": 1.2345 + (i % 100) * 1.5, "y1": 1.2345 + (i // 100) * 3.25,
+                   "x2": 2.5678 + (i % 100) * 1.5, "y2": 1.2345 + (i // 100) * 3.25, "kind": "interior"} for i in range(n_walls)]
+    n_openings = n_walls if n_openings is None else n_openings
+    f["openings"] = [{"id": f"o{i}", "kind": "door", "wall": f"w{i}", "pos": 0.2, "width": 0.9} for i in range(n_openings)]
+    return d
+
+
+@pytest.mark.parametrize("n", [1000, 5000])
+def test_large_projects_validate_in_python_and_js(n):
+    d = _big_twin(n)
+    assert len(twin.validate_twin(d)["floors"][0]["walls"]) == n
+    r = run_js("const p = S.validateProject(input.big); out([p.floors[0].walls.length, p.floors[0].openings.length]);", {"big": d})
+    assert r == [n, n]
+
+
+def test_walls_over_the_limit_get_a_clear_error_in_both():
+    from wallhack import rfmodel
+    limit = rfmodel.LIMITS["max_walls_per_floor"]
+    assert limit >= 5000 and rfmodel.LIMITS["max_openings_per_floor"] >= 5000
+    d = _big_twin(limit + 1, 0)
+    with pytest.raises(twin.TwinError, match=rf"floors\[0\]\.walls: must be a list of at most {limit} items"):
+        twin.validate_twin(d)
+    r = run_js("try { S.validateProject(input.big); out('accepted'); } catch (e) { out(e.message); }", {"big": d})
+    assert f"floors[0].walls: at most {limit} items, got {limit + 1}" in r
+
+
+def test_other_lists_keep_the_small_limit():
+    d = twin.sample_twin()
+    d["floors"][0]["sensors"] = [{"id": f"s{i}", "kind": "air", "x": 1, "y": 1} for i in range(201)]
+    with pytest.raises(twin.TwinError, match="sensors: must be a list of at most 200 items"):
+        twin.validate_twin(d)

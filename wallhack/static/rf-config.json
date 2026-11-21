@@ -5,6 +5,8 @@
  "limits": {
   "max_floors": 6,
   "max_items_per_list": 200,
+  "max_walls_per_floor": 5000,
+  "max_openings_per_floor": 5000,
   "max_custom_materials": 20,
   "material_db_range": [0.0, 80.0],
   "max_background_chars": 600000,
