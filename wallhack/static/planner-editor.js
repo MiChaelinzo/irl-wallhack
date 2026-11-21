@@ -791,6 +791,7 @@
     };
 
     // ---------------------------------------------------------------- wiring
+    o.edit.addEventListener("mousedown", function (e) { e.preventDefault(); });   // keep a text box opened by pointerdown focused
     o.edit.addEventListener("pointerdown", onDown);
     o.edit.addEventListener("pointermove", onMove);
     o.edit.addEventListener("pointerup", onUp);

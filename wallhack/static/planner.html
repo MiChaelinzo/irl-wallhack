@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallhack RF planner</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="page-planner">
+<header>
+  <h1><span class="logo" aria-hidden="true"></span>Wallhack <span class="sub">RF planner</span></h1>
+  <div class="hdr-right">
+    <nav class="nav" aria-label="Pages"><a href="/" data-page="/">Dashboard</a><a href="/mobile" data-page="/mobile">Mobile</a><a href="/judge" data-page="/judge">Judge mode</a><a href="/planner" data-page="/planner" aria-current="page">Planner</a></nav>
+    <span id="rendererChip" class="chip" title="How the heat map is drawn">renderer: ?</span>
+    <span id="computeChip" class="chip" role="status">idle</span>
+    <button id="themeBtn" type="button" aria-pressed="false">Light</button>
+    <button id="helpBtn" type="button" aria-controls="help" aria-expanded="false">Shortcuts (?)</button>
+  </div>
+</header>
+<div id="plannerNote" class="banner note" role="note">
+  <p><strong>MODEL ESTIMATE, not a measurement.</strong> Heat maps come from a log-distance model with wall losses (see the model notes in docs/rf-planner.md). Floor plans and images stay in this browser and are never uploaded.</p>
+</div>
+<div id="plannerNotice" class="banner" role="status" hidden></div>
+<main class="planner">
+  <section class="card p-tools" aria-labelledby="pTools">
+    <h2 id="pTools">Tools</h2>
+    <div class="tool-row" role="toolbar" aria-label="Drawing tools">
+      <button type="button" data-tool="select" aria-pressed="true" title="Select and edit (V)">Select</button>
+      <button type="button" data-tool="wall" aria-pressed="false" title="Draw walls (W)">Wall</button>
+      <button type="button" data-tool="ap" aria-pressed="false" title="Place access point (A)">AP</button>
+      <button type="button" data-tool="label" aria-pressed="false" title="Room label (L)">Label</button>
+      <button type="button" data-tool="pan" aria-pressed="false" title="Pan (H or hold Space)">Pan</button>
+      <button type="button" data-tool="calibrate" aria-pressed="false" title="Calibrate image scale (C)">Calibrate</button>
+    </div>
+    <div class="tool-row">
+      <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
+      <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
+      <button id="fitBtn" type="button" title="Fit to view (0)">Fit</button>
+    </div>
+    <div class="tool-row">
+      <button id="gridBtn" type="button" aria-pressed="true" title="Grid snapping (G)">Snap</button>
+      <label class="inline">Grid <select id="gridStep" aria-label="Grid step"><option value="0.1">0.1 m</option><option value="0.25">0.25 m</option><option value="0.5" selected>0.5 m</option><option value="1">1 m</option></select></label>
+    </div>
+    <h3>Materials</h3>
+    <p class="muted hint">Click to draw with a material, or drag one onto the plan.</p>
+    <div id="palette" class="palette"></div>
+    <h3>Project</h3>
+    <div class="tool-row">
+      <button id="exportBtn" type="button">Export JSON</button>
+      <button id="importBtn" type="button">Import JSON</button>
+      <button id="resetBtn" type="button" title="Reload the Wallhack digital twin">Load twin</button>
+    </div>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
+    <div class="tool-row">
+      <button id="imageBtn" type="button">Floor plan image</button>
+      <button id="imageClear" type="button">Remove image</button>
+    </div>
+    <input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+    <label class="field">Image opacity <input id="imageOpacity" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+    <p id="saveState" class="muted hint" role="status">Not saved yet</p>
+  </section>
+
+  <section class="card p-stage" aria-labelledby="pStage">
+    <h2 id="pStage">Floor plan and signal map</h2>
+    <div class="stage-bar">
+      <label class="inline">Floor <select id="floorSel" aria-label="Floor"></select></label>
+      <span id="estimateLabel" class="chip sim">MODEL ESTIMATE, not a measurement</span>
+      <span id="coverageChip" class="chip">coverage: -</span>
+      <span id="deadChip" class="chip">dead zone: -</span>
+    </div>
+    <div id="stage" class="stage">
+      <canvas id="cBase" aria-hidden="true"></canvas>
+      <canvas id="cHeat" aria-hidden="true"></canvas>
+      <canvas id="cOver" aria-hidden="true"></canvas>
+      <canvas id="cEdit" tabindex="0" role="application" aria-label="Floor plan editor. Press question mark for keyboard shortcuts. With nothing selected, arrow keys move the signal probe."></canvas>
+      <div id="tip" class="tip" role="tooltip" hidden></div>
+    </div>
+    <p id="status" class="muted caption" role="status" aria-live="polite">Ready</p>
+  </section>
+
+  <aside class="p-side" aria-label="Controls">
+    <section class="card" aria-labelledby="pHeat">
+      <h2 id="pHeat">Heat map</h2>
+      <div class="ctl-grid">
+        <label class="field">Band <select id="bandSel"><option value="">Per AP</option><option value="2.4">2.4 GHz</option><option value="5">5 GHz</option><option value="6">6 GHz</option></select></label>
+        <label class="field">Propagation <select id="modeSel"></select></label>
+        <label class="field">Resolution <select id="cellSel"><option value="">Auto</option><option value="2">2 m</option><option value="1">1 m</option><option value="0.5">0.5 m</option><option value="0.25">0.25 m</option></select></label>
+        <label class="field">Colours <select id="paletteSel"><option value="classic">Classic RF</option><option value="cvd">Colour-blind safe</option></select></label>
+      </div>
+      <label class="field">Heat opacity <input id="heatOpacity" type="range" min="0.2" max="1" step="0.05" value="0.72"></label>
+      <div class="checks">
+        <label class="check"><input id="tgContours" type="checkbox" checked> Contours</label>
+        <label class="check"><input id="tgDead" type="checkbox" checked> Dead zones</label>
+        <label class="check"><input id="tgBands" type="checkbox"> Quality bands</label>
+        <label class="check"><input id="tgHeat" type="checkbox" checked> Heat map</label>
+        <label class="check"><input id="tgWalls" type="checkbox" checked> Walls</label>
+        <label class="check"><input id="tgLabels" type="checkbox" checked> Labels</label>
+        <label class="check"><input id="tgImage" type="checkbox" checked> Image</label>
+      </div>
+      <h3>Signal quality</h3>
+      <ul id="legend" class="legend-list"></ul>
+    </section>
+    <section class="card" aria-labelledby="pFloor">
+      <h2 id="pFloor">Floor</h2>
+      <div class="ctl-grid">
+        <label class="field">Width (m) <input id="floorW" type="number" min="1" max="200" step="0.5"></label>
+        <label class="field">Depth (m) <input id="floorD" type="number" min="1" max="200" step="0.5"></label>
+      </div>
+      <p id="floorInfo" class="muted hint"></p>
+      <h3>Access points</h3>
+      <ul id="apList" class="ap-list"></ul>
+      <div id="inspector" hidden>
+        <h3>Selected walls</h3>
+        <label class="field">Material <select id="wallMaterial"></select></label>
+        <p id="wallInfo" class="muted hint"></p>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="pProbe">
+      <h2 id="pProbe">Probe</h2>
+      <dl id="probe" class="probe" aria-live="polite"><dt>Move the pointer over the plan</dt><dd></dd></dl>
+      <h3>Mini-map</h3>
+      <canvas id="minimap" class="minimap" width="240" height="160" tabindex="0" role="img" aria-label="Mini-map of the floor. Click or use arrow keys to move the view."></canvas>
+    </section>
+  </aside>
+</main>
+<div id="help" class="dialog" role="dialog" aria-modal="false" aria-labelledby="helpTitle" hidden>
+  <h2 id="helpTitle">Keyboard shortcuts</h2>
+  <table>
+    <tr><th>V / W / A / L / C / H</th><td>Select, wall, access point, label, calibrate, pan</td></tr>
+    <tr><th>Space (hold)</th><td>Pan with the pointer</td></tr>
+    <tr><th>Delete</th><td>Delete selection</td></tr>
+    <tr><th>Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y</th><td>Undo, redo</td></tr>
+    <tr><th>Ctrl+D, Ctrl+A, R</th><td>Duplicate, select all walls, rotate 90 degrees</td></tr>
+    <tr><th>G</th><td>Toggle grid snapping (Alt while dragging: no snap)</td></tr>
+    <tr><th>Arrow keys</th><td>Nudge selection, or move the signal probe when nothing is selected (Shift: bigger step)</td></tr>
+    <tr><th>+ / - / 0</th><td>Zoom in, zoom out, fit</td></tr>
+    <tr><th>Shift while rotating</th><td>Free angle (otherwise 15 degree steps)</td></tr>
+    <tr><th>Right click</th><td>Context menu: material, delete, duplicate, rotate, add AP, label</td></tr>
+    <tr><th>Escape</th><td>Cancel and deselect</td></tr>
+  </table>
+  <button id="helpClose" type="button">Close</button>
+</div>
+<footer class="muted">Estimates from a propagation model. Not a site survey.</footer>
+<script src="/static/common.js"></script>
+<script src="/static/rf-engine.js"></script>
+<script src="/static/planner-state.js"></script>
+<script src="/static/planner-editor.js"></script>
+<script src="/static/planner-heat.js"></script>
+<script src="/static/rf-worker.js"></script>
+<script src="/static/planner.js"></script>
+</body>
+</html>
