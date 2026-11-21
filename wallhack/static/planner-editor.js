@@ -449,7 +449,7 @@
     // ---------------------------------------------------------------- floating text input (labels, calibration)
     function askText(title, initial, wx, wy, done) {
       var input = doc.createElement("input");
-      input.type = "text"; input.value = initial || ""; input.className = "planner-input"; input.setAttribute("aria-label", title); input.placeholder = title;
+      input.type = "text"; input.maxLength = textMax(); input.value = initial || ""; input.className = "planner-input"; input.setAttribute("aria-label", title); input.placeholder = title;
       input.style.left = Math.max(4, Math.min(view.w - 190, view.ox + wx * view.scale - 90)) + "px"; input.style.top = Math.max(4, view.oy + wy * view.scale - 14) + "px";
       stage.appendChild(input); input.focus(); input.select();
       var closed = false;
@@ -461,18 +461,25 @@
       input.addEventListener("keydown", function (e) { e.stopPropagation(); if (e.key === "Enter") { close(true); } else if (e.key === "Escape") { close(false); } });
       input.addEventListener("blur", function () { close(false); });
     }
+    function textMax() { return o.textLimit(); }
+    /** Fit label text to the shared limit (the same one validateProject enforces) and say so when it was shortened. */
+    function clipLabel(txt) {
+      var r = S.clipText(txt, textMax());
+      if (r.clipped) { say("Label shortened to " + textMax() + " characters"); }
+      return r.text;
+    }
     self.addLabelAt = function (pt) {
       var f = floor(), p = clampPoint(pt, f);
       askText("Room label", "", p.x, p.y, function (txt) {
         var id = S.nextId(f.labels, "l");
-        store.exec({ label: "Add label", ops: [S.addOp("label", store.project, f.id, { id: id, text: txt.slice(0, 80), x: p.x, y: p.y })] });
+        store.exec({ label: "Add label", ops: [S.addOp("label", store.project, f.id, { id: id, text: clipLabel(txt), x: p.x, y: p.y })] });
         store.select({ label: id });
       });
     };
     self.editLabel = function (id) {
       var f = floor(), l = f.labels.filter(function (x) { return x.id === id; })[0];
       if (!l) { return; }
-      askText("Room label", l.text, l.x, l.y, function (txt) { store.exec({ label: "Edit label", ops: [S.setOp("label", store.project, f.id, id, { text: txt.slice(0, 80) })] }); });
+      askText("Room label", l.text, l.x, l.y, function (txt) { store.exec({ label: "Edit label", ops: [S.setOp("label", store.project, f.id, id, { text: clipLabel(txt) })] }); });
     };
 
     // ---------------------------------------------------------------- floor-plan image and calibration

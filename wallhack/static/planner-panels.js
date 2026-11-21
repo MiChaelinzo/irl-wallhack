@@ -286,21 +286,23 @@
     }
     function nameFor(id) { return id === "current" ? "Current plan" : (scenarios().filter(function (x) { return x.id === id; })[0] || { name: id }).name; }
 
+    function textMax() { return S.textLimit(app.validateOpts()); }
     function renderScenarios() {
       var host = sc.host; host.textContent = "";
       host.appendChild(el("p", { class: "muted hint", text: "A scenario is a named snapshot of the floors (walls, access points and settings). Scenarios are saved with the project in this browser and in exported project JSON. MODEL ESTIMATE, not a measurement." }));
-      sc.nameInput = el("input", { type: "text", id: "scenarioName", maxlength: "80", placeholder: "Scenario name", "aria-label": "Scenario name" });
+      sc.nameInput = el("input", { type: "text", id: "scenarioName", maxlength: String(textMax()), placeholder: "Scenario name", "aria-label": "Scenario name" });
       var saveRow = el("div", { class: "tool-row" }, [sc.nameInput, button("Save current plan as scenario", function () {
         if (scenarios().length >= S.MAX_SCENARIOS) { sc.msg.textContent = "At most " + S.MAX_SCENARIOS + " scenarios. Delete one first."; return; }
-        var s = S.makeScenario(app.store.project, sc.nameInput.value.trim() || "Scenario " + (scenarios().length + 1), app.settings, now());
-        saveScenarios(scenarios().concat([s])); sc.msg.textContent = "Saved scenario " + s.name;
+        var raw = sc.nameInput.value.trim() || "Scenario " + (scenarios().length + 1), s = S.makeScenario(app.store.project, raw, app.settings, now(), textMax());
+        saveScenarios(scenarios().concat([s]));
+        sc.msg.textContent = "Saved scenario " + s.name + (S.clipText(raw, textMax()).clipped ? " (name shortened to " + textMax() + " characters)" : "");
       }, { id: "scenarioSave" })]);
       host.appendChild(saveRow);
       var rows = scenarios().map(function (s) {
         var aps = s.floors.reduce(function (n, f) { return n + f.aps.length; }, 0), nameCell = el("span", { text: s.name });
         var rename = button("Rename", function () {
-          var input = el("input", { type: "text", maxlength: "80", value: s.name, "aria-label": "New name for " + s.name });
-          var ok = button("Save", function () { saveScenarios(S.renameScenario(scenarios(), s.id, input.value.trim() || s.name)); });
+          var input = el("input", { type: "text", maxlength: String(textMax()), value: s.name, "aria-label": "New name for " + s.name });
+          var ok = button("Save", function () { saveScenarios(S.renameScenario(scenarios(), s.id, input.value.trim() || s.name, textMax())); });
           nameCell.textContent = ""; nameCell.appendChild(input); nameCell.appendChild(ok); input.focus();
         }, { "aria-label": "Rename " + s.name });
         return [nameCell, s.created.replace("T", " ").replace("Z", ""), String(aps),

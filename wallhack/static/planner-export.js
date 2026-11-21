@@ -271,7 +271,7 @@
       imp.addEventListener("change", function () { var f = imp.files[0]; imp.value = ""; if (f) { importFile(f); } });
       panel.appendChild(el("div", { class: "tool-row" }, [P.button("Load project JSON", function () { imp.click(); }), imp, el("span", { class: "muted hint", text: "or drop a project .json file on the plan" })]));
       panel.appendChild(el("h3", { text: "Annotations" }));
-      var text = el("input", { type: "text", maxlength: "80", value: note.text, "aria-label": "Note text", id: "noteText" });
+      var text = el("input", { type: "text", maxlength: String(S.textLimit(app.validateOpts())), value: note.text, "aria-label": "Note text", id: "noteText" });
       text.addEventListener("input", function () { note.text = text.value || "Note"; });
       var tools = el("div", { class: "tool-row" }, [el("label", { class: "inline" }, ["Text ", text])]);
       [["note-text", "Text note"], ["note-arrow", "Arrow"], ["note-pin", "Pin"]].forEach(function (t) {

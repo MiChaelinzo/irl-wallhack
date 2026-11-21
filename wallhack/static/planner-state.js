@@ -47,11 +47,24 @@
     return v;
   }
 
-  var maxText = 64;   // set from limits.max_text_chars at the start of validateProject
-  function text(obj, key, path) {
+  /** Strict text for ids and enum-like fields: 1 to max characters, otherwise ProjectError. Never truncated, because ids are references. */
+  function text(obj, key, path, max) {
     var v = obj[key];
-    if (typeof v !== "string" || !v.trim().length || v.length > maxText) { throw ProjectError(path + "." + key + ": must be a text of 1 to " + maxText + " characters"); }
+    if (typeof v !== "string" || !v.trim().length || v.length > max) { throw ProjectError(path + "." + key + ": must be a text of 1 to " + max + " characters"); }
     return v;
+  }
+  /** Text for fields the editor wrote (wall, AP and device names, labels, notes, scenario names): non-empty, truncated to max characters so older saved projects still load. */
+  function nameText(obj, key, path, max) {
+    var v = obj[key];
+    if (typeof v !== "string" || !v.trim().length) { throw ProjectError(path + "." + key + ": must be a non-empty text"); }
+    return v.slice(0, max);
+  }
+  /** The single text limit (characters) for names, labels, notes and scenario names, from rf-config.json limits. */
+  function textLimit(opts) { return configOf(opts || {}).limits.max_text_chars; }
+  /** Fit user input to the limit. Returns {text, clipped} so the caller can tell the user. Used by the editor, notes and scenarios. */
+  function clipText(value, max) {
+    var v = String(value);
+    return { text: v.slice(0, max), clipped: v.length > max };
   }
   function choice(obj, key, allowed, path) {
     if (allowed.indexOf(obj[key]) < 0) { throw ProjectError(path + "." + key + ": must be one of " + allowed.join(", ")); }
@@ -86,7 +99,7 @@
     opts = opts || {};
     var cfg = configOf(opts), limits = cfg.limits, maxItems = limits.max_items_per_list;
     var maxWalls = limits.max_walls_per_floor, maxOpenings = limits.max_openings_per_floor;
-    maxText = limits.max_text_chars;
+    var maxText = limits.max_text_chars;
     if (!data || typeof data !== "object" || Array.isArray(data)) { throw ProjectError("project: must be a JSON object"); }
     var version = data.schema_version === undefined ? SCHEMA_VERSION : data.schema_version;
     if (!isNum(version) || version < 1 || version > SCHEMA_VERSION || Math.floor(version) !== version) {
@@ -107,7 +120,7 @@
       var p = "floors[" + fi + "]";
       object(f, p);
       var width = num(f.width_m, p + ".width_m", MIN_FLOOR_M, MAX_FLOOR_M), depth = num(f.depth_m, p + ".depth_m", MIN_FLOOR_M, MAX_FLOOR_M);
-      var floor = { id: text(f, "id", p), name: text(f, "name", p), level: Math.round(num(f.level === undefined ? fi : f.level, p + ".level", -5, 50)),
+      var floor = { id: text(f, "id", p, maxText), name: text(f, "name", p, maxText), level: Math.round(num(f.level === undefined ? fi : f.level, p + ".level", -5, 50)),
                     height_m: num(f.height_m === undefined ? 2.5 : f.height_m, p + ".height_m", 2, 6),
                     width_m: width, depth_m: depth, rooms: [], walls: [], openings: [], furniture: [], sensors: [], aps: [], labels: [], annotations: [], devices: [] };
       if (f.scale_m_per_px !== undefined) { floor.scale_m_per_px = num(f.scale_m_per_px, p + ".scale_m_per_px", SCALE_RANGE[0], SCALE_RANGE[1]); }
@@ -127,25 +140,25 @@
         object(r, q);
         var rx = num(r.x, q + ".x", 0, width), ry = num(r.y, q + ".y", 0, depth), rw = num(r.w, q + ".w", 0.1), rd = num(r.d, q + ".d", 0.1);
         if (rx + rw > width + 1e-9 || ry + rd > depth + 1e-9) { throw ProjectError(q + ": room extends outside the floor"); }
-        var room = { id: text(r, "id", q), name: text(r, "name", q), x: rx, y: ry, w: rw, d: rd };
-        if (r.label !== undefined) { room.label = text(r, "label", q); }
+        var room = { id: text(r, "id", q, maxText), name: text(r, "name", q, maxText), x: rx, y: ry, w: rw, d: rd };
+        if (r.label !== undefined) { room.label = text(r, "label", q, maxText); }
         floor.rooms.push(room);
       });
       list(f, "furniture", p, maxItems).forEach(function (r, i) {
         var q = p + ".furniture[" + i + "]";
         object(r, q);
-        floor.furniture.push({ id: text(r, "id", q), kind: choice(r, "kind", limits.furniture_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth),
+        floor.furniture.push({ id: text(r, "id", q, maxText), kind: choice(r, "kind", limits.furniture_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth),
                                w: num(r.w, q + ".w", 0.05), d: num(r.d, q + ".d", 0.05) });
       });
       list(f, "sensors", p, maxItems).forEach(function (r, i) {
         var q = p + ".sensors[" + i + "]";
         object(r, q);
-        floor.sensors.push({ id: text(r, "id", q), kind: choice(r, "kind", limits.sensor_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth) });
+        floor.sensors.push({ id: text(r, "id", q, maxText), kind: choice(r, "kind", limits.sensor_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth) });
       });
       list(f, "walls", p, maxWalls).forEach(function (w, i) {
         var q = p + ".walls[" + i + "]";
         object(w, q);
-        var wall = { id: text(w, "id", q), x1: num(w.x1, q + ".x1", 0, width), y1: num(w.y1, q + ".y1", 0, depth),
+        var wall = { id: text(w, "id", q, maxText), x1: num(w.x1, q + ".x1", 0, width), y1: num(w.y1, q + ".y1", 0, depth),
                      x2: num(w.x2, q + ".x2", 0, width), y2: num(w.y2, q + ".y2", 0, depth),
                      kind: WALL_KINDS.indexOf(w.kind) >= 0 ? w.kind : (function () { throw ProjectError(q + ".kind: must be one of " + WALL_KINDS.join(", ")); })() };
         if (wall.x1 === wall.x2 && wall.y1 === wall.y2) { throw ProjectError(q + ": wall has zero length"); }
@@ -153,7 +166,7 @@
           if (materialIds.indexOf(w.material) < 0) { throw ProjectError(q + ".material: '" + w.material + "' is not a known material"); }
           wall.material = w.material;
         }
-        if (w.name !== undefined) { wall.name = text(w, "name", q); }
+        if (w.name !== undefined) { wall.name = nameText(w, "name", q, maxText); }
         floor.walls.push(wall);
       });
       var wallIds = floor.walls.map(function (w) { return w.id; });
@@ -166,47 +179,49 @@
         if (o.kind !== "door" && o.kind !== "window") { throw ProjectError(q + ".kind: must be door or window"); }
         var wl = wallLength(wallById[o.wall]), opos = num(o.pos, q + ".pos", 0, wl), ow = num(o.width, q + ".width", 0.1);
         if (opos + ow > wl + 1e-9) { throw ProjectError(q + ": opening extends past the end of wall '" + o.wall + "'"); }
-        floor.openings.push({ id: text(o, "id", q), kind: o.kind, wall: o.wall, pos: opos, width: ow });
+        floor.openings.push({ id: text(o, "id", q, maxText), kind: o.kind, wall: o.wall, pos: opos, width: ow });
       });
       list(f, "aps", p, Math.min(MAX_APS, maxItems)).forEach(function (a, i) {
         var q = p + ".aps[" + i + "]";
         object(a, q);
-        var ap = { id: text(a, "id", q), x: num(a.x, q + ".x", 0, width), y: num(a.y, q + ".y", 0, depth),
+        var ap = { id: text(a, "id", q, maxText), x: num(a.x, q + ".x", 0, width), y: num(a.y, q + ".y", 0, depth),
                    tx_dbm: num(a.tx_dbm === undefined ? 20 : a.tx_dbm, q + ".tx_dbm", TX_DBM_MIN, TX_DBM_MAX) };
-        if (a.name !== undefined) { ap.name = text(a, "name", q); }
+        if (a.name !== undefined) { ap.name = nameText(a, "name", q, maxText); }
         if (a.band !== undefined) {
           if (opts.bands && opts.bands.indexOf(a.band) < 0) { throw ProjectError(q + ".band: must be one of " + opts.bands.join(", ")); }
           ap.band = a.band;
         }
         if (a.channel !== undefined) {
-          var channels = cfg.bands[ap.band || DEFAULT_BAND].channels;
+          var bandId = ap.band || DEFAULT_BAND;
+          if (!cfg.bands[bandId]) { throw ProjectError(q + ".band: unknown band '" + bandId + "', must be one of " + Object.keys(cfg.bands).join(", ")); }
+          var channels = cfg.bands[bandId].channels;
           if (channels.indexOf(a.channel) < 0) { throw ProjectError(q + ".channel: must be one of " + channels.join(", ") + " for this band"); }
           ap.channel = a.channel;
         }
-        if (a.mesh_parent !== undefined && a.mesh_parent !== null) { ap.mesh_parent = text(a, "mesh_parent", q); }
+        if (a.mesh_parent !== undefined && a.mesh_parent !== null) { ap.mesh_parent = text(a, "mesh_parent", q, maxText); }
         floor.aps.push(ap);
       });
       list(f, "labels", p, maxItems).forEach(function (l, i) {
         var q = p + ".labels[" + i + "]";
         if (!l || typeof l !== "object") { throw ProjectError(q + ": must be an object"); }
-        floor.labels.push({ id: text(l, "id", q), text: text(l, "text", q), x: num(l.x, q + ".x", 0, width), y: num(l.y, q + ".y", 0, depth) });
+        floor.labels.push({ id: text(l, "id", q, maxText), text: nameText(l, "text", q, maxText), x: num(l.x, q + ".x", 0, width), y: num(l.y, q + ".y", 0, depth) });
       });
       list(f, "annotations", p, maxItems).forEach(function (a, i) {
         var q = p + ".annotations[" + i + "]";
         if (!a || typeof a !== "object") { throw ProjectError(q + ": must be an object"); }
         if (ANNOTATION_KINDS.indexOf(a.kind) < 0) { throw ProjectError(q + ".kind: must be one of " + ANNOTATION_KINDS.join(", ")); }
-        var note = { id: text(a, "id", q), kind: a.kind, x: num(a.x, q + ".x", 0, width), y: num(a.y, q + ".y", 0, depth) };
+        var note = { id: text(a, "id", q, maxText), kind: a.kind, x: num(a.x, q + ".x", 0, width), y: num(a.y, q + ".y", 0, depth) };
         if (a.kind === "arrow") { note.x2 = num(a.x2, q + ".x2", 0, width); note.y2 = num(a.y2, q + ".y2", 0, depth); }
-        if (a.text !== undefined) { note.text = text(a, "text", q); } else if (a.kind === "text") { throw ProjectError(q + ".text: required for a text note"); }
+        if (a.text !== undefined) { note.text = nameText(a, "text", q, maxText); } else if (a.kind === "text") { throw ProjectError(q + ".text: required for a text note"); }
         floor.annotations.push(note);
       });
       list(f, "devices", p, maxItems).forEach(function (d, i) {
         var q = p + ".devices[" + i + "]";
         if (!d || typeof d !== "object") { throw ProjectError(q + ": must be an object"); }
-        var cls = text(d, "cls", q);
+        var cls = text(d, "cls", q, maxText);
         if (opts.deviceClasses && opts.deviceClasses.indexOf(cls) < 0) { throw ProjectError(q + ".cls: must be one of " + opts.deviceClasses.join(", ")); }
-        var dev = { id: text(d, "id", q), cls: cls, x: num(d.x, q + ".x", 0, width), y: num(d.y, q + ".y", 0, depth) };
-        if (d.name !== undefined) { dev.name = text(d, "name", q); }
+        var dev = { id: text(d, "id", q, maxText), cls: cls, x: num(d.x, q + ".x", 0, width), y: num(d.y, q + ".y", 0, depth) };
+        if (d.name !== undefined) { dev.name = nameText(d, "name", q, maxText); }
         floor.devices.push(dev);
       });
       unique(floor.aps.map(function (a) { return a.id; }), p + ".aps");
@@ -227,14 +242,14 @@
         seen[cur.id] = true; cur = apIds[cur.mesh_parent];
       }
     });
-    if (data.capacity !== undefined) { out.capacity = validateCapacity(data.capacity); }
+    if (data.capacity !== undefined) { out.capacity = validateCapacity(data.capacity, maxText); }
     if (data.scenarios !== undefined) {
       if (!Array.isArray(data.scenarios) || data.scenarios.length > MAX_SCENARIOS) { throw ProjectError("scenarios: must be a list of at most " + MAX_SCENARIOS + " scenarios"); }
       data.scenarios.forEach(function (sc, i) {
         var q = "scenarios[" + i + "]";
         if (!sc || typeof sc !== "object") { throw ProjectError(q + ": must be an object"); }
         var inner = validateProject({ name: "scenario", floors: sc.floors, materials: out.materials }, opts);
-        var item = { id: text(sc, "id", q), name: text(sc, "name", q), created: typeof sc.created === "string" ? sc.created.slice(0, 40) : "", floors: inner.floors };
+        var item = { id: text(sc, "id", q, maxText), name: nameText(sc, "name", q, maxText), created: typeof sc.created === "string" ? sc.created.slice(0, 40) : "", floors: inner.floors };
         if (sc.settings && typeof sc.settings === "object") { item.settings = { mode: typeof sc.settings.mode === "string" ? sc.settings.mode : undefined, band: typeof sc.settings.band === "string" ? sc.settings.band : null }; }
         out.scenarios.push(item);
       });
@@ -254,7 +269,7 @@
       if (!mid.trim().length || mid.length > limits.max_text_chars || !e || typeof e !== "object" || Array.isArray(e)) {
         throw ProjectError(q + ": must be an object with an id of up to " + limits.max_text_chars + " characters");
       }
-      var entry = { label: text(e, "label", q) };
+      var entry = { label: text(e, "label", q, limits.max_text_chars) };
       ["attenuation_db", "reflection_loss_db"].forEach(function (key) {
         var table = e[key];
         if (!table || typeof table !== "object" || Array.isArray(table) || Object.keys(table).sort().join("|") !== bands.slice().sort().join("|")) {
@@ -269,7 +284,7 @@
   }
 
   /** Capacity planning input: {"floorId/roomId": {users, profile}}. */
-  function validateCapacity(c) {
+  function validateCapacity(c, maxText) {
     if (!c || typeof c !== "object" || Array.isArray(c)) { throw ProjectError("capacity: must be an object"); }
     var keys = Object.keys(c), out = Object.create(null);
     if (keys.length > MAX_CAPACITY_ZONES) { throw ProjectError("capacity: at most " + MAX_CAPACITY_ZONES + " zones"); }
@@ -278,7 +293,7 @@
       if (!z || typeof z !== "object") { throw ProjectError(q + ": must be an object"); }
       var users = num(z.users, q + ".users", 0, MAX_USERS);
       if (Math.floor(users) !== users) { throw ProjectError(q + ".users: must be a whole number"); }
-      out[k] = { users: users, profile: text(z, "profile", q) };
+      out[k] = { users: users, profile: text(z, "profile", q, maxText) };
     });
     return out;
   }
@@ -504,8 +519,8 @@
   function snapshotFloors(project) {
     return project.floors.map(function (f) { var c = clone(f); delete c.background; delete c.bg_px; delete c.bg_opacity; return c; });
   }
-  function makeScenario(project, name, settings, now) {
-    return { id: nextId(project.scenarios || [], "s"), name: String(name || "Scenario").slice(0, 80) || "Scenario", created: now || "",
+  function makeScenario(project, name, settings, now, max) {
+    return { id: nextId(project.scenarios || [], "s"), name: clipText(name || "Scenario", max).text, created: now || "",
              floors: snapshotFloors(project), settings: settings ? { mode: settings.mode, band: settings.band || null } : undefined };
   }
   /** The project a scenario describes: its floors, with the live project's images carried over by floor id. */
@@ -524,15 +539,15 @@
     out.floors = project.floors.map(function (f) { var c = Object.assign({}, f); delete c.background; return c; });
     return out;
   }
-  function renameScenario(list, id, name) {
-    return list.map(function (s) { return s.id === id ? Object.assign({}, s, { name: String(name).slice(0, 80) || s.name }) : s; });
+  function renameScenario(list, id, name, max) {
+    return list.map(function (s) { return s.id === id ? Object.assign({}, s, { name: clipText(name, max).text || s.name }) : s; });
   }
   function deleteScenario(list, id) { return list.filter(function (s) { return s.id !== id; }); }
-  function duplicateScenario(list, id, now) {
+  function duplicateScenario(list, id, now, max) {
     var src = list.filter(function (s) { return s.id === id; })[0];
     if (!src) { throw new Error("scenario '" + id + "' not found"); }
     var copy = clone(src);
-    copy.id = nextId(list, "s"); copy.name = (src.name + " copy").slice(0, 80); copy.created = now || "";
+    copy.id = nextId(list, "s"); copy.name = clipText(src.name + " copy", max).text; copy.created = now || "";
     return list.concat([copy]);
   }
 
@@ -559,7 +574,7 @@
     try { return { project: parseProjectJson(raw, opts) }; } catch (e) { return { project: null, error: "Saved project ignored: " + e.message }; }
   }
 
-  var api = { SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY,
+  var api = { textLimit: textLimit, clipText: clipText, SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY,
               DEFAULT_BG_OPACITY: DEFAULT_BG_OPACITY, validateProject: validateProject, parseProjectJson: parseProjectJson,
               exportProjectJson: exportProjectJson, findFloor: findFloor, nextId: nextId, wallLength: wallLength, wallBox: wallBox,
               applyOp: applyOp, invertOp: invertOp, addOp: addOp, removeOp: removeOp, setOp: setOp, createStore: createStore,

@@ -372,3 +372,66 @@ def test_other_lists_keep_the_small_limit():
     d["floors"][0]["sensors"] = [{"id": f"s{i}", "kind": "air", "x": 1, "y": 1} for i in range(201)]
     with pytest.raises(twin.TwinError, match="sensors: must be a list of at most 200 items"):
         twin.validate_twin(d)
+
+
+def test_label_made_with_editor_functions_survives_save_and_reload():
+    """A 70 character label is clipped to the shared limit at input time, so the saved project reloads."""
+    r = run_js("""
+      const store = S.createStore(mk()), f = store.floorId, max = S.textLimit({});
+      const clip = S.clipText('L'.repeat(70), max);
+      store.exec({label: 'Add label', ops: [S.addOp('label', store.project, f, {id: 'l1', text: clip.text, x: 1, y: 1})]});
+      const mem = {d: {}, setItem(k, v) { this.d[k] = v; }, getItem(k) { return this.d[k] === undefined ? null : this.d[k]; }};
+      const saved = S.saveProject(mem, store.project), loaded = S.loadSavedProject(mem);
+      out({max, clipped: clip.clipped, ok: saved.ok, error: loaded.error || null, len: loaded.project && loaded.project.floors[0].labels[0].text.length});
+    """)
+    assert r == {"max": 64, "clipped": True, "ok": True, "error": None, "len": 64}
+
+
+def test_scenario_helpers_clip_names_to_the_shared_limit():
+    r = run_js("""
+      const p = mk(), max = S.textLimit({});
+      const sc = S.makeScenario(p, 'N'.repeat(80), null, 'now', max);
+      const list = S.renameScenario([sc], sc.id, 'R'.repeat(80), max);
+      const dup = S.duplicateScenario([sc], sc.id, 'now', max);
+      p.scenarios = dup;
+      out({a: sc.name.length, b: list[0].name.length, c: dup[1].name.length, reloads: S.parseProjectJson(S.exportProjectJson(p)).scenarios.length});
+    """)
+    assert r == {"a": 64, "b": 64, "c": 64, "reloads": 2}
+
+
+def test_legacy_long_names_are_truncated_on_import_not_rejected():
+    r = run_js("""
+      const d = JSON.parse(JSON.stringify(input.twin)), long = 'x'.repeat(80);
+      d.floors[0].labels = [{id: 'l1', text: long, x: 1, y: 1}];
+      d.floors[0].aps[0].name = long; d.floors[0].walls[0].name = long;
+      d.scenarios = [{id: 's1', name: long, floors: d.floors}];
+      const p = S.validateProject(d);
+      out([p.floors[0].labels[0].text, p.floors[0].aps[0].name, p.floors[0].walls[0].name, p.scenarios[0].name].map(s => s.length));
+    """)
+    assert r == [64] * 4
+
+
+def test_ids_are_still_rejected_when_too_long():
+    _rejects("d.floors[0].walls[0].id = 'i'.repeat(65)", "walls[0].id")
+
+
+def test_unknown_band_is_a_project_error_without_band_list():
+    r = run_js("""
+      const d = JSON.parse(JSON.stringify(input.twin));
+      d.floors[0].aps[0].band = '60'; d.floors[0].aps[0].channel = 1;
+      try { S.validateProject(d, {}); out({err: null}); } catch (e) { out({err: e.name, msg: e.message}); }
+    """)
+    assert r["err"] == "ProjectError" and "unknown band" in r["msg"]
+
+
+def test_validator_has_no_module_level_text_limit():
+    """The limit is passed explicitly, so a different limits block in one call never leaks into the next."""
+    r = run_js("""
+      const cfg = JSON.parse(JSON.stringify(require(process.argv[1] + '/rf-config.json')));
+      cfg.limits.max_text_chars = 5;
+      const d = {name: 'T', floors: [{id: 'f1', name: 'Floor', level: 0, width_m: 10, depth_m: 10, labels: [{id: 'l1', text: 'abcdefgh', x: 1, y: 1}]}]};
+      const small = S.validateProject(d, {config: cfg}).floors[0].labels[0].text;
+      const normal = S.validateProject(d, {}).floors[0].labels[0].text;
+      out({small, normal});
+    """)
+    assert r == {"small": "abcde", "normal": "abcdefgh"}

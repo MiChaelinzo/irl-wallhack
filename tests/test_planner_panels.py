@@ -34,11 +34,11 @@ def run_js(body, payload=None):
 def test_scenario_save_load_round_trip_and_compare():
     r = run_js("""
       const p = proj([floor('g', 0, 20, 10, [ap('a', 2, 5, 10)], {walls: [{id: 'w', x1: 10, y1: 0, x2: 10, y2: 10, kind: 'exterior'}]})]);
-      const sc = S.makeScenario(p, 'Before', {mode: 'basic', band: null}, '2025-01-01T00:00:00Z');
+      const sc = S.makeScenario(p, 'Before', {mode: 'basic', band: null}, '2025-01-01T00:00:00Z', 64);
       p.scenarios = [sc];
       const added = S.clone(p); added.floors[0].aps.push(ap('b', 15, 5, 10));
-      p.scenarios = S.duplicateScenario(p.scenarios, 's1', 'now');
-      p.scenarios = S.renameScenario(p.scenarios, 's2', 'Copy renamed');
+      p.scenarios = S.duplicateScenario(p.scenarios, 's1', 'now', 64);
+      p.scenarios = S.renameScenario(p.scenarios, 's2', 'Copy renamed', 64);
       const text = S.exportProjectJson(p), back = S.parseProjectJson(text);
       const before = S.computeProject(S.scenarioProject(back, back.scenarios[0]));
       const cmp = E.compareScenarios(before, S.computeProject(added), {env, floorId: 'g', cellM: 1});
@@ -60,7 +60,7 @@ def test_old_schema_loads_and_new_fields_validate():
       bad('missing', () => proj([floor('g', 0, 10, 10, [ap('a', 1, 1, 20, {mesh_parent: 'zz'})])]));
       bad('note', () => proj([floor('g', 0, 10, 10, [], {annotations: [{id: 'n', kind: 'text', x: 1, y: 1}]})]));
       bad('device', () => S.validateProject({name: 'x', floors: [floor('g', 0, 10, 10, [], {devices: [{id: 'd', cls: 'toaster', x: 1, y: 1}]})]}, {deviceClasses: ['sensor']}));
-      bad('capacity', () => S.validateCapacity({'g/r': {users: 1.5, profile: 'x'}}));
+      bad('capacity', () => S.validateCapacity({'g/r': {users: 1.5, profile: 'x'}}, 64));
       out({v: v1.schema_version, notes: v1.floors[0].annotations, devices: v1.floors[0].devices, errs});""")
     assert r["v"] == 2 and r["notes"] == [] and r["devices"] == []
     assert "loops back" in r["errs"][0] and "not an access point" in r["errs"][1] and "text" in r["errs"][2] and "one of sensor" in r["errs"][3] and "whole number" in r["errs"][4]
