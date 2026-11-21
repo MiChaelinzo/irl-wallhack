@@ -359,7 +359,9 @@
       o.edit.style.cursor = t === "pan" ? "grab" : t === "select" ? "default" : "crosshair";
       if (o.onTool) { o.onTool(t); }
       say({ select: "Select tool", wall: "Draw wall tool: drag on the plan", ap: "Place access point tool: click on the plan",
-            label: "Room label tool: click on the plan", pan: "Pan tool", calibrate: "Calibrate: click two points on the floor-plan image" }[t]);
+            label: "Room label tool: click on the plan", pan: "Pan tool", calibrate: "Calibrate: click two points on the floor-plan image",
+            "note-text": "Text note tool: click on the plan", "note-arrow": "Arrow note tool: drag on the plan", "note-pin": "Pin note tool: click on the plan",
+            "device": "IoT device tool: click on the plan" }[t]);
       self.invalidate();
     };
     self.getTool = function () { return st.tool; };
@@ -587,6 +589,7 @@
       var raw = toWorld(e.clientX, e.clientY), f = floor(), tool = st.tool;
       st.gesture += 1;
       if (e.button === 1 || tool === "pan" || st.panKey) { st.drag = { type: "pan", x: e.clientX, y: e.clientY }; o.edit.style.cursor = "grabbing"; return; }
+      if (o.onToolPointer && o.onToolPointer(tool, "down", raw, e)) { st.drag = { type: "ext", tool: tool }; self.invalidate(); return; }
       if (tool === "wall") {
         var p = snap(raw, null, e.altKey);
         st.drag = { type: "wall" }; st.draft = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
@@ -644,6 +647,7 @@
         return;
       }
       if (d.type === "pan") { self.panBy(e.clientX - d.x, e.clientY - d.y); d.x = e.clientX; d.y = e.clientY; return; }
+      if (d.type === "ext") { o.onToolPointer(d.tool, "move", raw, e); self.invalidate(); return; }
       if (d.type === "wall") {
         var q = snap(raw, null, e.altKey);
         if (e.shiftKey && !e.altKey) { var ang = snapAngle(angleDeg({ x1: st.draft.x1, y1: st.draft.y1, x2: q.x, y2: q.y }), ANGLE_STEP_DEG, false) * Math.PI / 180, len = Math.hypot(q.x - st.draft.x1, q.y - st.draft.y1); q = { x: st.draft.x1 + Math.cos(ang) * len, y: st.draft.y1 + Math.sin(ang) * len }; }
@@ -693,6 +697,7 @@
       if (st.pinch) { if (pointerCount() < 2) { st.pinch = null; } return; }
       var d = st.drag;
       st.drag = null;
+      if (d && d.type === "ext") { o.onToolPointer(d.tool, "up", toWorld(e.clientX, e.clientY), e); }
       if (d && d.type === "wall" && st.draft) {
         var dr = st.draft;
         st.draft = null;

@@ -127,8 +127,159 @@ def run(page, base, problems, args):
     page.click("#themeBtn")
     page.click("#tgBands"); page.click("#tgBands")
     wait_idle(page)
+    run_features(page, problems)
     if not args.no_screenshot:
         page.screenshot(path=str(ROOT / "docs" / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
+
+
+SPARSE = {"name": "Smoke plan", "floors": [{
+    "id": "g", "name": "Ground", "level": 0, "width_m": 30, "depth_m": 20,
+    "rooms": [{"id": "west", "name": "West", "x": 0, "y": 0, "w": 15, "d": 20}, {"id": "east", "name": "East", "x": 15, "y": 0, "w": 15, "d": 20}],
+    "walls": [{"id": "w1", "x1": 15, "y1": 0, "x2": 15, "y2": 20, "kind": "exterior"}],
+    "aps": [{"id": "ap1", "x": 3, "y": 3, "tx_dbm": 8}]}]}
+
+
+def tab(page, name):
+    page.click("#tab-" + name)
+    page.wait_for_selector("#panel-%s:not([hidden])" % name)
+
+
+def app_eval(page, expr):
+    return page.evaluate("() => { const a = window.PlannerApp; " + expr + " }")
+
+
+def run_features(page, problems):
+    """Analytics, smart planner, scenarios, compare, exports, annotations and the bonus modes."""
+    page.on("dialog", lambda d: d.accept())
+    page.evaluate("(p) => window.PlannerApp.loadProject(p)", SPARSE)
+    wait_idle(page)
+    page.wait_for_function("() => window.PlannerApp.panels.state.analysis && window.PlannerApp.panels.state.analysis.floor === 'g'", timeout=15000)
+    text = page.inner_text("#panel-analytics").lower()
+    for word in ("Coverage", "Average RSSI", "Weak area", "Dead zones", "Client capacity", "ESTIMATE", "AP overlap", "Roaming", "Channel utilisation", "MODEL ESTIMATE"):
+        if word.lower() not in text:
+            problems.append("analytics panel lacks %r" % word)
+    if page.locator("#panel-analytics button:has-text('Locate')").count() == 0:
+        problems.append("no dead zone with a Locate button on the sparse plan")
+    else:
+        page.click("#panel-analytics button:has-text('Locate')")
+    # scenario "Before", then the smart planner
+    tab(page, "scenarios")
+    page.fill("#scenarioName", "Before"); page.click("#scenarioSave")
+    if app_eval(page, "return a.store.project.scenarios.length") != 1:
+        problems.append("scenario was not saved")
+    tab(page, "smart")
+    page.click("#planRun")
+    page.wait_for_selector("#recList li", timeout=60000)
+    n_aps = lambda: app_eval(page, "return a.store.project.floors[0].aps.length")  # noqa: E731
+    before = n_aps()
+    btn = page.locator("#recList [data-rec]")
+    if btn.count() == 0:
+        problems.append("smart planner gave no applicable recommendation: " + page.inner_text("#panel-smart")[:300])
+    else:
+        if "Confidence" not in page.inner_text("#recList"):
+            problems.append("recommendations show no confidence")
+        hist = app_eval(page, "return a.store.historyLength()")
+        btn.first.click()
+        if app_eval(page, "return a.store.historyLength()") != hist + 1:
+            problems.append("applying a recommendation is not one undo step")
+        changed = app_eval(page, "return JSON.stringify(a.store.project.floors[0].aps)")
+        app_eval(page, "a.store.undo(); return 0")
+        if app_eval(page, "return JSON.stringify(a.store.project.floors[0].aps)") == changed or n_aps() != before:
+            problems.append("undo of an applied recommendation did not restore the access points")
+        page.click("#planApplyAll")
+        if app_eval(page, "return a.store.historyLength()") != hist + 1:
+            problems.append("Apply all is not one undo step")
+    wait_idle(page)
+    # compare Before (A) with the current plan (B)
+    tab(page, "scenarios")
+    page.select_option("#cmpA", "s1"); page.select_option("#cmpB", "current")
+    page.click("#cmpRun")
+    page.wait_for_selector("#cmpOut table", timeout=60000)
+    out = page.inner_text("#cmpOut")
+    for word in ("Coverage", "Optimisation score", "Total", "Change (B minus A)"):
+        if word not in out:
+            problems.append("comparison lacks %r" % word)
+    for mode in ("delta", "wipe", "side"):
+        page.select_option("#cmpMode", mode)
+        page.wait_for_selector("#cmpCanvasA")
+    if page.locator("#cmpMode").input_value() != "side" or page.locator("#cmpCanvasB").count() != 1:
+        problems.append("side by side view has no second canvas")
+    page.select_option("#cmpMode", "delta")
+    if "dB" not in page.inner_text("#cmpOut .delta-legend"):
+        problems.append("delta view lacks a dB legend")
+    page.click("#cmpRank")
+    page.wait_for_selector("#rankOut table", timeout=60000)
+    if "Rank" not in page.inner_text("#rankOut"):
+        problems.append("ranking table missing")
+    # exports
+    tab(page, "export")
+    def download(kind):
+        with page.expect_download(timeout=20000) as d:
+            page.click("[data-export=%s]" % kind)
+        path = d.value.path()
+        return d.value.suggested_filename, Path(path).read_bytes()
+    name, csv = download("csv")
+    if not csv.startswith(b"Wallhack RF analytics") or b"MODEL ESTIMATE" not in csv or b"Coverage" not in csv:
+        problems.append("CSV export content is wrong: %r" % csv[:120])
+    name, js = download("json")
+    import json as _json
+    data = _json.loads(js)
+    if data.get("schema_version") != 2 or len(data.get("scenarios", [])) != 1:
+        problems.append("JSON export lacks schema_version 2 or the scenario")
+    name, png = download("png")
+    if not png.startswith(b"\x89PNG\r\n\x1a\n") or len(png) < 2000:
+        problems.append("PNG export is not a PNG")
+    name, pdf = download("pdf")
+    if not pdf.startswith(b"%PDF-1.4") or not pdf.rstrip().endswith(b"%%EOF") or b"/DCTDecode" not in pdf or b"MODEL ESTIMATE" not in pdf:
+        problems.append("PDF export is not a complete PDF")
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "plan.json"; f.write_bytes(js)
+        page.set_input_files("#exportImport", str(f))
+        page.wait_for_function("() => window.PlannerApp.store.project.scenarios.length === 1", timeout=5000)
+    # annotation
+    n_notes = lambda: app_eval(page, "return a.store.project.floors[0].annotations.length")  # noqa: E731
+    page.fill("#noteText", "Check here"); page.click("[data-tool=note-text]")
+    page.evaluate("window.scrollTo(0, 0)")
+    page.mouse.click(*screen_of(page, 10.0, 10.0))
+    page.click("[data-tool=note-arrow]")
+    page.evaluate("window.scrollTo(0, 0)")
+    a, b = screen_of(page, 5.0, 12.0), screen_of(page, 9.0, 14.0)
+    page.mouse.move(*a); page.mouse.down(); page.mouse.move(*b, steps=4); page.mouse.up()
+    if n_notes() != 2:
+        problems.append("annotation tools added %d notes instead of 2" % n_notes())
+    page.click("[data-tool=select]")
+    # bonus modes
+    tab(page, "modes")
+    page.click("#addFloor")
+    if app_eval(page, "return a.store.project.floors.length") != 2:
+        problems.append("Add floor did not add a floor")
+    app_eval(page, "a.store.undo(); return 0")
+    if app_eval(page, "return a.store.project.floors.length") != 1:
+        problems.append("undo did not remove the added floor")
+    page.click("#runStack"); page.wait_for_selector("#panel-modes :text('Floor stack')", timeout=30000)
+    page.click("#iotAdd")
+    page.wait_for_selector("#panel-modes :text('Suggested fix')", timeout=5000)
+    page.click("#entEval"); page.wait_for_selector("#panel-modes :text('Estimated coverage')", timeout=30000)
+    aps0 = n_aps()
+    page.click("#entApply")
+    if n_aps() <= 1:
+        problems.append("enterprise layout did not apply (%d to %d APs)" % (aps0, n_aps()))
+    app_eval(page, "a.store.undo(); return 0")
+    if n_aps() != aps0:
+        problems.append("undo of the enterprise layout did not restore the APs")
+    with page.expect_download(timeout=20000) as d:
+        page.click("#entBoq")
+    if b"Access point" not in Path(d.value.path()).read_bytes():
+        problems.append("bill of quantities CSV lacks the access point row")
+    page.click("#toggle3d")
+    page.wait_for_function("() => !document.getElementById('room3d').hidden || /failed|Could not/.test(document.getElementById('panel-modes').innerText)", timeout=10000)
+    if "3D view failed" in page.inner_text("#panel-modes") or "Could not load view3d" in page.inner_text("#panel-modes"):
+        problems.append("3D mode failed: " + page.inner_text("#panel-modes")[:200])
+    page.set_viewport_size({"width": 390, "height": 800})
+    if page.evaluate("() => document.documentElement.scrollWidth > window.innerWidth + 4"):
+        problems.append("page scrolls horizontally at 390 px width")
+    page.set_viewport_size(VIEWPORT)
+    print("feature checks done")
 
 
 def main() -> int:
