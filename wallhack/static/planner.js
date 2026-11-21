@@ -35,7 +35,7 @@
     return out;
   }
   function validateOpts() {
-    var o = { materialIds: Object.keys(app.config.materials), bands: Object.keys(app.config.bands), modes: RF.modeIds() };
+    var o = { config: app.config, materialIds: Object.keys(app.config.materials), bands: Object.keys(app.config.bands), modes: RF.modeIds() };
     if (app.config.planner_modes) { o.deviceClasses = Object.keys(app.config.planner_modes.iot_classes); }
     return o;
   }
@@ -70,7 +70,10 @@
     function onMessage(m) {
       if (m.type === "ready") { return; }
       if (m.id >= JOB_BASE) { onJobMessage(m); return; }
-      if (m.type === "error") { notice("Heat map computation failed: " + m.message, "error"); finishCompute(m.id); return; }
+      if (m.type === "error") {
+        if (m.id !== undefined && m.id !== app.latestId) { return; }   // an error for a superseded request must not touch the current one
+        notice("Heat map computation failed: " + m.message, "error"); finishCompute(m.id); return;
+      }
       if (m.type === "cancelled") { return; }
       if (m.id !== app.latestId) { return; }   // stale
       var g = { rssi: m.grid, cols: m.cols, rows: m.rows, cellM: m.cell_m };

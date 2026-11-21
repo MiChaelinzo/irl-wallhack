@@ -185,7 +185,8 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED (low quality and auto-downgrade exist but were never measured on a Pi) |
 | Twin validation and persistence, RF model determinism and monotonicity, history retention and sessions, status bands, insight rules, scores, game scoring (pytest) | VERIFIED (automated tests, simulated data) |
 | RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
-| RF planner engine maths (bands, materials, modes, analytics, optimiser, scenario compare), Python and JavaScript parity | VERIFIED (hand-computed cases and parity tests within 0.1 dB) |
+| RF planner basic-mode engine maths and Python/JavaScript parity | VERIFIED (golden fixture of the legacy numbers, hand-computed cases and parity tests within 0.1 dB) |
+| RF planner enhanced and multipath modes (single reflection, knife-edge diffraction `v = sqrt(4 delta / lambda)`) | PARTIALLY VERIFIED (knife-edge value checked against a hand-computed Fresnel case; reflection and diffraction totals not compared with an independent reference) |
 | RF planner propagation accuracy against real buildings, throughput and capacity numbers | UNVERIFIED (planning estimates only) |
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |

@@ -21,7 +21,7 @@ wall loss where the path crosses it.
    image-to-receiver segment to hit the wall, loss = `PL(total path) + reflection_loss(material) +` losses of
    other walls crossed on both legs, for walls within `max_reflector_range_m`;
 3. diffraction around endpoints of walls that block the direct path (knife-edge): `delta = d1 + d2 - d`,
-   `v = sqrt(2 * delta / lambda)`, `J(v) = 6.9 + 20 log10(sqrt((v - 0.1)^2 + 1) + v - 0.1)`.
+   `v = sqrt(4 * delta / lambda)` (the Fresnel-Kirchhoff `v = h * sqrt(2 (d1 + d2) / (lambda d1 d2))` with `delta ~ h^2 (d1 + d2) / (2 d1 d2)`), `J(v) = 6.9 + 20 log10(sqrt((v - 0.1)^2 + 1) + v - 0.1)`.
 
 **Mode `multipath`.** Incoherent sum, in mW, of the direct, all reflected and all diffracted paths.
 So `multipath >= enhanced >= basic` at every point.
@@ -105,7 +105,7 @@ The optional LLM explanation endpoint is not implemented. The deterministic text
 
 Files: `planner-state.js` (project JSON, undo/redo, persistence), `planner-editor.js` (canvas editor and geometry), `rf-worker.js` (tiled incremental computation), `planner-heat.js` (renderer, contours, legend, tooltip text, mini-map), `planner.js` (wiring).
 
-Project JSON is the digital twin format plus `schema_version`, per-floor `labels`, and an optional background image (`background` data URL, `bg_px`, `bg_opacity`, `scale_m_per_px`). Import errors name the field, for example `floors[0].walls[3].x1: must be between 0 and 10`.
+Project JSON is the digital twin format plus `schema_version`, per-floor `labels`, and an optional background image (`background` data URL, `bg_px`, `bg_opacity`, `scale_m_per_px`). Import limits live once in `rf-config.json` under `limits` (floors, items per list, custom materials, material dB range, background size, text length, furniture and sensor kinds). `twin.py` and `planner-state.js` both read them, so the planner and `/api/twin` accept the same projects: at most 200 items per list (walls, openings, rooms, furniture, sensors, APs, labels, annotations, devices), names and ids up to 64 characters, AP channels from the band's channel list, custom materials with every band and 0 to 80 dB. Labels, annotations and devices are planner fields that `/api/twin` drops. Items beyond a limit are rejected on import; the editor does not stop you drawing more than 200 walls, but such a project cannot be imported again. Import errors name the field, for example `floors[0].walls[3].x1: must be between 0 and 10`.
 
 Worker protocol (heat map): `init {config}`, `setProject {project, mode, band}`, `update {ops}` (the same operations the undo history stores: `wall.add|set|remove`, `ap.*`, `label.*`, `floor.set`, plus `{t:"mode"}` and `{t:"band"}`), `compute {id, floor, cell_m}`, `cancel {id}`. Replies: `progress` (stage `coarse` then `fine`, a transferred Float32Array), `result` (grid, coverage and dead-zone percent, tile statistics), `cancelled`, `error`.
 

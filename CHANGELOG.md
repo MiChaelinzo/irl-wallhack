@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### RF planner engine
+- fix: knife-edge diffraction used `v = sqrt(2 delta / lambda)`; the Fresnel-Kirchhoff parameter is `sqrt(4 delta / lambda)` (`engine.knife_edge.v_scale` is now 4.0). Enhanced and multipath modes lose about 3 dB more behind wall corners; basic mode and legacy numbers are unchanged. New test with a hand-computed J(v) case.
+- fix: planner project import validates custom materials, rooms, furniture and sensors, checks AP channels against the band, uses prototype-free lookups so ids such as `constructor` work, and shares its limits with `twin.py` through `rf-config.json` `limits` (lists are now capped at 200 items in the planner too).
+- fix: a stale worker error no longer shows a notice; unsaved scenario or capacity edits are tracked with a revision instead of poisoning the saved position.
 - feat: `wallhack/static/rf-config.json` holds every RF number (bands 2.4/5/6 GHz, six wall materials with per-band attenuation and reflection loss, openings, floor loss, quality bands, rate tables). Values are typical planning estimates.
 - feat: `rfmodel` is frequency-aware, takes an optional wall `material`, per-AP `band`/`channel`, and modes `basic` (default), `enhanced` (single reflection, knife-edge diffraction) and `multipath` (incoherent power sum). Defaults are bit-identical to before (golden fixture `tests/fixtures/rf_legacy_golden.json`).
 - feat: `static/rf-engine.js` ports the model with a uniform-grid spatial index; `tests/test_rf_parity.py` checks it against Python within 0.1 dB and the index against brute force on 1000 walls.

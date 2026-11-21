@@ -125,3 +125,14 @@ def test_js_rejects_bad_band_and_mode():
     res = subprocess.run(["node", "-e", SCRIPT, str(STATIC / "rf-engine.js")], capture_output=True, text=True,
                          input=json.dumps({"config": rfmodel.CONFIG, "jobs": jobs}))
     assert res.returncode != 0 and "band must be one of" in res.stderr
+
+
+def test_js_diffraction_matches_python_on_knife_edge_geometry():
+    """A thin metal wall with its end 1 m off the line of sight: the diffracted path decides the level."""
+    f = {"id": "f", "name": "F", "level": 0, "width_m": 24.0, "depth_m": 24.0, "rooms": [], "furniture": [],
+         "sensors": [], "openings": [], "aps": [{"id": "a", "x": 2.5, "y": 10.5, "tx_dbm": 20.0}],
+         "walls": [{"id": "m", "x1": 12.5, "y1": 5.5, "x2": 12.5, "y2": 9.5, "kind": "interior", "material": "metal"}]}
+    project = {"name": "knife", "units": "m", "floors": [f]}
+    expected = rfmodel.rssi_from_ap(f["aps"][0], f, f, 22.5, 7.5, mode="enhanced")
+    grid = run_node([{"kind": "grid", "project": project, "floor": "f", "cell_m": 1.0, "band": "2.4", "mode": "enhanced"}])[0]
+    assert grid["rssi"][7][22] == pytest.approx(expected, abs=TOLERANCE_DB)

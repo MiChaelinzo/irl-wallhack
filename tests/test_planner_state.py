@@ -231,3 +231,106 @@ def test_box_selection_calibration_and_image_fit():
     """)
     assert r["box"] == ["a"] and r["scale"] == pytest.approx(0.0008)
     assert r["small"] == {"w": 800, "h": 600} and r["big"] == {"w": 2048, "h": 1024} and "two different points" in r["bad"]
+
+
+# ---------------------------------------------------------------- import validation parity with twin.py
+def _rejects(mutate, message):
+    body = """
+      const d = JSON.parse(JSON.stringify(input.twin));
+      %s;
+      try { S.validateProject(d); out('accepted'); } catch (e) { out(e.name + ': ' + e.message); }
+    """ % mutate
+    r = run_js(body)
+    assert r.startswith("ProjectError") and message in r, r
+
+
+@pytest.mark.parametrize("mutate,message", [
+    ("d.materials = {x: {label: 'X', attenuation_db: {'2.4': 3}, reflection_loss_db: {'2.4': 3, '5': 3, '6': 3}}}", "materials.x.attenuation_db"),
+    ("d.materials = {x: {label: 'X', attenuation_db: {'2.4': 3, '5': 3, '6': 999}, reflection_loss_db: {'2.4': 3, '5': 3, '6': 3}}}", "must be between"),
+    ("d.materials = {x: {label: '', attenuation_db: {'2.4': 3, '5': 3, '6': 3}, reflection_loss_db: {'2.4': 3, '5': 3, '6': 3}}}", "materials.x.label"),
+    ("d.materials = {x: 5}", "materials.x"),
+    ("d.materials = Object.fromEntries(Array.from({length: 21}, (_, i) => ['m' + i, 1]))", "at most 20"),
+    ("d.floors[0].rooms[0].w = 'wide'", "rooms[0].w"),
+    ("delete d.floors[0].rooms[0].x", "rooms[0].x"),
+    ("d.floors[0].rooms[0].w = 99", "outside the floor"),
+    ("d.floors[0].rooms[0].name = 'n'.repeat(500)", "rooms[0].name"),
+    ("d.floors[0].furniture[0].kind = 'piano'", "furniture[0].kind"),
+    ("d.floors[0].furniture[0].w = null", "furniture[0].w"),
+    ("d.floors[0].sensors[0].x = 'a'", "sensors[0].x"),
+    ("d.floors[0].sensors[0].kind = 'laser'", "sensors[0].kind"),
+    ("d.floors[0].aps[0].channel = 149", "aps[0].channel"),
+    ("d.floors[0].aps[0].band = '5'; d.floors[0].aps[0].channel = 6", "aps[0].channel"),
+    ("d.floors[0].labels = Array.from({length: 201}, (_, i) => ({id: 'l' + i, text: 't', x: 1, y: 1}))", "at most 200"),
+    ("d.floors[0].walls = Array.from({length: 201}, (_, i) => ({id: 'w' + i, x1: 0, y1: 0, x2: 1, y2: 1, kind: 'interior'}))", "at most 200"),
+    ("d.floors[0].background = 'data:image/png;base64,' + 'A'.repeat(600001)", "at most 600000"),
+    ("d.floors[0].openings[0].pos = 50", "pos"),
+    ("d.floors[0].openings[0].width = 50", "extends past"),
+])
+def test_import_validation_matches_twin_limits(mutate, message):
+    _rejects(mutate, message)
+
+
+def test_every_js_rejection_is_also_a_python_rejection():
+    """Anything the planner refuses for these fields must also fail twin.validate_twin, so the two stay aligned."""
+    for mutate in ("d.floors[0].aps[0].channel = 149", "d.floors[0].rooms[0].w = 99", "d.floors[0].furniture[0].kind = 'piano'"):
+        d = twin.sample_twin()
+        exec(mutate.replace("d.floors[0].aps[0].channel = 149", "d['floors'][0]['aps'][0]['channel'] = 149")
+                   .replace("d.floors[0].rooms[0].w = 99", "d['floors'][0]['rooms'][0]['w'] = 99")
+                   .replace("d.floors[0].furniture[0].kind = 'piano'", "d['floors'][0]['furniture'][0]['kind'] = 'piano'"), {"d": d})
+        with pytest.raises(twin.TwinError):
+            twin.validate_twin(d)
+
+
+def test_limits_come_from_the_shared_config():
+    from wallhack import rfmodel
+    r = run_js("out(require(process.argv[1] + '/rf-config.json').limits)")
+    assert r == rfmodel.LIMITS
+    assert twin.MAX_ITEMS_PER_LIST == r["max_items_per_list"] and twin.MAX_BACKGROUND_CHARS == r["max_background_chars"]
+
+
+def test_custom_materials_round_trip_and_valid_channels_pass():
+    r = run_js("""
+      const d = JSON.parse(JSON.stringify(input.twin));
+      d.materials = {foam: {label: 'Foam', attenuation_db: {'2.4': 1, '5': 2, '6': 3}, reflection_loss_db: {'2.4': 4, '5': 5, '6': 6}}};
+      d.floors[0].walls[0].material = 'foam';
+      d.floors[0].aps[0].band = '5'; d.floors[0].aps[0].channel = 36;
+      const p = S.validateProject(d, {materialIds: ['drywall']});
+      out({foam: p.materials.foam, ch: p.floors[0].aps[0].channel});
+    """)
+    assert r["ch"] == 36 and r["foam"]["attenuation_db"] == {"2.4": 1, "5": 2, "6": 3}
+
+
+@pytest.mark.parametrize("name", ["constructor", "toString", "__proto__", "hasOwnProperty"])
+def test_prototype_names_are_ordinary_ids(name):
+    r = run_js("""
+      const d = JSON.parse(JSON.stringify(input.twin));
+      const n = input.name;
+      const old = d.floors[0].walls[0].id;
+      d.floors[0].walls[0].id = n; d.floors[0].openings.forEach(o => { if (o.wall === old) { o.wall = n; } });
+      d.floors[0].aps[0].id = n;
+      d.capacity = JSON.parse('{"' + n + '": {"users": 3, "profile": "p"}}');
+      d.materials = JSON.parse('{"' + n + '": {"label": "L", "attenuation_db": {"2.4": 1, "5": 1, "6": 1}, "reflection_loss_db": {"2.4": 1, "5": 1, "6": 1}}}');
+      const p = S.validateProject(d);
+      let dup = 'accepted';
+      d.floors[0].walls[1].id = n;
+      try { S.validateProject(d); } catch (e) { dup = e.message; }
+      out({wall: p.floors[0].walls[0].id, ap: p.floors[0].aps[0].id, cap: Object.keys(p.capacity), mat: Object.keys(p.materials), proto: Object.getPrototypeOf(p.floors[0]) === Object.prototype, dup});
+    """, {"name": name})
+    assert r["wall"] == name and r["ap"] == name and r["cap"] == [name] and r["mat"] == [name] and r["proto"]
+    assert "duplicate id" in r["dup"]
+
+
+def test_dirty_flag_survives_meta_changes_and_returns_to_clean_on_undo():
+    r = run_js("""
+      const store = S.createStore(mk()), f = store.floorId;
+      const states = [store.isDirty()];
+      store.exec({label: 'a', ops: [S.addOp('wall', store.project, f, wall('w1', 1, 1, 3, 1))]});
+      states.push(store.isDirty());
+      store.markSaved(); states.push(store.isDirty());
+      store.setMeta('capacity', {}); states.push(store.isDirty());       // meta change: dirty
+      store.markSaved(); states.push(store.isDirty());                   // saved again: clean
+      store.undo(); states.push(store.isDirty());                        // before the saved state: dirty
+      store.redo(); states.push(store.isDirty());                        // back at the saved state: clean again
+      out(states);
+    """)
+    assert r == [False, True, False, True, False, True, False]

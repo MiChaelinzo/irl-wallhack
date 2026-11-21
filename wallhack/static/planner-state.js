@@ -6,19 +6,32 @@
 (function (root) {
   var SCHEMA_VERSION = 2;   // 2 adds annotations, devices, scenarios, capacity and ap.mesh_parent; version 1 files still load
   var HISTORY_CAP = 200;
-  var MAX_FLOORS = 6, MAX_WALLS = 5000, MAX_APS = 64, MAX_LABELS = 500, MAX_FLOOR_M = 200, MIN_FLOOR_M = 1;
-  var MAX_ANNOTATIONS = 200, MAX_DEVICES = 500, MAX_SCENARIOS = 20, MAX_CAPACITY_ZONES = 200, MAX_USERS = 5000;
+  // Count, text and material limits shared with wallhack/twin.py come from rf-config.json "limits" (see limitsOf).
+  var MAX_APS = 64, MAX_FLOOR_M = 200, MIN_FLOOR_M = 1;
+  var MAX_SCENARIOS = 20, MAX_CAPACITY_ZONES = 200, MAX_USERS = 5000;
   var ANNOTATION_KINDS = ["text", "arrow", "pin"];
   var TX_DBM_MIN = 0, TX_DBM_MAX = 30, SCALE_RANGE = [0.0001, 100];
   var BACKGROUND_PATTERN = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
   var STORAGE_KEY = "wallhack.planner.project";
   var WALL_KINDS = ["interior", "exterior"];
   var DEFAULT_BG_OPACITY = 0.5;
+  var DEFAULT_BAND = "2.4";   // same default as rf-engine.js and rfmodel.py
 
   function ProjectError(message) {
     var e = new Error(message);
     e.name = "ProjectError";
     return e;
+  }
+
+  var nodeConfig = null;
+  /** The RF config: opts.config in the browser, the shared rf-config.json file when run under node. */
+  function configOf(opts) {
+    if (opts.config) { return opts.config; }
+    if (!nodeConfig) {
+      if (typeof require !== "function") { throw ProjectError("validateProject needs opts.config (the rf-config.json content)"); }
+      nodeConfig = require("./rf-config.json");
+    }
+    return nodeConfig;
   }
 
   function isNum(v) { return typeof v === "number" && isFinite(v); }
@@ -32,9 +45,18 @@
     return v;
   }
 
+  var maxText = 64;   // set from limits.max_text_chars at the start of validateProject
   function text(obj, key, path) {
     var v = obj[key];
-    if (typeof v !== "string" || !v.length || v.length > 80) { throw ProjectError(path + "." + key + ": must be a text of 1 to 80 characters"); }
+    if (typeof v !== "string" || !v.trim().length || v.length > maxText) { throw ProjectError(path + "." + key + ": must be a text of 1 to " + maxText + " characters"); }
+    return v;
+  }
+  function choice(obj, key, allowed, path) {
+    if (allowed.indexOf(obj[key]) < 0) { throw ProjectError(path + "." + key + ": must be one of " + allowed.join(", ")); }
+    return obj[key];
+  }
+  function object(v, path) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) { throw ProjectError(path + ": must be an object"); }
     return v;
   }
 
@@ -46,7 +68,7 @@
   }
 
   function unique(ids, path) {
-    var seen = {};
+    var seen = Object.create(null);   // no prototype: ids such as "constructor" and "__proto__" are ordinary names
     ids.forEach(function (id) {
       if (seen[id]) { throw ProjectError(path + ": duplicate id '" + id + "'"); }
       seen[id] = true;
@@ -60,25 +82,27 @@
    */
   function validateProject(data, opts) {
     opts = opts || {};
+    var cfg = configOf(opts), limits = cfg.limits, maxItems = limits.max_items_per_list;
+    maxText = limits.max_text_chars;
     if (!data || typeof data !== "object" || Array.isArray(data)) { throw ProjectError("project: must be a JSON object"); }
     var version = data.schema_version === undefined ? SCHEMA_VERSION : data.schema_version;
     if (!isNum(version) || version < 1 || version > SCHEMA_VERSION || Math.floor(version) !== version) {
       throw ProjectError("schema_version: " + JSON.stringify(data.schema_version) + " is not supported (this planner reads version 1 to " + SCHEMA_VERSION + ")");
     }
-    if (!Array.isArray(data.floors) || data.floors.length < 1 || data.floors.length > MAX_FLOORS) {
-      throw ProjectError("floors: must be a list of 1 to " + MAX_FLOORS + " floors");
+    if (!Array.isArray(data.floors) || data.floors.length < 1 || data.floors.length > limits.max_floors) {
+      throw ProjectError("floors: must be a list of 1 to " + limits.max_floors + " floors");
     }
-    var out = { schema_version: SCHEMA_VERSION, name: typeof data.name === "string" && data.name ? data.name.slice(0, 80) : "Untitled",
+    var out = { schema_version: SCHEMA_VERSION, name: typeof data.name === "string" && data.name ? data.name.slice(0, maxText) : "Untitled",
                 units: "m", sample: !!data.sample, floors: [], scenarios: [], capacity: {} };
-    if (data.materials !== undefined) { out.materials = clone(data.materials); }
+    if (data.materials !== undefined) { out.materials = validateMaterials(data.materials, limits, Object.keys(cfg.bands)); }
     if (data.mode !== undefined) {
       if (opts.modes && opts.modes.indexOf(data.mode) < 0) { throw ProjectError("mode: must be one of " + opts.modes.join(", ")); }
       out.mode = data.mode;
     }
-    var materialIds = opts.materialIds ? opts.materialIds.concat(Object.keys(out.materials || {})) : null;
+    var materialIds = (opts.materialIds || Object.keys(cfg.materials)).concat(Object.keys(out.materials || {}));
     data.floors.forEach(function (f, fi) {
       var p = "floors[" + fi + "]";
-      if (!f || typeof f !== "object") { throw ProjectError(p + ": must be an object"); }
+      object(f, p);
       var width = num(f.width_m, p + ".width_m", MIN_FLOOR_M, MAX_FLOOR_M), depth = num(f.depth_m, p + ".depth_m", MIN_FLOOR_M, MAX_FLOOR_M);
       var floor = { id: text(f, "id", p), name: text(f, "name", p), level: Math.round(num(f.level === undefined ? fi : f.level, p + ".level", -5, 50)),
                     height_m: num(f.height_m === undefined ? 2.5 : f.height_m, p + ".height_m", 2, 6),
@@ -88,57 +112,83 @@
         if (typeof f.background !== "string" || !BACKGROUND_PATTERN.test(f.background)) {
           throw ProjectError(p + ".background: must be a png, jpeg or webp base64 data URL");
         }
+        if (f.background.length > limits.max_background_chars) { throw ProjectError(p + ".background: at most " + limits.max_background_chars + " characters"); }
         floor.background = f.background;
         floor.bg_opacity = num(f.bg_opacity === undefined ? DEFAULT_BG_OPACITY : f.bg_opacity, p + ".bg_opacity", 0, 1);
         if (f.bg_px !== undefined) {
           floor.bg_px = { w: num(f.bg_px.w, p + ".bg_px.w", 1), h: num(f.bg_px.h, p + ".bg_px.h", 1) };
         }
       }
-      list(f, "rooms", p, 200).forEach(function (r, i) { floor.rooms.push(clone(r)); });
-      list(f, "furniture", p, 200).forEach(function (r) { floor.furniture.push(clone(r)); });
-      list(f, "sensors", p, 200).forEach(function (r) { floor.sensors.push(clone(r)); });
-      list(f, "walls", p, MAX_WALLS).forEach(function (w, i) {
+      list(f, "rooms", p, maxItems).forEach(function (r, i) {
+        var q = p + ".rooms[" + i + "]";
+        object(r, q);
+        var rx = num(r.x, q + ".x", 0, width), ry = num(r.y, q + ".y", 0, depth), rw = num(r.w, q + ".w", 0.1), rd = num(r.d, q + ".d", 0.1);
+        if (rx + rw > width + 1e-9 || ry + rd > depth + 1e-9) { throw ProjectError(q + ": room extends outside the floor"); }
+        var room = { id: text(r, "id", q), name: text(r, "name", q), x: rx, y: ry, w: rw, d: rd };
+        if (r.label !== undefined) { room.label = text(r, "label", q); }
+        floor.rooms.push(room);
+      });
+      list(f, "furniture", p, maxItems).forEach(function (r, i) {
+        var q = p + ".furniture[" + i + "]";
+        object(r, q);
+        floor.furniture.push({ id: text(r, "id", q), kind: choice(r, "kind", limits.furniture_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth),
+                               w: num(r.w, q + ".w", 0.05), d: num(r.d, q + ".d", 0.05) });
+      });
+      list(f, "sensors", p, maxItems).forEach(function (r, i) {
+        var q = p + ".sensors[" + i + "]";
+        object(r, q);
+        floor.sensors.push({ id: text(r, "id", q), kind: choice(r, "kind", limits.sensor_kinds, q), x: num(r.x, q + ".x", 0, width), y: num(r.y, q + ".y", 0, depth) });
+      });
+      list(f, "walls", p, maxItems).forEach(function (w, i) {
         var q = p + ".walls[" + i + "]";
-        if (!w || typeof w !== "object") { throw ProjectError(q + ": must be an object"); }
+        object(w, q);
         var wall = { id: text(w, "id", q), x1: num(w.x1, q + ".x1", 0, width), y1: num(w.y1, q + ".y1", 0, depth),
                      x2: num(w.x2, q + ".x2", 0, width), y2: num(w.y2, q + ".y2", 0, depth),
                      kind: WALL_KINDS.indexOf(w.kind) >= 0 ? w.kind : (function () { throw ProjectError(q + ".kind: must be one of " + WALL_KINDS.join(", ")); })() };
         if (wall.x1 === wall.x2 && wall.y1 === wall.y2) { throw ProjectError(q + ": wall has zero length"); }
         if (w.material !== undefined) {
-          if (materialIds && materialIds.indexOf(w.material) < 0) { throw ProjectError(q + ".material: '" + w.material + "' is not a known material"); }
+          if (materialIds.indexOf(w.material) < 0) { throw ProjectError(q + ".material: '" + w.material + "' is not a known material"); }
           wall.material = w.material;
         }
-        if (w.name !== undefined) { wall.name = String(w.name).slice(0, 80); }
+        if (w.name !== undefined) { wall.name = text(w, "name", q); }
         floor.walls.push(wall);
       });
       var wallIds = floor.walls.map(function (w) { return w.id; });
       unique(wallIds, p + ".walls");
-      list(f, "openings", p, MAX_WALLS).forEach(function (o, i) {
+      var wallById = Object.create(null);
+      floor.walls.forEach(function (w) { wallById[w.id] = w; });
+      list(f, "openings", p, maxItems).forEach(function (o, i) {
         var q = p + ".openings[" + i + "]";
-        if (!o || wallIds.indexOf(o.wall) < 0) { throw ProjectError(q + ".wall: unknown wall id " + JSON.stringify(o && o.wall)); }
+        if (!o || typeof o !== "object" || !wallById[o.wall]) { throw ProjectError(q + ".wall: unknown wall id " + JSON.stringify(o && o.wall)); }
         if (o.kind !== "door" && o.kind !== "window") { throw ProjectError(q + ".kind: must be door or window"); }
-        floor.openings.push({ id: text(o, "id", q), kind: o.kind, wall: o.wall, pos: num(o.pos, q + ".pos", 0), width: num(o.width, q + ".width", 0.1) });
+        var wl = wallLength(wallById[o.wall]), opos = num(o.pos, q + ".pos", 0, wl), ow = num(o.width, q + ".width", 0.1);
+        if (opos + ow > wl + 1e-9) { throw ProjectError(q + ": opening extends past the end of wall '" + o.wall + "'"); }
+        floor.openings.push({ id: text(o, "id", q), kind: o.kind, wall: o.wall, pos: opos, width: ow });
       });
-      list(f, "aps", p, MAX_APS).forEach(function (a, i) {
+      list(f, "aps", p, Math.min(MAX_APS, maxItems)).forEach(function (a, i) {
         var q = p + ".aps[" + i + "]";
-        if (!a || typeof a !== "object") { throw ProjectError(q + ": must be an object"); }
+        object(a, q);
         var ap = { id: text(a, "id", q), x: num(a.x, q + ".x", 0, width), y: num(a.y, q + ".y", 0, depth),
                    tx_dbm: num(a.tx_dbm === undefined ? 20 : a.tx_dbm, q + ".tx_dbm", TX_DBM_MIN, TX_DBM_MAX) };
-        if (a.name !== undefined) { ap.name = String(a.name).slice(0, 80); }
+        if (a.name !== undefined) { ap.name = text(a, "name", q); }
         if (a.band !== undefined) {
           if (opts.bands && opts.bands.indexOf(a.band) < 0) { throw ProjectError(q + ".band: must be one of " + opts.bands.join(", ")); }
           ap.band = a.band;
         }
-        if (a.channel !== undefined) { ap.channel = num(a.channel, q + ".channel", 1, 233); }
+        if (a.channel !== undefined) {
+          var channels = cfg.bands[ap.band || DEFAULT_BAND].channels;
+          if (channels.indexOf(a.channel) < 0) { throw ProjectError(q + ".channel: must be one of " + channels.join(", ") + " for this band"); }
+          ap.channel = a.channel;
+        }
         if (a.mesh_parent !== undefined && a.mesh_parent !== null) { ap.mesh_parent = text(a, "mesh_parent", q); }
         floor.aps.push(ap);
       });
-      list(f, "labels", p, MAX_LABELS).forEach(function (l, i) {
+      list(f, "labels", p, maxItems).forEach(function (l, i) {
         var q = p + ".labels[" + i + "]";
         if (!l || typeof l !== "object") { throw ProjectError(q + ": must be an object"); }
         floor.labels.push({ id: text(l, "id", q), text: text(l, "text", q), x: num(l.x, q + ".x", 0, width), y: num(l.y, q + ".y", 0, depth) });
       });
-      list(f, "annotations", p, MAX_ANNOTATIONS).forEach(function (a, i) {
+      list(f, "annotations", p, maxItems).forEach(function (a, i) {
         var q = p + ".annotations[" + i + "]";
         if (!a || typeof a !== "object") { throw ProjectError(q + ": must be an object"); }
         if (ANNOTATION_KINDS.indexOf(a.kind) < 0) { throw ProjectError(q + ".kind: must be one of " + ANNOTATION_KINDS.join(", ")); }
@@ -147,13 +197,13 @@
         if (a.text !== undefined) { note.text = text(a, "text", q); } else if (a.kind === "text") { throw ProjectError(q + ".text: required for a text note"); }
         floor.annotations.push(note);
       });
-      list(f, "devices", p, MAX_DEVICES).forEach(function (d, i) {
+      list(f, "devices", p, maxItems).forEach(function (d, i) {
         var q = p + ".devices[" + i + "]";
         if (!d || typeof d !== "object") { throw ProjectError(q + ": must be an object"); }
         var cls = text(d, "cls", q);
         if (opts.deviceClasses && opts.deviceClasses.indexOf(cls) < 0) { throw ProjectError(q + ".cls: must be one of " + opts.deviceClasses.join(", ")); }
         var dev = { id: text(d, "id", q), cls: cls, x: num(d.x, q + ".x", 0, width), y: num(d.y, q + ".y", 0, depth) };
-        if (d.name !== undefined) { dev.name = String(d.name).slice(0, 80); }
+        if (d.name !== undefined) { dev.name = text(d, "name", q); }
         floor.devices.push(dev);
       });
       unique(floor.aps.map(function (a) { return a.id; }), p + ".aps");
@@ -164,10 +214,10 @@
     });
     unique(out.floors.map(function (f) { return f.id; }), "floors");
     unique(out.floors.map(function (f) { return String(f.level); }), "floors.level");
-    var apIds = {};
+    var apIds = Object.create(null);
     out.floors.forEach(function (f) { f.aps.forEach(function (a) { apIds[a.id] = a; }); });
     Object.keys(apIds).forEach(function (id) {
-      var seen = {}, cur = apIds[id];
+      var seen = Object.create(null), cur = apIds[id];
       while (cur && cur.mesh_parent !== undefined) {
         if (!apIds[cur.mesh_parent]) { throw ProjectError("aps: mesh_parent '" + cur.mesh_parent + "' of '" + cur.id + "' is not an access point"); }
         if (seen[cur.id]) { throw ProjectError("aps: mesh backhaul of '" + id + "' loops back on itself"); }
@@ -190,10 +240,35 @@
     return out;
   }
 
+  /** Project-defined materials, same rules as twin._custom_materials: {id: {label, attenuation_db{band}, reflection_loss_db{band}}}. */
+  function validateMaterials(m, limits, bands) {
+    if (!m || typeof m !== "object" || Array.isArray(m) || Object.keys(m).length > limits.max_custom_materials) {
+      throw ProjectError("materials: must be an object with at most " + limits.max_custom_materials + " entries");
+    }
+    var out = Object.create(null);
+    Object.keys(m).forEach(function (mid) {
+      var q = "materials." + mid, e = m[mid];
+      if (!mid.trim().length || mid.length > limits.max_text_chars || !e || typeof e !== "object" || Array.isArray(e)) {
+        throw ProjectError(q + ": must be an object with an id of up to " + limits.max_text_chars + " characters");
+      }
+      var entry = { label: text(e, "label", q) };
+      ["attenuation_db", "reflection_loss_db"].forEach(function (key) {
+        var table = e[key];
+        if (!table || typeof table !== "object" || Array.isArray(table) || Object.keys(table).sort().join("|") !== bands.slice().sort().join("|")) {
+          throw ProjectError(q + "." + key + ": must give a value for each band " + bands.join(", "));
+        }
+        entry[key] = {};
+        bands.forEach(function (b) { entry[key][b] = num(table[b], q + "." + key + "." + b, limits.material_db_range[0], limits.material_db_range[1]); });
+      });
+      out[mid] = entry;
+    });
+    return out;
+  }
+
   /** Capacity planning input: {"floorId/roomId": {users, profile}}. */
   function validateCapacity(c) {
     if (!c || typeof c !== "object" || Array.isArray(c)) { throw ProjectError("capacity: must be an object"); }
-    var keys = Object.keys(c), out = {};
+    var keys = Object.keys(c), out = Object.create(null);
     if (keys.length > MAX_CAPACITY_ZONES) { throw ProjectError("capacity: at most " + MAX_CAPACITY_ZONES + " zones"); }
     keys.forEach(function (k) {
       var z = c[k], q = "capacity[" + JSON.stringify(k) + "]";
@@ -225,7 +300,7 @@
   }
   /** Smallest unused id of the form prefix + n, n starting at 1. */
   function nextId(items, prefix) {
-    var used = {};
+    var used = Object.create(null);
     items.forEach(function (it) { used[it.id] = true; });
     var n = 1;
     while (used[prefix + n]) { n++; }
@@ -332,7 +407,7 @@
    */
   function createStore(project, options) {
     var cap = (options && options.cap) || HISTORY_CAP;
-    var past = [], future = [], subs = [], savedPos = 0, floorId = project.floors[0].id;
+    var past = [], future = [], subs = [], savedPos = 0, metaRev = 0, savedMetaRev = 0, floorId = project.floors[0].id;
     var selection = { walls: [], ap: null, label: null };
 
     function emit(ev) { subs.slice().forEach(function (fn) { fn(ev); }); }
@@ -404,15 +479,15 @@
       /** Replace project.scenarios or project.capacity. Not part of undo history: it marks the project unsaved and emits "meta". */
       setMeta: function (key, value) {
         if (key !== "scenarios" && key !== "capacity") { throw new Error("unknown project field " + key); }
-        store.project[key] = clone(value); savedPos = NaN;
+        store.project[key] = clone(value); metaRev += 1;
         emit({ source: "meta", key: key, ops: [] });
       },
       historyLength: function () { return past.length; },
-      isDirty: function () { return savedPos !== past.length; },
-      markSaved: function () { savedPos = past.length; },
+      isDirty: function () { return savedPos !== past.length || savedMetaRev !== metaRev; },
+      markSaved: function () { savedPos = past.length; savedMetaRev = metaRev; },
       /** Replace the whole project (open, import, reset). Clears history. */
       load: function (next) {
-        store.project = next; past.length = 0; future.length = 0; savedPos = 0;
+        store.project = next; past.length = 0; future.length = 0; savedPos = 0; metaRev = 0; savedMetaRev = 0;
         floorId = next.floors[0].id; selection.walls = []; selection.ap = null; selection.label = null;
         emit({ source: "load", ops: [] });
       }
@@ -481,7 +556,7 @@
     try { return { project: parseProjectJson(raw, opts) }; } catch (e) { return { project: null, error: "Saved project ignored: " + e.message }; }
   }
 
-  var api = { SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY, MAX_WALLS: MAX_WALLS,
+  var api = { SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY,
               DEFAULT_BG_OPACITY: DEFAULT_BG_OPACITY, validateProject: validateProject, parseProjectJson: parseProjectJson,
               exportProjectJson: exportProjectJson, findFloor: findFloor, nextId: nextId, wallLength: wallLength, wallBox: wallBox,
               applyOp: applyOp, invertOp: invertOp, addOp: addOp, removeOp: removeOp, setOp: setOp, createStore: createStore,

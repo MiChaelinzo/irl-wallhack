@@ -18,6 +18,7 @@ including with no server (the static Vercel demo) and on large floor plans.
   brute force on a 1000-wall layout.
 - Propagation modes and extra materials go through small registries (`register_mode`, `registerMode`,
   `registerMaterials`). The built-in modes register through them. Nothing else is pluggable.
+- Import limits (list sizes, text length, material dB range, kinds) sit in `rf-config.json` `limits`, read by `twin.py` and `planner-state.js`, so they cannot drift. Parity tests cannot catch a wrong shared formula, so the knife-edge value has an independent hand-computed test.
 - Defaults (2.4 GHz, no material, `basic` mode) reproduce the previous numbers exactly. A golden fixture
   created from the unmodified code guards this.
 

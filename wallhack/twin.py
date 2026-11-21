@@ -17,17 +17,19 @@ from . import rfmodel
 
 WALL_KINDS = ("interior", "exterior")
 OPENING_KINDS = ("door", "window")
-FURNITURE_KINDS = ("sofa", "bed", "table", "desk", "wardrobe", "counter", "other")
-SENSOR_KINDS = ("air", "presence", "rssi")
+FURNITURE_KINDS = tuple(rfmodel.LIMITS["furniture_kinds"])
+SENSOR_KINDS = tuple(rfmodel.LIMITS["sensor_kinds"])
 TWIN_FILE = "twin.json"
-MAX_FLOORS = 6
-MAX_ITEMS_PER_LIST = 200
+# Limits shared with the browser planner live in rf-config.json ("limits").
+MAX_FLOORS = rfmodel.LIMITS["max_floors"]
+MAX_ITEMS_PER_LIST = rfmodel.LIMITS["max_items_per_list"]
+MAX_TEXT_CHARS = rfmodel.LIMITS["max_text_chars"]
 TX_DBM_RANGE = (0.0, 30.0)
-MAX_CUSTOM_MATERIALS = 20
-MATERIAL_DB_RANGE = (0.0, 80.0)
+MAX_CUSTOM_MATERIALS = rfmodel.LIMITS["max_custom_materials"]
+MATERIAL_DB_RANGE = tuple(rfmodel.LIMITS["material_db_range"])
 THICKNESS_M_RANGE = (0.01, 2.0)
 SCALE_M_PER_PX_RANGE = (0.0001, 100.0)
-MAX_BACKGROUND_CHARS = 600_000      # a data URL; keeps the whole twin under the 1 MB request limit
+MAX_BACKGROUND_CHARS = rfmodel.LIMITS["max_background_chars"]     # a data URL; keeps the whole twin under the 1 MB request limit
 BACKGROUND_PATTERN = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
 
 
@@ -90,8 +92,8 @@ def _num(value: Any, path: str, lo: Optional[float] = None, hi: Optional[float] 
 
 def _text(item: dict, key: str, path: str) -> str:
     v = item.get(key)
-    if not isinstance(v, str) or not v.strip() or len(v) > 64:
-        raise TwinError(f"{path}.{key}: must be a non-empty string up to 64 characters")
+    if not isinstance(v, str) or not v.strip() or len(v) > MAX_TEXT_CHARS:
+        raise TwinError(f"{path}.{key}: must be a non-empty string up to {MAX_TEXT_CHARS} characters")
     return v
 
 
@@ -115,8 +117,8 @@ def _custom_materials(data: Any) -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     for mid, m in data.items():
         p = f"materials.{mid}"
-        if not isinstance(mid, str) or not mid.strip() or len(mid) > 64 or not isinstance(m, dict):
-            raise TwinError(f"{p}: must be an object with an id of up to 64 characters")
+        if not isinstance(mid, str) or not mid.strip() or len(mid) > MAX_TEXT_CHARS or not isinstance(m, dict):
+            raise TwinError(f"{p}: must be an object with an id of up to {MAX_TEXT_CHARS} characters")
         entry = {"label": _text(m, "label", p)}
         for key in ("attenuation_db", "reflection_loss_db"):
             table = m.get(key)

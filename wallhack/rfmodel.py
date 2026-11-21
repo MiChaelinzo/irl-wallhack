@@ -20,7 +20,7 @@ Mode "enhanced" is the strongest single path of:
     Level = tx - PL(image distance) - reflection_loss(material, band) - losses of the other walls
     crossed on both legs. Walls within max_reflector_range_m of the AP are candidates;
   * diffraction around the endpoints of walls that block the direct path (knife-edge):
-    path AP->corner->receiver, delta = d1 + d2 - d_direct, v = sqrt(2 * delta / lambda),
+    path AP->corner->receiver, delta = d1 + d2 - d_direct, v = sqrt(4 * delta / lambda),
     J(v) = 6.9 + 20 * log10(sqrt((v - 0.1)^2 + 1) + v - 0.1) for v > -0.78 else 0.
     Level = tx - PL(d1 + d2) - J(v) - losses of other walls crossed on both legs.
 Mode "multipath" adds the powers (mW, incoherent) of the direct, every reflected and every
@@ -44,6 +44,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 CONFIG = load_config()
 ENGINE = CONFIG["engine"]
 BANDS = CONFIG["bands"]
+LIMITS = CONFIG["limits"]     # import limits shared with the planner (planner-state.js)
 DEFAULT_BAND = "2.4"
 PL0_DB = BANDS[DEFAULT_BAND]["pl0_db"]                   # free-space loss at 1 m, 2.4 GHz
 PATH_LOSS_EXPONENT = BANDS[DEFAULT_BAND]["path_loss_exponent"]   # typical for an obstructed indoor space

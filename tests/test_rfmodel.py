@@ -88,9 +88,30 @@ def test_diffraction_beats_basic_in_shadow():
     """A short metal wall blocks the direct path, but the wall end is close to the line of sight."""
     f = _floor([_wall(10, 8.5, 10, 11.5, "metal", wid="m")])
     blocked = rfmodel.rssi_from_ap(AP, f, f, 14.0, 10.0, mode="basic")
-    assert rfmodel.rssi_from_ap(AP, f, f, 14.0, 10.0, mode="enhanced") > blocked + 3.0
+    assert rfmodel.rssi_from_ap(AP, f, f, 14.0, 10.0, mode="enhanced") > blocked + 1.0
     clear = rfmodel.rssi_from_ap(AP, f, f, 14.0, 16.0, mode="basic")
     assert rfmodel.rssi_from_ap(AP, f, f, 14.0, 16.0, mode="enhanced") >= clear
+
+
+def test_knife_edge_loss_matches_hand_computed_fresnel_values():
+    """Independent of rf-config.json: textbook geometry and hand-computed J(v), not derived from v_scale.
+
+    AP (0, 0), edge corner (10, 1), receiver (20, 0): d1 = d2 = sqrt(101) = 10.04988 m, direct path 20 m,
+    so delta = 2 * 10.04988 - 20 = 0.099751 m. At 2.4 GHz lambda = 0.1249135 m (c / f). The standard
+    Fresnel-Kirchhoff parameter v = h * sqrt(2 (d1 + d2) / (lambda d1 d2)) with h = 1 m is
+    sqrt(2 * 20.09975 / (0.1249135 * 101)) = 1.7849; the excess-path form sqrt(4 * delta / lambda) gives 1.7872
+    (the small gap is the h << d1, d2 approximation). J(1.7872) = 6.9 + 20 log10(sqrt(1.6872^2 + 1) + 1.6872)
+    = 18.14 dB by hand. The old v = sqrt(2 * delta / lambda) = 1.2638 would give 15.5 dB, a 2.6 dB error.
+    """
+    assert rfmodel.knife_edge_loss_db(0.0) == pytest.approx(6.0, abs=0.05)      # grazing incidence: ~6 dB
+    assert rfmodel.knife_edge_loss_db(1.0) == pytest.approx(13.93, abs=0.01)
+    assert rfmodel.knife_edge_loss_db(2.4) == pytest.approx(20.5, abs=0.1)      # J(2.4) = 20.5 dB from the P.526 approximation
+    f = _floor([])
+    ap = {"id": "a", "x": 0.0, "y": 0.0, "tx_dbm": 20.0}
+    level = rfmodel._diffracted_dbm(ap, f, (10.0, 1.0), 20.0, 0.0, "2.4", rfmodel.material_table())
+    path_loss = rfmodel.path_loss_db(2 * 101 ** 0.5, "2.4")
+    assert 20.0 - level - path_loss == pytest.approx(18.14, abs=0.02)
+    assert rfmodel.KNIFE_EDGE["v_scale"] == 4.0
 
 
 def test_reflection_beats_basic_behind_blocker():
