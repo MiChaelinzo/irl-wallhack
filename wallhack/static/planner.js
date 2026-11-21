@@ -16,6 +16,7 @@
   var app = { store: null, editor: null, renderer: null, config: null, env: null, backend: null, latestId: 0, waiters: [],
               lastResult: null, probe: null, settings: { band: null, mode: "basic", cell: null }, saveTimer: 0, perf: {} };
   window.PlannerApp = app;
+  app.base = BASE;
 
   // ---------------------------------------------------------------- small helpers
   function say(msg) { $("status").textContent = msg; }
@@ -33,12 +34,42 @@
     Object.keys(custom).forEach(function (k) { out[k] = { label: custom[k].label || k }; });
     return out;
   }
-  function validateOpts() { return { materialIds: Object.keys(app.config.materials), bands: Object.keys(app.config.bands), modes: RF.modeIds() }; }
+  function validateOpts() {
+    var o = { materialIds: Object.keys(app.config.materials), bands: Object.keys(app.config.bands), modes: RF.modeIds() };
+    if (app.config.planner_modes) { o.deviceClasses = Object.keys(app.config.planner_modes.iot_classes); }
+    return o;
+  }
+  app.validateOpts = validateOpts;
+  app.assetUrl = function (name) { return (app.base || "") + name; };
+  app.say = say; app.notice = notice; app.currentFloor = function () { return currentFloor(); };
+  // overlays drawn on the editor canvas after everything else (probe, roaming zones, ghost AP, annotations)
+  var overlays = [];
+  app.overlay = function (fn) { overlays.push(fn); };
+  app.download = function (name, type, data) {
+    var blob = new Blob([data], { type: type }), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  };
+  // analysis jobs (analytics, compare, rank, plan, stack) run in the worker; ids start high so they never collide with heat map ids
+  var JOB_BASE = 1000000;
+  app.jobs = {}; app.jobSeq = JOB_BASE;
+  app.runJob = function (msg, handlers) { app.jobSeq += 1; msg.id = app.jobSeq; app.jobs[msg.id] = handlers; app.backend.send(msg); return msg.id; };
+  app.cancelJob = function (id) { app.backend.send({ type: "cancel", id: id }); };
+  function onJobMessage(m) {
+    var h = app.jobs[m.id];
+    if (!h) { return; }
+    if (m.type === "progress") { if (h.progress) { h.progress(m); } return; }
+    delete app.jobs[m.id];
+    if (m.type === "cancelled") { if (h.cancelled) { h.cancelled(m); } }
+    else if (m.type === "error") { if (h.error) { h.error(m); } }
+    else { h.result(m); }
+  }
 
   // ---------------------------------------------------------------- compute backend: Worker or main-thread fallback
   function startBackend() {
     function onMessage(m) {
       if (m.type === "ready") { return; }
+      if (m.id >= JOB_BASE) { onJobMessage(m); return; }
       if (m.type === "error") { notice("Heat map computation failed: " + m.message, "error"); finishCompute(m.id); return; }
       if (m.type === "cancelled") { return; }
       if (m.id !== app.latestId) { return; }   // stale
@@ -54,12 +85,13 @@
         $("coverageChip").textContent = "coverage: " + m.coverage_pct.toFixed(1) + "% at " + app.config.analytics.coverage_dbm + " dBm";
         $("deadChip").textContent = "dead zone: " + m.dead_zone_pct.toFixed(1) + "%";
         finishCompute(m.id);
+        if (app.requestAnalysis) { app.requestAnalysis(); }
       }
       drawMinimap();
     }
     function fallback(reason) {
       if (!window.RFWorkerCore) { notice("Heat map worker unavailable: " + reason, "error"); return; }
-      var core = window.RFWorkerCore.createCore({ RF: RF, State: S }, function (m) { onMessage(m); });
+      var core = window.RFWorkerCore.createCore({ RF: RF, State: S, Opt: window.RFOptimizer }, function (m) { onMessage(m); });
       app.backend = { kind: "main", send: function (msg) { core.handle(msg); } };
       notice("Web Workers are unavailable here (" + reason + "), so the heat map is computed on the main thread in short time slices. The page stays usable but large floors update more slowly.", "note");
       initBackend();
@@ -82,7 +114,7 @@
     sendProject();
   }
   function sendProject() {
-    app.backend.send({ type: "setProject", project: app.store.project, mode: app.settings.mode, band: app.settings.band });
+    app.backend.send({ type: "setProject", project: S.computeProject(app.store.project), mode: app.settings.mode, band: app.settings.band });
   }
   function cellFor(floor) {
     if (app.settings.cell) { return app.settings.cell; }
@@ -118,6 +150,11 @@
     if (ev.source === "load") { rebuildEnv(); sendProject(); fillFloors(); syncPanels(); requestCompute(); schedulePersist(); return; }
     if (ev.source === "floor") { fillFloors(); syncPanels(); requestCompute(); return; }
     if (ev.source === "select") { syncSelection(); return; }
+    if (ev.source === "meta") { schedulePersist(); return; }
+    if (ev.ops && ev.ops.length && ev.ops.some(function (o) { return o.t.indexOf("floors.") === 0; })) {
+      if (app.backend) { app.backend.send({ type: "update", ops: ev.ops.filter(function (o) { return o.t.indexOf("floors.") === 0; }) }); }
+      fillFloors(); syncPanels(); requestCompute(); schedulePersist(); updateHistoryButtons(); return;
+    }
     if (ev.ops && ev.ops.length) {
       if (app.backend) { app.backend.send({ type: "update", ops: ev.ops }); }
       var kinds = ev.ops.map(function (o) { return o.t; });
@@ -125,7 +162,7 @@
         ev.ops.every(function (o) { return !("tx_dbm" in o.after || "band" in o.after || "channel" in o.after || "name" in o.after); });
       if (!moveOnly) { fillApList(); }
       if (kinds.some(function (k) { return k === "floor.set"; })) { syncFloorPanel(); }
-      if (!kinds.every(function (k) { return k.indexOf("label.") === 0; }) && !kinds.every(function (k) { return k === "floor.set" && !("width_m" in ev.ops[0].after || "depth_m" in ev.ops[0].after); })) { requestCompute(); }
+      if (!kinds.every(function (k) { return k.indexOf("label.") === 0 || k.indexOf("annotation.") === 0 || k.indexOf("device.") === 0; }) && !kinds.every(function (k) { return k === "floor.set" && !("width_m" in ev.ops[0].after || "depth_m" in ev.ops[0].after); })) { requestCompute(); }
       syncSelection();
       schedulePersist();
     }
@@ -407,8 +444,9 @@
     app.renderer = H.createRenderer({ heat: heatCanvas, over: $("cOver"), config: config, forceCanvas2d: /[?&]renderer=canvas2d/.test(location.search),
       onKind: function (r) { $("rendererChip").textContent = "renderer: " + (r.kind === "webgl" ? "WebGL" : "canvas 2D"); $("rendererChip").title = r.info; app.rendererInfo = r.info; } });
     app.editor = E.create({ base: $("cBase"), edit: $("cEdit"), store: store, materials: materialTable(),
-      onFrame: function (view) { app.renderer.draw(view); drawMinimap(); }, onDraw: drawProbe, announce: say, onPointer: onPointer, onHelp: function () { app.help(); },
+      onFrame: function (view) { app.renderer.draw(view); drawMinimap(); }, onDraw: function (c, view, f) { drawProbe(c, view); overlays.forEach(function (fn) { fn(c, view, f); }); }, announce: say, onPointer: onPointer, onHelp: function () { app.help(); },
       onArrowWithoutSelection: moveProbeByKey,
+      onToolPointer: function (tool, phase, raw, e) { return (tool.indexOf("note-") === 0 && app.noteTool) ? app.noteTool(tool, phase, raw, e) : (tool === "device" && app.deviceTool) ? app.deviceTool(phase, raw, e) : false; },
       onTool: function (t) { Array.prototype.forEach.call(document.querySelectorAll("[data-tool]"), function (b) { b.setAttribute("aria-pressed", String(b.dataset.tool === t)); }); },
       onGrid: function (on) { $("gridBtn").setAttribute("aria-pressed", String(on)); } });
     minimap = H.createMinimap({ canvas: $("minimap"), getFloor: currentFloor, getView: function () { return app.editor.view; }, getThumb: function () { return app.renderer.thumb; },
@@ -417,6 +455,9 @@
     wireControls(); fillFloors(); syncPanels();
     store.subscribe(onStoreEvent);
     startBackend();
+    if (window.PlannerPanels) { window.PlannerPanels.mount(app); }
+    if (window.PlannerExport) { window.PlannerExport.mount(app); }
+    if (window.PlannerModes) { window.PlannerModes.mount(app); }
     requestCompute();
     $("saveState").textContent = "Not saved yet";
     app.ready = true;

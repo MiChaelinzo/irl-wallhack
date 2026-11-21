@@ -122,6 +122,11 @@
       <canvas id="minimap" class="minimap" width="240" height="160" tabindex="0" role="img" aria-label="Mini-map of the floor. Click or use arrow keys to move the view."></canvas>
     </section>
   </aside>
+  <section class="card p-bottom" aria-labelledby="pTabs">
+    <h2 id="pTabs">Analysis and planning</h2>
+    <div id="tabs" class="tabs" role="tablist" aria-label="Analysis panels"></div>
+    <div id="tabPanels"></div>
+  </section>
 </main>
 <div id="help" class="dialog" role="dialog" aria-modal="false" aria-labelledby="helpTitle" hidden>
   <h2 id="helpTitle">Keyboard shortcuts</h2>
@@ -146,7 +151,11 @@
 <script src="/static/planner-state.js"></script>
 <script src="/static/planner-editor.js"></script>
 <script src="/static/planner-heat.js"></script>
+<script src="/static/rf-optimizer.js"></script>
 <script src="/static/rf-worker.js"></script>
+<script src="/static/planner-panels.js"></script>
+<script src="/static/planner-export.js"></script>
+<script src="/static/planner-modes.js"></script>
 <script src="/static/planner.js"></script>
 </body>
 </html>
