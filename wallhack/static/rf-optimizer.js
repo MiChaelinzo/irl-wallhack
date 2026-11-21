@@ -58,10 +58,12 @@
   /** Copies of the environment with all wall and opening attenuation changed, one per configured perturbation. */
   function wallEnvs(ctx) {
     var cf = ctx.pc.confidence, out = [];
-    [["wall_plus_db", function (v) { return v + cf.wall_delta_db; }],
+    /** @type {Array<[string, (v:number)=>number]>} */
+    var perturbations = [["wall_plus_db", function (v) { return v + cf.wall_delta_db; }],
      ["wall_minus_db", function (v) { return v - cf.wall_delta_db; }],
      ["wall_scale_up", function (v) { return v * (1 + cf.wall_scale); }],
-     ["wall_scale_down", function (v) { return v * (1 - cf.wall_scale); }]].forEach(function (p) {
+     ["wall_scale_down", function (v) { return v * (1 - cf.wall_scale); }]];
+    perturbations.forEach(function (p) {
       var change = function (att) {
         var next = {};
         Object.keys(att).forEach(function (b) { next[b] = Math.max(0, p[1](att[b])); });

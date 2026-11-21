@@ -13,7 +13,7 @@
    * @typedef {{floors:Floor[],materials?:Object,mode?:string}} Project
    * @typedef {{config:Object,materials:Object}} Env  built by makeEnv
    * @typedef {{floor:string,cell_m:number,cols:number,rows:number,rssi:number[][],threshold_dbm:number,coverage_pct:number,label:string}} Grid
-   * @typedef {function(Object,number,number):number} ModeFn  (context, x, y) -> dBm before floor loss
+   * @typedef {(ctx:Object,x:number,y:number)=>number} ModeFn  dBm before floor loss
    */
   var DEFAULT_BAND = "2.4";
   var DEFAULT_MODE = "basic";
