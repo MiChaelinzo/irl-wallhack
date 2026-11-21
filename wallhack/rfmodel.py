@@ -315,3 +315,250 @@ def coverage_percent(values: List[List[float]], threshold_dbm: float = COVERAGE_
 def twin_coverage(twin: dict, cell_m: float = DEFAULT_CELL_M) -> dict:
     """Coverage grid and percentage for every floor."""
     return {f["id"]: coverage_grid(twin, f["id"], cell_m) for f in twin["floors"]}
+
+
+# ---------------------------------------------------------------------------------------------
+# Analytics. Every throughput, capacity and utilisation number is an ESTIMATE derived from RSSI
+# through the typical PHY-rate tables in rf-config.json, not a measurement. Formulas are documented
+# in docs/rf-planner.md ("Analytics"). rf-engine.js implements the same functions and
+# tests/test_rf_planner_js.py compares the two.
+# ---------------------------------------------------------------------------------------------
+ANALYTICS = CONFIG["analytics"]
+ANALYTICS_LABEL = "ESTIMATE: throughput, capacity and utilisation are derived from RSSI with typical PHY-rate tables"
+
+
+def _round(value: float, decimals: int = 1) -> float:
+    """Round half up, the same rule as JavaScript Math.round, so Python and JS agree on ties."""
+    scale = 10.0 ** decimals
+    return math.floor(value * scale + 0.5) / scale
+
+
+def quality_band(rssi: float, config: dict = CONFIG) -> str:
+    """Id of the first quality band whose minimum RSSI the value reaches."""
+    for band in config["analytics"]["quality_bands"]:
+        if band["min_dbm"] is None or rssi >= band["min_dbm"]:
+            return band["id"]
+    raise ValueError("quality_bands needs a closing band with min_dbm null")
+
+
+def phy_rate_mbps(rssi: float, band: str, width_mhz: int, config: dict = CONFIG) -> float:
+    """Typical PHY rate at an RSSI: the highest table entry the RSSI reaches, 0 below the lowest."""
+    table = config["mcs_tables"][band].get(str(width_mhz))
+    if table is None:
+        raise ValueError(f"no rate table for {band} GHz at {width_mhz} MHz")
+    rate = 0.0
+    for entry in table:
+        if rssi >= entry["min_dbm"]:
+            rate = entry["phy_mbps"]
+    return rate
+
+
+def estimated_throughput_mbps(rssi: float, band: str, width_mhz: int, config: dict = CONFIG) -> float:
+    """ESTIMATE of usable throughput: PHY rate times the MAC efficiency factor."""
+    return phy_rate_mbps(rssi, band, width_mhz, config) * config["analytics"]["mac_efficiency"]
+
+
+def _ap_radio(ap: dict, band: str) -> Tuple[int, int]:
+    b = BANDS[band]
+    return ap.get("channel", b["default_channel"]), ap.get("width_mhz", b["default_width_mhz"])
+
+
+def ap_grids(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, aps: Optional[List[Tuple[dict, dict]]] = None,
+             band: Optional[str] = None, mode: str = "basic") -> List[dict]:
+    """Per-AP RSSI grids (rows north to south, 0.1 dBm) on one floor, in the order of `aps`."""
+    check_mode(mode)
+    floor = floor_by_id(twin, floor_id)
+    if aps is None:
+        aps = [(a, f) for f in twin["floors"] for a in f["aps"]]
+    cols, rows = grid_axes(floor, cell_m)
+    materials = material_table(twin)
+    levels = {f["id"]: f["level"] for f in twin["floors"]}
+    out = []
+    for ap, ap_floor in aps:
+        used = check_band(band or ap.get("band", DEFAULT_BAND))
+        apart = abs(levels[ap_floor["id"]] - levels[floor["id"]])
+        grid = [[round(rssi_from_ap(ap, ap_floor, floor, (c + 0.5) * cell_m, (r + 0.5) * cell_m, apart, used, mode,
+                                    materials), 1) for c in range(cols)] for r in range(rows)]
+        channel, width = _ap_radio(ap, used)
+        out.append({"id": ap["id"], "floor": ap_floor["id"], "x": ap["x"], "y": ap["y"], "tx_dbm": ap["tx_dbm"],
+                    "band": used, "channel": channel, "width_mhz": width, "grid": grid})
+    return out
+
+
+def floor_by_id(twin: dict, floor_id: str) -> dict:
+    floor = next((f for f in twin["floors"] if f["id"] == floor_id), None)
+    if floor is None:
+        raise ValueError(f"unknown floor id {floor_id!r}")
+    return floor
+
+
+def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dict]:
+    """4-connected regions of True cells (flood fill), ordered by their first cell in row-major scan."""
+    seen = [False] * len(cells)
+    regions = []
+    for start in range(len(cells)):
+        if not cells[start] or seen[start]:
+            continue
+        stack, members = [start], []
+        seen[start] = True
+        while stack:
+            n = stack.pop()
+            members.append(n)
+            r, c = divmod(n, cols)
+            for rr, cc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+                m = rr * cols + cc
+                if 0 <= rr < rows and 0 <= cc < cols and cells[m] and not seen[m]:
+                    seen[m] = True
+                    stack.append(m)
+        rs = [n // cols for n in members]
+        cs = [n % cols for n in members]
+        regions.append({
+            "cells": len(members), "area_m2": _round(len(members) * cell_m * cell_m, 2),
+            "bbox": {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
+                     "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)},
+            "centroid": {"x": _round((sum(cs) / len(cs) + 0.5) * cell_m, 2),
+                         "y": _round((sum(rs) / len(rs) + 0.5) * cell_m, 2)}})
+    return regions
+
+
+def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG) -> dict:
+    """Coverage analytics of one floor. `grid_result` is a coverage_grid result, `aps` the ap_grids list.
+
+    ESTIMATES only. See docs/rf-planner.md for every formula.
+    """
+    a = config["analytics"]
+    rows, cols, cell_m = grid_result["rows"], grid_result["cols"], grid_result["cell_m"]
+    area, total = cell_m * cell_m, rows * cols
+    best = [v for row in grid_result["rssi"] for v in row]
+    flats = [[v for row in ap["grid"] for v in row] for ap in aps]
+    quality_counts = {b["id"]: 0 for b in a["quality_bands"]}
+    for v in best:
+        quality_counts[quality_band(v, config)] += 1
+    dead = [v < a["dead_zone_dbm"] for v in best]
+    dead_zones = _regions(dead, cols, rows, cell_m)
+    best_ap, overlap_cells, roam_cells = [], [False] * total, [False] * total
+    pair_cells: Dict[Tuple[int, int], int] = {}
+    roam_pairs: Dict[Tuple[int, int], int] = {}
+    for n in range(total):
+        order = sorted(range(len(aps)), key=lambda i: (-flats[i][n], i))
+        best_ap.append(order[0] if order and best[n] >= a["dead_zone_dbm"] else -1)
+        if len(order) < 2:
+            continue
+        top = flats[order[0]][n]
+        usable = [i for i in order if flats[i][n] >= a["overlap_min_dbm"] and flats[i][n] >= top - a["overlap_margin_db"]]
+        if len(usable) >= 2:
+            overlap_cells[n] = True
+            for x in range(len(usable)):
+                for y in range(x + 1, len(usable)):
+                    key = tuple(sorted((usable[x], usable[y])))
+                    pair_cells[key] = pair_cells.get(key, 0) + 1
+        second = flats[order[1]][n]
+        if top >= a["roam_min_dbm"] and second >= a["roam_min_dbm"] and top - second <= a["roam_margin_db"]:
+            roam_cells[n] = True
+            key = tuple(sorted((order[0], order[1])))
+            roam_pairs[key] = roam_pairs.get(key, 0) + 1
+
+    def pair_list(pairs: Dict[Tuple[int, int], int]) -> List[dict]:
+        return [{"a": aps[i]["id"], "b": aps[j]["id"], "cells": k, "area_m2": _round(k * area, 2)}
+                for (i, j), k in sorted(pairs.items())]
+
+    rates = []
+    for n in range(total):
+        i = best_ap[n]
+        rates.append(estimated_throughput_mbps(best[n], aps[i]["band"], aps[i]["width_mhz"], config) if i >= 0 else 0.0)
+    served = [[r for n, r in enumerate(rates) if best_ap[n] == i and r > 0.0] for i in range(len(aps))]
+    per_ap = []
+    for i, ap in enumerate(aps):
+        usable_mbps = len(served[i]) / sum(1.0 / r for r in served[i]) if served[i] else 0.0
+        served_area = len(served[i]) * area
+        clients = a["client_density_per_100m2"] * served_area / 100.0
+        per_ap.append({"id": ap["id"], "band": ap["band"], "channel": ap["channel"], "width_mhz": ap["width_mhz"],
+                       "served_cells": len(served[i]), "served_area_m2": _round(served_area, 2),
+                       "usable_mbps": _round(usable_mbps, 1),
+                       "client_capacity": int(usable_mbps // a["per_client_demand_mbps"]),
+                       "expected_clients": _round(clients, 1),
+                       "_own": (clients * a["per_client_demand_mbps"] / usable_mbps) if usable_mbps > 0 else 0.0})
+    for i, ap in enumerate(aps):
+        col = min(cols - 1, max(0, int(math.floor(ap["x"] / cell_m))))
+        row = min(rows - 1, max(0, int(math.floor(ap["y"] / cell_m))))
+        neighbours = [aps[j]["id"] for j in range(len(aps)) if j != i and aps[j]["band"] == ap["band"]
+                      and aps[j]["channel"] == ap["channel"] and aps[j]["grid"][row][col] >= a["carrier_sense_dbm"]]
+        shared = per_ap[i]["_own"] + sum(per_ap[j]["_own"] for j in range(len(aps)) if aps[j]["id"] in neighbours)
+        per_ap[i].update({"own_utilisation_pct": _round(100.0 * per_ap[i]["_own"], 1),
+                          "cochannel_neighbours": neighbours,
+                          "channel_utilisation_pct": _round(100.0 * shared, 1), "saturated": shared >= 1.0})
+    for entry in per_ap:
+        del entry["_own"]
+    weak = quality_counts[a["weak_band_id"]]
+    dead_cells = sum(dead)
+    return {
+        "label": ANALYTICS_LABEL, "cell_m": cell_m, "cols": cols, "rows": rows,
+        "coverage_pct": _round(100.0 * sum(1 for v in best if v >= a["coverage_dbm"]) / total, 1) if total else 0.0,
+        "quality_pct": {k: _round(100.0 * v / total, 1) for k, v in quality_counts.items()},
+        "avg_rssi_dbm": _round(sum(best) / total, 1) if total else a["dead_zone_dbm"],
+        "weak_area_m2": _round(weak * area, 2), "weak_area_pct": _round(100.0 * weak / total, 1),
+        "dead_zone_area_m2": _round(dead_cells * area, 2), "dead_zone_pct": _round(100.0 * dead_cells / total, 1),
+        "dead_zones": dead_zones,
+        "best_ap": [best_ap[r * cols:(r + 1) * cols] for r in range(rows)],
+        "overlap": {"cells": sum(overlap_cells), "area_m2": _round(sum(overlap_cells) * area, 2),
+                    "pct": _round(100.0 * sum(overlap_cells) / total, 1), "pairs": pair_list(pair_cells)},
+        "roaming": {"cells": sum(roam_cells), "area_m2": _round(sum(roam_cells) * area, 2),
+                    "pct": _round(100.0 * sum(roam_cells) / total, 1), "pairs": pair_list(roam_pairs),
+                    "zones": _regions(roam_cells, cols, rows, cell_m)},
+        "throughput_mbps": [[_round(r, 1) for r in rates[k * cols:(k + 1) * cols]] for k in range(rows)],
+        "mean_throughput_mbps": _round(sum(rates) / total, 1) if total else 0.0,
+        "aps": per_ap, "total_client_capacity": sum(e["client_capacity"] for e in per_ap)}
+
+
+def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, band: Optional[str] = None,
+                  mode: str = "basic") -> dict:
+    """coverage_grid, ap_grids and analytics for one floor in one call."""
+    grids = ap_grids(twin, floor_id, cell_m, None, band, mode)
+    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids)
+
+
+def _obstructions(floor: dict, px: float, py: float, qx: float, qy: float) -> Tuple[int, int]:
+    """(walls, openings) the straight path p->q crosses. A crossing through an opening counts as an opening."""
+    openings: Dict[str, List[dict]] = {}
+    for o in floor["openings"]:
+        openings.setdefault(o["wall"], []).append(o)
+    walls = doors = 0
+    for wall in floor["walls"]:
+        along = _ray_wall_hit(px, py, qx, qy, wall)
+        if along is None:
+            continue
+        if any(o["pos"] <= along <= o["pos"] + o["width"] for o in openings.get(wall["id"], ())):
+            doors += 1
+        else:
+            walls += 1
+    return walls, doors
+
+
+def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] = None, mode: str = "basic") -> dict:
+    """Point probe for hover tooltips: RSSI, best AP, distance, obstruction count, throughput estimate."""
+    floor = floor_by_id(twin, floor_id)
+    materials = material_table(twin)
+    levels = {f["id"]: f["level"] for f in twin["floors"]}
+    best = None
+    for f in twin["floors"]:
+        for ap in f["aps"]:
+            used = check_band(band or ap.get("band", DEFAULT_BAND))
+            rssi = round(rssi_from_ap(ap, f, floor, x, y, abs(levels[f["id"]] - levels[floor_id]), used, mode, materials), 1)
+            if best is None or rssi > best[0]:
+                best = (rssi, ap, f, used)
+    out = {"x": x, "y": y, "floor": floor_id, "label": ANALYTICS_LABEL}
+    if best is None:
+        out.update({"rssi_dbm": NO_SIGNAL_DBM, "quality": quality_band(NO_SIGNAL_DBM), "ap_id": None,
+                    "distance_m": None, "walls_crossed": 0, "openings_crossed": 0, "floors_crossed": 0,
+                    "throughput_mbps": 0.0})
+        return out
+    rssi, ap, ap_floor, used = best
+    rssi = max(rssi, NO_SIGNAL_DBM)
+    walls, doors = _obstructions(floor, ap["x"], ap["y"], x, y)
+    channel, width = _ap_radio(ap, used)
+    out.update({"rssi_dbm": rssi, "quality": quality_band(rssi), "ap_id": ap["id"],
+                "distance_m": _round(math.hypot(x - ap["x"], y - ap["y"]), ANALYTICS["probe_distance_decimals"]),
+                "walls_crossed": walls, "openings_crossed": doors,
+                "floors_crossed": abs(levels[ap_floor["id"]] - levels[floor_id]),
+                "throughput_mbps": _round(estimated_throughput_mbps(rssi, used, width), 1)})
+    return out

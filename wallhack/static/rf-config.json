@@ -263,7 +263,15 @@
    "6": -92.0
   },
   "mac_efficiency": 0.65,
-  "per_client_demand_mbps": 5.0
+  "per_client_demand_mbps": 5.0,
+  "weak_band_id": "poor",
+  "overlap_min_dbm": -75.0,
+  "overlap_margin_db": 10.0,
+  "roam_min_dbm": -75.0,
+  "roam_margin_db": 8.0,
+  "carrier_sense_dbm": -82.0,
+  "client_density_per_100m2": 4.0,
+  "probe_distance_decimals": 2
  },
  "mcs_tables": {
   "2.4": {
@@ -523,6 +531,74 @@
      "phy_mbps": 600
     }
    ]
+  }
+ },
+ "scoring": {
+  "label": "Optimisation score, a weighted sum of estimates, higher is better. Weights are planning preferences, not physics.",
+  "weights": {
+   "coverage": 50.0,
+   "mean_rssi": 15.0,
+   "dead_zone": 20.0,
+   "overlap": 10.0,
+   "ap_count": 5.0
+  },
+  "rssi_floor_dbm": -90.0,
+  "rssi_ceiling_dbm": -40.0,
+  "ap_count_full_penalty": 10
+ },
+ "planner": {
+  "label": "Smart WiFi Planner settings. Recommendations are model estimates, confidence expresses model sensitivity, not real-world accuracy.",
+  "cell_m": 1.0,
+  "candidate_spacing_m": 1.5,
+  "max_candidates": 400,
+  "min_ap_separation_m": 2.0,
+  "edge_margin_m": 0.5,
+  "default_tx_dbm": 20.0,
+  "default_band": "2.4",
+  "target_coverage_pct": 95.0,
+  "max_suggestions": 4,
+  "min_gain_pct": 0.5,
+  "power_step_db": 3.0,
+  "min_tx_dbm": 5.0,
+  "max_tx_dbm": 23.0,
+  "overpowered_tolerance_pct": 0.5,
+  "underpowered_min_gain_pct": 2.0,
+  "low_capacity_clients": 5,
+  "high_utilisation_pct": 70.0,
+  "weak_area_issue_pct": 5.0,
+  "channel_sets": {
+   "2.4": [
+    1,
+    6,
+    11
+   ],
+   "5": [
+    36,
+    40,
+    44,
+    48,
+    149,
+    153,
+    157,
+    161
+   ],
+   "6": [
+    1,
+    5,
+    9,
+    13,
+    17,
+    21
+   ]
+  },
+  "confidence": {
+   "shift_m": 1.0,
+   "wall_delta_db": 3.0,
+   "wall_scale": 0.2,
+   "stability_fraction_of_gain": 0.5,
+   "weight_stability": 0.7,
+   "weight_magnitude": 0.3,
+   "full_gain_pct": 10.0
   }
  }
 }
