@@ -28,6 +28,7 @@ MAX_OPENINGS_PER_FLOOR = rfmodel.LIMITS["max_openings_per_floor"]
 # Walls and openings have their own, larger limits (large plans); every other list uses MAX_ITEMS_PER_LIST.
 ITEM_LIMITS = {"walls": MAX_WALLS_PER_FLOOR, "openings": MAX_OPENINGS_PER_FLOOR}
 MAX_TEXT_CHARS = rfmodel.LIMITS["max_text_chars"]
+DEFAULT_NAME = "Untitled"
 TX_DBM_RANGE = (0.0, 30.0)
 MAX_CUSTOM_MATERIALS = rfmodel.LIMITS["max_custom_materials"]
 MATERIAL_DB_RANGE = tuple(rfmodel.LIMITS["material_db_range"])
@@ -159,7 +160,10 @@ def validate_twin(data: Any) -> dict:
     floors_in = data.get("floors")
     if not isinstance(floors_in, list) or not 1 <= len(floors_in) <= MAX_FLOORS:
         raise TwinError(f"floors: must be a list of 1 to {MAX_FLOORS} floors")
-    out: Dict[str, Any] = {"name": _text(data, "name", "twin"), "units": "m",
+    name = data.get("name")
+    # Older projects may have a blank name; they load under a default instead of failing.
+    name = name[:MAX_TEXT_CHARS] if isinstance(name, str) and name.strip() else DEFAULT_NAME
+    out: Dict[str, Any] = {"name": name, "units": "m",
                            "sample": bool(data.get("sample", False)), "floors": []}
     if "materials" in data:
         out["materials"] = _custom_materials(data["materials"])

@@ -108,7 +108,7 @@
     if (!Array.isArray(data.floors) || data.floors.length < 1 || data.floors.length > limits.max_floors) {
       throw ProjectError("floors: must be a list of 1 to " + limits.max_floors + " floors");
     }
-    var out = { schema_version: SCHEMA_VERSION, name: typeof data.name === "string" && data.name ? data.name.slice(0, maxText) : "Untitled",
+    var out = { schema_version: SCHEMA_VERSION, name: typeof data.name === "string" && data.name.trim() ? data.name.slice(0, maxText) : "Untitled",
                 units: "m", sample: !!data.sample, floors: [], scenarios: [], capacity: {} };
     if (data.materials !== undefined) { out.materials = validateMaterials(data.materials, limits, Object.keys(cfg.bands)); }
     if (data.mode !== undefined) {
