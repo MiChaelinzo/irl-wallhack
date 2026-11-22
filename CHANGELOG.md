@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### RF planner engine
+- fix: the sticky header covered the top of the planner panels (compare, analytics) when they were scrolled into view. `--header-h` in `style.css` now drives `scroll-padding-top` and `scroll-margin-top`; the four planner compare and analytics screenshots are regenerated.
 - fix: an AP with an unknown band and no channel was accepted when no band list was passed; `validateProject` now checks the band against `rf-config.json` bands.
 - fix: projects with an empty or whitespace-only name failed to load in `twin.validate_twin` (and a whitespace name was kept by the planner); both now use `Untitled`.
 - fix: `PUT /api/twin` had the 1 MB cap, so a twin with floor-plan images (up to 600000 characters each) returned 413. It now has its own limit, `app.MAX_TWIN_BODY_BYTES`, derived from the `limits` in `rf-config.json` (`max_floors` x (`max_background_chars` + items x `twin_json_bytes_per_item`) + `twin_body_overhead_bytes`, about 23 MB). Every other route keeps the 1 MB cap (`MAX_BODY_BYTES`).
