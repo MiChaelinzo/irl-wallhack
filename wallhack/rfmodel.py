@@ -24,7 +24,9 @@ Mode "enhanced" is the strongest single path of:
     J(v) = 6.9 + 20 * log10(sqrt((v - 0.1)^2 + 1) + v - 0.1) for v > -0.78 else 0.
     Level = tx - PL(d1 + d2) - J(v) - losses of other walls crossed on both legs.
 Mode "multipath" adds the powers (mW, incoherent) of the direct, every reflected and every
-diffracted path. So multipath >= enhanced >= basic. No fading, no antenna patterns, 2D plan geometry.
+diffracted path. So multipath >= enhanced >= basic. No fading, 2D plan geometry. Antenna gain and a sector pattern are optional per AP (default omni, 0 dBi);
+each path leaves the AP towards its first segment (receiver, reflection point or corner). Refraction is
+not modelled (negligible indoors).
 Openings are ignored when reflecting. Walls that touch the corner or reflection point are skipped
 for the legs that start there.
 """
@@ -60,6 +62,9 @@ MAX_REFLECTOR_RANGE_M = ENGINE["max_reflector_range_m"]
 PARALLEL_EPSILON = ENGINE["parallel_epsilon"]
 CORNER_MATCH_EPSILON_M = ENGINE["corner_match_epsilon_m"]
 KNIFE_EDGE = ENGINE["knife_edge"]
+WIFI = CONFIG["wifi_standards"]
+INTERFERENCE = CONFIG["interference"]
+ANTENNA = CONFIG["antenna"]
 LABEL = "ESTIMATE: log-distance model with wall attenuation, not a measurement"
 MODE_LABEL = "MODEL ESTIMATE ({mode} mode, {band} GHz), not a measurement"
 
@@ -142,6 +147,29 @@ def path_loss_db(distance_m: float, band: str = DEFAULT_BAND) -> float:
     return b["pl0_db"] + 10.0 * b["path_loss_exponent"] * math.log10(max(distance_m, MIN_DISTANCE_M))
 
 
+def antenna_gain_db(ap: dict, bearing_deg: float) -> float:
+    """Antenna gain (dBi) of `ap` towards a bearing in degrees (0 = +x east, clockwise on the plan).
+
+    Omni (the default) is the AP's `antenna_gain_dbi` (default 0). Sector adds the 3GPP TR 36.814
+    horizontal pattern -min(12 * (phi / beamwidth)^2, front_to_back), phi the angle off `azimuth_deg`.
+    """
+    gain = ap.get("antenna_gain_dbi", 0.0)
+    if ap.get("pattern", "omni") == "omni":
+        return gain
+    sector = ANTENNA["patterns"]["sector"]
+    off = ((bearing_deg - ap.get("azimuth_deg", 0.0) + 540.0) % 360.0) - 180.0
+    ratio = off / ap.get("beamwidth_deg", sector["default_beamwidth_deg"])
+    return gain - min(ANTENNA["parabolic_coefficient"] * ratio * ratio,
+                      ap.get("front_to_back_db", sector["default_front_to_back_db"]))
+
+
+def antenna_gain_toward(ap: dict, x: float, y: float) -> float:
+    """antenna_gain_db towards the point (x, y); 0 without computing a bearing for a plain AP."""
+    if "antenna_gain_dbi" not in ap and "pattern" not in ap:
+        return 0.0
+    return antenna_gain_db(ap, math.atan2(y - ap["y"], x - ap["x"]) * 180.0 / math.pi)
+
+
 def _point_segment_distance(px: float, py: float, wall: dict) -> float:
     sx, sy = wall["x2"] - wall["x1"], wall["y2"] - wall["y1"]
     t = max(0.0, min(1.0, ((px - wall["x1"]) * sx + (py - wall["y1"]) * sy) / (sx * sx + sy * sy)))
@@ -167,7 +195,7 @@ def _reflected_dbm(ap: dict, floor: dict, wall: dict, x: float, y: float, band: 
             + wall_material(wall, materials)["reflection_loss_db"][band]
             + wall_loss_db(floor, ax, ay, rx_, ry_, band, materials, skip_id=wall["id"])
             + wall_loss_db(floor, rx_, ry_, x, y, band, materials, skip_id=wall["id"]))
-    return ap["tx_dbm"] - loss
+    return ap["tx_dbm"] + antenna_gain_toward(ap, rx_, ry_) - loss
 
 
 def knife_edge_loss_db(v: float) -> float:
@@ -187,7 +215,7 @@ def _diffracted_dbm(ap: dict, floor: dict, corner: Tuple[float, float], x: float
     loss = (path_loss_db(d1 + d2, band) + knife_edge_loss_db(v)
             + wall_loss_db(floor, ax, ay, corner[0], corner[1], band, materials, skip_point=corner)
             + wall_loss_db(floor, corner[0], corner[1], x, y, band, materials, skip_point=corner))
-    return ap["tx_dbm"] - loss
+    return ap["tx_dbm"] + antenna_gain_toward(ap, corner[0], corner[1]) - loss
 
 
 def _indirect_levels(ap: dict, floor: dict, x: float, y: float, band: str, materials: Dict[str, dict]) -> List[float]:
@@ -215,7 +243,7 @@ def _basic_dbm(ap: dict, floor: dict, x: float, y: float, band: str, materials: 
     path = BANDS[band]["pl0_db"] + 10.0 * BANDS[band]["path_loss_exponent"] * math.log10(d)
     # On the same floor use that floor's walls; across floors use the receiving floor's walls.
     walls = wall_loss_db(floor, ap["x"], ap["y"], x, y, band, materials)
-    return ap["tx_dbm"] - path - walls
+    return ap["tx_dbm"] + antenna_gain_toward(ap, x, y) - path - walls
 
 
 def _enhanced_dbm(ap: dict, floor: dict, x: float, y: float, band: str, materials: Dict[str, dict]) -> float:
@@ -364,6 +392,171 @@ def _ap_radio(ap: dict, band: str) -> Tuple[int, int]:
     return ap.get("channel", b["default_channel"]), ap.get("width_mhz", b["default_width_mhz"])
 
 
+AP_MODEL_FIELDS = ("standard", "spatial_streams", "mlo_bands", "antenna_gain_dbi", "azimuth_deg", "pattern",
+                   "beamwidth_deg", "front_to_back_db")   # optional AP fields, copied to ap_grids output when set
+SINR_LABEL = "MODEL ESTIMATE: SINR throughput from co-channel and adjacent-channel interference, not a measurement"
+
+
+def standard_spec(standard: str, config: dict = CONFIG) -> dict:
+    spec = config["wifi_standards"]["standards"].get(standard)
+    if spec is None:
+        raise ValueError(f"standard must be one of {list(config['wifi_standards']['standards'])}")
+    return spec
+
+
+def standard_widths(standard: str, band: str, config: dict = CONFIG) -> List[int]:
+    """Channel widths (MHz) the standard allows on a band. A band the standard does not use is an error."""
+    widths = standard_spec(standard, config)["widths_mhz_by_band"].get(band)
+    if widths is None:
+        raise ValueError(f"{standard} is not allowed on the {band} GHz band")
+    return widths
+
+
+def default_width_mhz(standard: str, band: str, config: dict = CONFIG) -> int:
+    """The band's default width, or the widest allowed width below it."""
+    return max(w for w in standard_widths(standard, band, config) if w <= config["bands"][band]["default_width_mhz"])
+
+
+def check_standard_radio(standard: str, band: str, width_mhz: Optional[int] = None,
+                         streams: Optional[int] = None) -> None:
+    """Raise ValueError unless the standard is known, allowed on the band, and allows the width and stream count."""
+    widths = standard_widths(standard, band)
+    if width_mhz is not None and width_mhz not in widths:
+        raise ValueError(f"{standard} allows {widths} MHz on the {band} GHz band")
+    if streams is not None and not 1 <= streams <= standard_spec(standard)["max_streams"]:
+        raise ValueError(f"{standard} allows 1 to {standard_spec(standard)['max_streams']} spatial streams")
+
+
+def default_streams(standard: str, config: dict = CONFIG) -> int:
+    return min(config["wifi_standards"]["default_streams"], standard_spec(standard, config)["max_streams"])
+
+
+def noise_floor_dbm(width_mhz: float, config: dict = CONFIG) -> float:
+    """Thermal noise floor: -174 dBm/Hz + 10 log10(bandwidth in Hz) + receiver noise figure."""
+    i = config["interference"]
+    return i["thermal_noise_dbm_per_hz"] + 10.0 * math.log10(width_mhz * 1e6) + i["noise_figure_db"]
+
+
+def standard_phy_rate_mbps(standard: str, mcs: int, width_mhz: int, streams: int, config: dict = CONFIG) -> float:
+    """PHY rate in Mbps: data subcarriers x bits x coding rate x streams / (symbol time + guard interval)."""
+    spec, entry = standard_spec(standard, config), config["wifi_standards"]["mcs"][mcs]
+    subcarriers = spec["data_subcarriers"].get(str(width_mhz))
+    if subcarriers is None:
+        raise ValueError(f"{standard} has no {width_mhz} MHz channel")
+    num, den = entry["coding_rate"]
+    return (subcarriers * entry["bits_per_subcarrier"] * (num / den) * streams
+            / (spec["symbol_us"] + config["wifi_standards"]["default_guard_interval_us"]))
+
+
+def highest_mcs(standard: str, sinr_db: float, config: dict = CONFIG) -> Optional[int]:
+    """Highest MCS (up to the standard's maximum) whose minimum SNR the SINR reaches, else None."""
+    best = None
+    for entry in config["wifi_standards"]["mcs"][:standard_spec(standard, config)["max_mcs"] + 1]:
+        if sinr_db >= entry["min_snr_db"]:
+            best = entry["index"]
+    return best
+
+
+def sinr_phy_rate_mbps(standard: str, sinr_db: float, width_mhz: int, streams: int, config: dict = CONFIG) -> float:
+    """PHY rate the SINR supports through the standard's MCS table, 0 below MCS 0."""
+    mcs = highest_mcs(standard, sinr_db, config)
+    return 0.0 if mcs is None else standard_phy_rate_mbps(standard, mcs, width_mhz, streams, config)
+
+
+def channel_centre_mhz(band: str, channel: int, config: dict = CONFIG) -> int:
+    i = config["interference"]
+    return i["channel_base_mhz"][band] + i["channel_step_mhz"] * channel
+
+
+def interference_coupling(band: str, channel_a: int, width_a: float, channel_b: float, width_b: float,
+                          config: dict = CONFIG) -> float:
+    """Fraction (linear) of interferer B's power that lands in victim A's receive band.
+
+    The channel number is taken as the centre of the occupied bandwidth. B's power is spread evenly over
+    its width, so the in-band part is overlap / width_b. The rest leaks in through the transmit mask,
+    reduced by the rejection table at the gap between the band edges. Beyond `negligible_gap_mhz` it is 0.
+    """
+    i = config["interference"]
+    ca, cb = channel_centre_mhz(band, channel_a, config), channel_centre_mhz(band, channel_b, config)
+    overlap = max(0.0, min(ca + width_a / 2.0, cb + width_b / 2.0) - max(ca - width_a / 2.0, cb - width_b / 2.0))
+    inband = overlap / width_b
+    gap = max(0.0, abs(ca - cb) - (width_a + width_b) / 2.0)
+    if inband == 0.0 and gap > i["negligible_gap_mhz"]:
+        return 0.0
+    rejection = 0.0
+    for row in i["rejection_table"]:
+        if gap >= row["min_gap_mhz"]:
+            rejection = row["rejection_db"]
+    return inband + (1.0 - inband) * 10.0 ** (-rejection / 10.0)
+
+
+def mlo_capacity_mbps(link_rates: List[float], config: dict = CONFIG) -> float:
+    """CAPACITY MODEL for Multi-Link Operation: the sum of the fastest `max_links` link rates."""
+    return sum(sorted(link_rates, reverse=True)[:config["wifi_standards"]["mlo"]["max_links"]])
+
+
+def _mean(values: List[float]) -> Optional[float]:
+    return _round(sum(values) / len(values), 1) if values else None
+
+
+def _sinr_section(aps: List[dict], best_ap: List[int], flats: List[List[float]], cols: int, rows: int,
+                  config: dict, mlo_grids: Optional[dict]) -> dict:
+    """SINR, SINR-based throughput and MLO capacity for the cells each AP serves. ESTIMATES only."""
+    interf, mac = config["interference"], config["analytics"]["mac_efficiency"]
+    radios = []
+    for ap in aps:
+        std = ap.get("standard") or interf["fallback_standard"][ap["band"]]
+        radios.append({"standard": std, "streams": ap.get("spatial_streams", default_streams(std, config)),
+                       "noise": noise_floor_dbm(ap["width_mhz"], config)})
+    coupling = [[(interference_coupling(a["band"], a["channel"], a["width_mhz"], b["channel"], b["width_mhz"], config)
+                  if i != j and a["band"] == b["band"] else 0.0) for j, b in enumerate(aps)] for i, a in enumerate(aps)]
+    total = rows * cols
+    sinr: List[Optional[float]] = [None] * total
+    phy, rate = [0.0] * total, [0.0] * total
+    for n in range(total):
+        i = best_ap[n]
+        if i < 0:
+            continue
+        power_mw = 0.0
+        for j in range(len(aps)):
+            if coupling[i][j] > 0.0:
+                power_mw += coupling[i][j] * interf["activity_factor"] * 10.0 ** (flats[j][n] / 10.0)
+        sinr[n] = flats[i][n] - 10.0 * math.log10(10.0 ** (radios[i]["noise"] / 10.0) + power_mw)
+        phy[n] = sinr_phy_rate_mbps(radios[i]["standard"], sinr[n], aps[i]["width_mhz"], radios[i]["streams"], config)
+        rate[n] = phy[n] * mac
+    per_ap = []
+    for i, ap in enumerate(aps):
+        cells = [n for n in range(total) if best_ap[n] == i]
+        r = radios[i]
+        spec = standard_spec(r["standard"], config)
+        entry = {"id": ap["id"], "standard": r["standard"], "band": ap["band"], "channel": ap["channel"],
+                 "width_mhz": ap["width_mhz"], "streams": r["streams"], "noise_floor_dbm": _round(r["noise"], 1),
+                 "max_phy_mbps": _round(standard_phy_rate_mbps(r["standard"], spec["max_mcs"], ap["width_mhz"],
+                                                               r["streams"], config), 1),
+                 "served_cells": len(cells), "mean_sinr_db": _mean([sinr[n] for n in cells]),
+                 "mean_throughput_mbps": _mean([rate[n] for n in cells]),
+                 "interferers": [aps[j]["id"] for j in range(len(aps)) if coupling[i][j] > 0.0]}
+        extra = (mlo_grids or {}).get(ap["id"])
+        if extra:
+            capacity = []
+            for n in cells:
+                links = [phy[n]]
+                for band_id in ap["mlo_bands"]:
+                    grid = extra[band_id]
+                    width = default_width_mhz(r["standard"], band_id, config)
+                    links.append(sinr_phy_rate_mbps(r["standard"], grid[n // cols][n % cols] - noise_floor_dbm(width, config),
+                                                    width, r["streams"], config))
+                capacity.append(mlo_capacity_mbps(links, config) * mac)
+            entry["mlo"] = {"label": config["wifi_standards"]["mlo"]["label"], "links": [ap["band"]] + list(ap["mlo_bands"]),
+                            "mean_capacity_mbps": _mean(capacity)}
+        per_ap.append(entry)
+    return {"label": SINR_LABEL, "noise_figure_db": interf["noise_figure_db"],
+            "sinr_db": [[None if v is None else _round(v, 1) for v in sinr[k * cols:(k + 1) * cols]] for k in range(rows)],
+            "throughput_mbps": [[_round(v, 1) for v in rate[k * cols:(k + 1) * cols]] for k in range(rows)],
+            "mean_sinr_db": _mean([v for v in sinr if v is not None]),
+            "mean_throughput_mbps": _round(sum(rate) / total, 1) if total else 0.0, "aps": per_ap}
+
+
 def ap_grids(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, aps: Optional[List[Tuple[dict, dict]]] = None,
              band: Optional[str] = None, mode: str = "basic") -> List[dict]:
     """Per-AP RSSI grids (rows north to south, 0.1 dBm) on one floor, in the order of `aps`."""
@@ -383,6 +576,7 @@ def ap_grids(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, aps: Opt
         channel, width = _ap_radio(ap, used)
         out.append({"id": ap["id"], "floor": ap_floor["id"], "x": ap["x"], "y": ap["y"], "tx_dbm": ap["tx_dbm"],
                     "band": used, "channel": channel, "width_mhz": width, "grid": grid})
+        out[-1].update({k: ap[k] for k in AP_MODEL_FIELDS if k in ap})
     return out
 
 
@@ -422,10 +616,12 @@ def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dic
     return regions
 
 
-def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG) -> dict:
+def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_grids: Optional[dict] = None) -> dict:
     """Coverage analytics of one floor. `grid_result` is a coverage_grid result, `aps` the ap_grids list.
 
-    ESTIMATES only. See docs/rf-planner.md for every formula.
+    ESTIMATES only. See docs/rf-planner.md for every formula. When any AP sets `standard` the result gains
+    a "sinr" section (all other fields are unchanged). `mlo_grids` maps an AP id to {band: RSSI grid} of its
+    extra MLO links, built by analyze_floor.
     """
     a = config["analytics"]
     rows, cols, cell_m = grid_result["rows"], grid_result["cols"], grid_result["cell_m"]
@@ -492,7 +688,7 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG) -> dict
         del entry["_own"]
     weak = quality_counts[a["weak_band_id"]]
     dead_cells = sum(dead)
-    return {
+    result = {
         "label": ANALYTICS_LABEL, "cell_m": cell_m, "cols": cols, "rows": rows,
         "coverage_pct": _round(100.0 * sum(1 for v in best if v >= a["coverage_dbm"]) / total, 1) if total else 0.0,
         "quality_pct": {k: _round(100.0 * v / total, 1) for k, v in quality_counts.items()},
@@ -509,13 +705,22 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG) -> dict
         "throughput_mbps": [[_round(r, 1) for r in rates[k * cols:(k + 1) * cols]] for k in range(rows)],
         "mean_throughput_mbps": _round(sum(rates) / total, 1) if total else 0.0,
         "aps": per_ap, "total_client_capacity": sum(e["client_capacity"] for e in per_ap)}
+    if any("standard" in ap for ap in aps):
+        result["sinr"] = _sinr_section(aps, best_ap, flats, cols, rows, config, mlo_grids)
+    return result
 
 
 def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, band: Optional[str] = None,
                   mode: str = "basic") -> dict:
     """coverage_grid, ap_grids and analytics for one floor in one call."""
     grids = ap_grids(twin, floor_id, cell_m, None, band, mode)
-    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids)
+    mlo_grids = {}
+    for f in twin["floors"]:
+        for ap in f["aps"]:
+            if ap.get("mlo_bands"):
+                mlo_grids[ap["id"]] = {b: ap_grids(twin, floor_id, cell_m, [(ap, f)], b, mode)[0]["grid"]
+                                       for b in ap["mlo_bands"]}
+    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids)
 
 
 def _obstructions(floor: dict, px: float, py: float, qx: float, qy: float) -> Tuple[int, int]:

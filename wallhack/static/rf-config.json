@@ -547,6 +547,97 @@
    ]
   }
  },
+ "wifi_standards": {
+  "label": "MODEL ESTIMATE: PHY rates follow the IEEE 802.11 OFDM formula, minimum-SNR values are typical planning figures",
+  "source": "PHY rate = data subcarriers x bits per subcarrier x coding rate x spatial streams / symbol time (IEEE 802.11n-2009 clause 20, 802.11ac-2013 clause 21, 802.11ax-2021 clause 27, 802.11be-2024 clause 36). Data subcarrier counts and symbol times are the per-standard OFDM numerology of those clauses. Minimum-SNR per MCS are rounded typical planning figures (the standards normative receiver minimum sensitivity is a dBm value per MCS, not an SNR), not vendor guarantees. 802.11ac MCS 9 is not defined for every width and stream count, this model ignores that restriction.",
+  "default_streams": 2,
+  "default_guard_interval_us": 0.8,
+  "mcs": [
+   {"index": 0, "modulation": "BPSK", "bits_per_subcarrier": 1, "coding_rate": [1, 2], "min_snr_db": 5.0},
+   {"index": 1, "modulation": "QPSK", "bits_per_subcarrier": 2, "coding_rate": [1, 2], "min_snr_db": 8.0},
+   {"index": 2, "modulation": "QPSK", "bits_per_subcarrier": 2, "coding_rate": [3, 4], "min_snr_db": 11.0},
+   {"index": 3, "modulation": "16-QAM", "bits_per_subcarrier": 4, "coding_rate": [1, 2], "min_snr_db": 14.0},
+   {"index": 4, "modulation": "16-QAM", "bits_per_subcarrier": 4, "coding_rate": [3, 4], "min_snr_db": 18.0},
+   {"index": 5, "modulation": "64-QAM", "bits_per_subcarrier": 6, "coding_rate": [2, 3], "min_snr_db": 22.0},
+   {"index": 6, "modulation": "64-QAM", "bits_per_subcarrier": 6, "coding_rate": [3, 4], "min_snr_db": 24.0},
+   {"index": 7, "modulation": "64-QAM", "bits_per_subcarrier": 6, "coding_rate": [5, 6], "min_snr_db": 26.0},
+   {"index": 8, "modulation": "256-QAM", "bits_per_subcarrier": 8, "coding_rate": [3, 4], "min_snr_db": 30.0},
+   {"index": 9, "modulation": "256-QAM", "bits_per_subcarrier": 8, "coding_rate": [5, 6], "min_snr_db": 32.0},
+   {"index": 10, "modulation": "1024-QAM", "bits_per_subcarrier": 10, "coding_rate": [3, 4], "min_snr_db": 35.0},
+   {"index": 11, "modulation": "1024-QAM", "bits_per_subcarrier": 10, "coding_rate": [5, 6], "min_snr_db": 37.0},
+   {"index": 12, "modulation": "4096-QAM", "bits_per_subcarrier": 12, "coding_rate": [3, 4], "min_snr_db": 40.0},
+   {"index": 13, "modulation": "4096-QAM", "bits_per_subcarrier": 12, "coding_rate": [5, 6], "min_snr_db": 42.0}
+  ],
+  "standards": {
+   "wifi4": {
+    "label": "Wi-Fi 4 (802.11n)", "ieee": "802.11n", "max_streams": 4, "max_mcs": 7,
+    "symbol_us": 3.2, "guard_intervals_us": [0.8, 0.4],
+    "data_subcarriers": {"20": 52, "40": 108},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40]}
+   },
+   "wifi5": {
+    "label": "Wi-Fi 5 (802.11ac)", "ieee": "802.11ac", "max_streams": 8, "max_mcs": 9,
+    "symbol_us": 3.2, "guard_intervals_us": [0.8, 0.4],
+    "data_subcarriers": {"20": 52, "40": 108, "80": 234, "160": 468},
+    "widths_mhz_by_band": {"5": [20, 40, 80, 160]}
+   },
+   "wifi6": {
+    "label": "Wi-Fi 6 (802.11ax)", "ieee": "802.11ax", "max_streams": 8, "max_mcs": 11,
+    "symbol_us": 12.8, "guard_intervals_us": [0.8, 1.6, 3.2],
+    "data_subcarriers": {"20": 234, "40": 468, "80": 980, "160": 1960},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40, 80, 160]}
+   },
+   "wifi6e": {
+    "label": "Wi-Fi 6E (802.11ax in 6 GHz)", "ieee": "802.11ax", "max_streams": 8, "max_mcs": 11,
+    "symbol_us": 12.8, "guard_intervals_us": [0.8, 1.6, 3.2],
+    "data_subcarriers": {"20": 234, "40": 468, "80": 980, "160": 1960},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40, 80, 160], "6": [20, 40, 80, 160]}
+   },
+   "wifi7": {
+    "label": "Wi-Fi 7 (802.11be)", "ieee": "802.11be", "max_streams": 16, "max_mcs": 13,
+    "symbol_us": 12.8, "guard_intervals_us": [0.8, 1.6, 3.2],
+    "data_subcarriers": {"20": 234, "40": 468, "80": 980, "160": 1960, "320": 3920},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40, 80, 160], "6": [20, 40, 80, 160, 320]}
+   }
+  },
+  "mlo": {
+   "label": "CAPACITY MODEL, not a measurement: Multi-Link Operation (IEEE 802.11be-2024) aggregates the rates of the links, real gains depend on the client, the MLO mode and the traffic",
+   "max_links": 3
+  }
+ },
+ "interference": {
+  "label": "MODEL ESTIMATE: SINR from co-channel and adjacent-channel interference, a planning aid",
+  "source": "Thermal noise density -174 dBm/Hz at 290 K (kT, Johnson-Nyquist). Channel centres follow the IEEE 802.11 channel numbering (centre MHz = base + 5 x channel). The adjacent-channel rejection table is rounded from the IEEE 802.11 OFDM transmit spectrum mask for 20 MHz (about -20 dBr at 11 MHz, -28 dBr at 20 MHz and -40 dBr at 30 MHz from the centre), applied to the gap between the edges of the two occupied bandwidths. The noise figure and the activity factor are planning assumptions.",
+  "thermal_noise_dbm_per_hz": -174.0,
+  "noise_figure_db": 6.0,
+  "activity_factor": 1.0,
+  "channel_base_mhz": {"2.4": 2407, "5": 5000, "6": 5950},
+  "channel_step_mhz": 5,
+  "rejection_table": [
+   {"min_gap_mhz": 0, "rejection_db": 20.0},
+   {"min_gap_mhz": 10, "rejection_db": 28.0},
+   {"min_gap_mhz": 20, "rejection_db": 40.0}
+  ],
+  "negligible_gap_mhz": 40,
+  "fallback_standard": {"2.4": "wifi4", "5": "wifi5", "6": "wifi6e"}
+ },
+ "antenna": {
+  "label": "MODEL ESTIMATE: horizontal antenna pattern in the plan plane, no elevation, polarisation or near-field effects",
+  "source": "The sector pattern is the 3GPP TR 36.814 horizontal pattern A(phi) = -min(12 (phi / phi_3dB)^2, A_m), phi_3dB the 3 dB beamwidth and A_m the front-to-back ratio. Azimuth 0 points along +x (east) and increases towards +y (south, clockwise on the plan).",
+  "gain_dbi_range": [-10.0, 20.0],
+  "azimuth_deg_range": [0.0, 360.0],
+  "parabolic_coefficient": 12.0,
+  "patterns": {
+   "omni": {"label": "Omnidirectional"},
+   "sector": {
+    "label": "Sector",
+    "default_beamwidth_deg": 70.0,
+    "default_front_to_back_db": 25.0,
+    "beamwidth_deg_range": [10.0, 360.0],
+    "front_to_back_db_range": [0.0, 60.0]
+   }
+  }
+ },
  "scoring": {
   "label": "Optimisation score, a weighted sum of estimates, higher is better. Weights are planning preferences, not physics.",
   "weights": {
