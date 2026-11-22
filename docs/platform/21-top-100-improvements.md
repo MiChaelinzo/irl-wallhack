@@ -20,8 +20,8 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 2 | Python reference RF model (log-distance, walls, floors, modes) | 5 | 3 | 5 | 4 | 5 | 3 | 86.7 | Done | `wallhack/rfmodel.py`, `tests/test_rfmodel.py` |
 | 3 | Web Worker with coarse-then-tile progressive results | 5 | 4 | 5 | 5 | 5 | 3 | 86.7 | Done | `wallhack/static/rf-worker.js`, `tests/test_rf_worker.py` |
 | 4 | Floor plan extraction from an uploaded image | 5 | 5 | 5 | 5 | 5 | 5 | 86.7 | Not started | none |
-| 5 | Wi-Fi 4 to 7 PHY rate from the 802.11 OFDM formula | 5 | 4 | 5 | 5 | 4 | 4 | 85.0 | Done | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py` |
-| 6 | SINR with co-channel and adjacent-channel interference | 5 | 4 | 5 | 5 | 4 | 4 | 85.0 | Done | `wallhack/rfmodel.py`, `wallhack/static/rf-engine.js` |
+| 5 | Wi-Fi 4 to 7 PHY rate from the 802.11 OFDM formula | 5 | 4 | 5 | 5 | 4 | 4 | 85.0 | Partial | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py`; engine and API only, the planner shows no SINR or MLO result |
+| 6 | SINR with co-channel and adjacent-channel interference | 5 | 4 | 5 | 5 | 4 | 4 | 85.0 | Partial | `wallhack/rfmodel.py`, `wallhack/static/rf-engine.js`; engine and API only, the planner shows no SINR or MLO result |
 | 7 | Smart planner: greedy AP placement with confidence | 5 | 5 | 5 | 5 | 5 | 4 | 85.0 | Done | `wallhack/static/rf-optimizer.js`, `tests/test_rf_planner_js.py` |
 | 8 | Analytics: coverage, quality bands, dead zones, capacity | 5 | 4 | 4 | 5 | 5 | 3 | 83.3 | Done | `tests/test_rf_analytics.py`, `wallhack/static/rf-engine.js` |
 | 9 | Digital twin validation and persistence API | 5 | 3 | 5 | 4 | 4 | 3 | 83.3 | Done | `wallhack/twin.py`, `tests/test_twin_api.py` |
@@ -50,7 +50,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 32 | Single shared rf-config.json for every RF constant | 4 | 2 | 5 | 3 | 3 | 3 | 75.0 | Done | `wallhack/static/rf-config.json` |
 | 33 | Ten-family material database with ranges and sources | 4 | 3 | 4 | 4 | 4 | 3 | 75.0 | Done | `wallhack/static/rf-config.json`, `docs/platform/material-database.md` |
 | 34 | Antenna gain, azimuth and sector pattern | 4 | 3 | 4 | 4 | 4 | 3 | 75.0 | Done | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py` |
-| 35 | Wi-Fi 7 MLO capacity model | 3 | 2 | 4 | 5 | 3 | 4 | 75.0 | Done | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py` |
+| 35 | Wi-Fi 7 MLO capacity model | 3 | 2 | 4 | 5 | 3 | 4 | 75.0 | Partial | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py`; engine and API only, the planner shows no SINR or MLO result |
 | 36 | Channel planning to reduce co-channel conflicts | 4 | 3 | 4 | 4 | 4 | 3 | 75.0 | Done | `wallhack/static/rf-optimizer.js` |
 | 37 | 3D building view with signal map | 4 | 4 | 4 | 5 | 4 | 3 | 75.0 | Done | `wallhack/static/view3d.js`, `tests/test_view3d.py` |
 | 38 | Measured 100,000 point benchmark | 4 | 3 | 5 | 5 | 2 | 3 | 75.0 | Done | `docs/perf-rf.md`, `tools/perf_rf.js` |
