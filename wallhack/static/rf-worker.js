@@ -61,7 +61,8 @@
     function entrySig(e, floor, cellM) {
       var a = e.ap;
       return JSON.stringify([e.floor.id, a.x, a.y, a.tx_dbm, a.band || null, a.channel === undefined ? null : a.channel, mode, band, cellM,
-                             floor.width_m, floor.depth_m, Math.abs(e.floor.level - floor.level), matsSig]);
+                             floor.width_m, floor.depth_m, Math.abs(e.floor.level - floor.level), matsSig,
+                             a.antenna_gain_dbi, a.azimuth_deg, a.pattern, a.beamwidth_deg, a.front_to_back_db]);
     }
 
     function refreshEntries(floor, cellM) {

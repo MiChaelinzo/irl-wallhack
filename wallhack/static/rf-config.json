@@ -601,6 +601,7 @@
    }
   },
   "mlo": {
+   "standards": ["wifi7"],
    "label": "CAPACITY MODEL, not a measurement: Multi-Link Operation (IEEE 802.11be-2024) aggregates the rates of the links, real gains depend on the client, the MLO mode and the traffic",
    "max_links": 3
   }

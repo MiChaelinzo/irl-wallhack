@@ -387,6 +387,13 @@ def estimated_throughput_mbps(rssi: float, band: str, width_mhz: int, config: di
     return phy_rate_mbps(rssi, band, width_mhz, config) * config["analytics"]["mac_efficiency"]
 
 
+def legacy_table_width(band: str, width_mhz: int, config: dict = CONFIG) -> int:
+    """Width to look up in the legacy `mcs_tables` for an AP with a `standard`: its own width if the table has
+    it, else the widest table width below it (the narrowest if none), so the legacy throughput stays defined."""
+    widths = sorted(int(w) for w in config["mcs_tables"][band])
+    return width_mhz if width_mhz in widths else max([w for w in widths if w <= width_mhz] or widths[:1])
+
+
 def _ap_radio(ap: dict, band: str) -> Tuple[int, int]:
     b = BANDS[band]
     return ap.get("channel", b["default_channel"]), ap.get("width_mhz", b["default_width_mhz"])
@@ -616,6 +623,10 @@ def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dic
     return regions
 
 
+def _table_width(ap: dict, config: dict) -> int:
+    return legacy_table_width(ap["band"], ap["width_mhz"], config) if "standard" in ap else ap["width_mhz"]
+
+
 def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_grids: Optional[dict] = None) -> dict:
     """Coverage analytics of one floor. `grid_result` is a coverage_grid result, `aps` the ap_grids list.
 
@@ -662,7 +673,7 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
     rates = []
     for n in range(total):
         i = best_ap[n]
-        rates.append(estimated_throughput_mbps(best[n], aps[i]["band"], aps[i]["width_mhz"], config) if i >= 0 else 0.0)
+        rates.append(estimated_throughput_mbps(best[n], aps[i]["band"], _table_width(aps[i], config), config) if i >= 0 else 0.0)
     served = [[r for n, r in enumerate(rates) if best_ap[n] == i and r > 0.0] for i in range(len(aps))]
     per_ap = []
     for i, ap in enumerate(aps):
@@ -766,5 +777,6 @@ def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] 
                 "distance_m": _round(math.hypot(x - ap["x"], y - ap["y"]), ANALYTICS["probe_distance_decimals"]),
                 "walls_crossed": walls, "openings_crossed": doors,
                 "floors_crossed": abs(levels[ap_floor["id"]] - levels[floor_id]),
-                "throughput_mbps": _round(estimated_throughput_mbps(rssi, used, width), 1)})
+                "throughput_mbps": _round(estimated_throughput_mbps(
+                    rssi, used, legacy_table_width(used, width) if "standard" in ap else width), 1)})
     return out

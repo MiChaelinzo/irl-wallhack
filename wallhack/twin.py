@@ -115,6 +115,54 @@ def _optional_text(item: dict, key: str, path: str, out: dict) -> None:
         out[key] = _text(item, key, path)
 
 
+def _whole(value: Any, path: str, lo: int, hi: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        raise TwinError(f"{path}: must be a whole number from {lo} to {hi}")
+    return value
+
+
+def _ap_model_fields(a: dict, ap: dict, q: str) -> None:
+    """Validate the optional standard, width, streams, MLO and antenna fields of an AP into `ap`."""
+    band = ap.get("band", rfmodel.DEFAULT_BAND)
+    standard = None
+    if "standard" in a:
+        standard = _choice(a, "standard", tuple(rfmodel.WIFI["standards"]), q)
+        try:
+            rfmodel.check_standard_radio(standard, band)
+        except ValueError as exc:
+            raise TwinError(f"{q}.standard: {exc}")
+        ap["standard"] = standard
+    if "width_mhz" in a:
+        widths = rfmodel.standard_widths(standard, band) if standard else rfmodel.BANDS[band]["widths_mhz"]
+        if isinstance(a["width_mhz"], bool) or a["width_mhz"] not in widths:
+            raise TwinError(f"{q}.width_mhz: must be one of {widths} for this band and standard")
+        ap["width_mhz"] = int(a["width_mhz"])
+    if "spatial_streams" in a:
+        if standard is None:
+            raise TwinError(f"{q}.spatial_streams: needs a standard")
+        ap["spatial_streams"] = _whole(a["spatial_streams"], f"{q}.spatial_streams", 1, rfmodel.standard_spec(standard)["max_streams"])
+    if "mlo_bands" in a:
+        mlo, bands = rfmodel.WIFI["mlo"], a["mlo_bands"]
+        if standard not in mlo["standards"]:
+            raise TwinError(f"{q}.mlo_bands: needs one of the standards {mlo['standards']}")
+        if (not isinstance(bands, list) or len(bands) > mlo["max_links"] - 1 or len(set(bands)) != len(bands)
+                or any(b == band or b not in rfmodel.standard_spec(standard)["widths_mhz_by_band"] for b in bands)):
+            raise TwinError(f"{q}.mlo_bands: must be up to {mlo['max_links'] - 1} different other bands the standard allows")
+        ap["mlo_bands"] = list(bands)
+    antenna = rfmodel.ANTENNA
+    if "antenna_gain_dbi" in a:
+        ap["antenna_gain_dbi"] = _num(a["antenna_gain_dbi"], f"{q}.antenna_gain_dbi", *antenna["gain_dbi_range"])
+    if "azimuth_deg" in a:
+        ap["azimuth_deg"] = _num(a["azimuth_deg"], f"{q}.azimuth_deg", *antenna["azimuth_deg_range"])
+    if "pattern" in a:
+        ap["pattern"] = _choice(a, "pattern", tuple(antenna["patterns"]), q)
+    sector = antenna["patterns"]["sector"]
+    if "beamwidth_deg" in a:
+        ap["beamwidth_deg"] = _num(a["beamwidth_deg"], f"{q}.beamwidth_deg", *sector["beamwidth_deg_range"])
+    if "front_to_back_db" in a:
+        ap["front_to_back_db"] = _num(a["front_to_back_db"], f"{q}.front_to_back_db", *sector["front_to_back_db_range"])
+
+
 def _custom_materials(data: Any) -> Dict[str, dict]:
     """Project-defined materials: {id: {label, attenuation_db{band}, reflection_loss_db{band}}}."""
     if not isinstance(data, dict) or len(data) > MAX_CUSTOM_MATERIALS:
@@ -253,6 +301,7 @@ def validate_twin(data: Any) -> dict:
                 if isinstance(a["channel"], bool) or a["channel"] not in channels:
                     raise TwinError(f"{q}.channel: must be one of {channels} for this band")
                 ap["channel"] = a["channel"]
+            _ap_model_fields(a, ap, q)
             floor["aps"].append(ap)
         for key in ("rooms", "walls", "openings", "furniture", "sensors", "aps"):
             _unique([i["id"] for i in floor[key]], f"{p}.{key}")

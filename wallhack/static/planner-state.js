@@ -199,6 +199,7 @@
           if (channels.indexOf(a.channel) < 0) { throw ProjectError(q + ".channel: must be one of " + channels.join(", ") + " for this band"); }
           ap.channel = a.channel;
         }
+        validateApModel(a, ap, q, cfg);
         if (a.mesh_parent !== undefined && a.mesh_parent !== null) { ap.mesh_parent = text(a, "mesh_parent", q, maxText); }
         floor.aps.push(ap);
       });
@@ -257,6 +258,48 @@
       unique(out.scenarios.map(function (sc) { return sc.id; }), "scenarios");
     }
     return out;
+  }
+
+  function whole(v, path, lo, hi) {
+    if (typeof v !== "number" || Math.floor(v) !== v || v < lo || v > hi) { throw ProjectError(path + ": must be a whole number from " + lo + " to " + hi); }
+    return v;
+  }
+
+  /** Optional standard, width, streams, MLO and antenna fields of an AP, same rules as twin._ap_model_fields. */
+  function validateApModel(a, ap, q, cfg) {
+    var band = ap.band || DEFAULT_BAND, standards = cfg.wifi_standards.standards, antenna = cfg.antenna, spec = null;
+    if (a.standard !== undefined) {
+      spec = standards[a.standard];
+      if (!spec) { throw ProjectError(q + ".standard: must be one of " + Object.keys(standards).join(", ")); }
+      if (!spec.widths_mhz_by_band[band]) { throw ProjectError(q + ".standard: " + a.standard + " is not allowed on the " + band + " GHz band"); }
+      ap.standard = a.standard;
+    }
+    if (a.width_mhz !== undefined) {
+      var widths = spec ? spec.widths_mhz_by_band[band] : cfg.bands[band].widths_mhz;
+      if (widths.indexOf(a.width_mhz) < 0) { throw ProjectError(q + ".width_mhz: must be one of " + widths.join(", ") + " for this band and standard"); }
+      ap.width_mhz = a.width_mhz;
+    }
+    if (a.spatial_streams !== undefined) {
+      if (!spec) { throw ProjectError(q + ".spatial_streams: needs a standard"); }
+      ap.spatial_streams = whole(a.spatial_streams, q + ".spatial_streams", 1, spec.max_streams);
+    }
+    if (a.mlo_bands !== undefined) {
+      var mlo = cfg.wifi_standards.mlo, list = a.mlo_bands;
+      if (!spec || mlo.standards.indexOf(a.standard) < 0) { throw ProjectError(q + ".mlo_bands: needs one of the standards " + mlo.standards.join(", ")); }
+      if (!Array.isArray(list) || list.length > mlo.max_links - 1 || list.some(function (b, i) { return b === band || !spec.widths_mhz_by_band[b] || list.indexOf(b) !== i; })) {
+        throw ProjectError(q + ".mlo_bands: must be up to " + (mlo.max_links - 1) + " different other bands the standard allows");
+      }
+      ap.mlo_bands = list.slice();
+    }
+    if (a.antenna_gain_dbi !== undefined) { ap.antenna_gain_dbi = num(a.antenna_gain_dbi, q + ".antenna_gain_dbi", antenna.gain_dbi_range[0], antenna.gain_dbi_range[1]); }
+    if (a.azimuth_deg !== undefined) { ap.azimuth_deg = num(a.azimuth_deg, q + ".azimuth_deg", antenna.azimuth_deg_range[0], antenna.azimuth_deg_range[1]); }
+    if (a.pattern !== undefined) {
+      if (!antenna.patterns[a.pattern]) { throw ProjectError(q + ".pattern: must be one of " + Object.keys(antenna.patterns).join(", ")); }
+      ap.pattern = a.pattern;
+    }
+    var sector = antenna.patterns.sector;
+    if (a.beamwidth_deg !== undefined) { ap.beamwidth_deg = num(a.beamwidth_deg, q + ".beamwidth_deg", sector.beamwidth_deg_range[0], sector.beamwidth_deg_range[1]); }
+    if (a.front_to_back_db !== undefined) { ap.front_to_back_db = num(a.front_to_back_db, q + ".front_to_back_db", sector.front_to_back_db_range[0], sector.front_to_back_db_range[1]); }
   }
 
   /** Project-defined materials, same rules as twin._custom_materials: {id: {label, attenuation_db{band}, reflection_loss_db{band}}}. */
