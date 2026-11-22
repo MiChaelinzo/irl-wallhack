@@ -188,7 +188,8 @@
                    tx_dbm: num(a.tx_dbm === undefined ? 20 : a.tx_dbm, q + ".tx_dbm", TX_DBM_MIN, TX_DBM_MAX) };
         if (a.name !== undefined) { ap.name = nameText(a, "name", q, maxText); }
         if (a.band !== undefined) {
-          if (opts.bands && opts.bands.indexOf(a.band) < 0) { throw ProjectError(q + ".band: must be one of " + opts.bands.join(", ")); }
+          var knownBands = opts.bands || Object.keys(cfg.bands);
+          if (knownBands.indexOf(a.band) < 0) { throw ProjectError(q + ".band: must be one of " + knownBands.join(", ")); }
           ap.band = a.band;
         }
         if (a.channel !== undefined) {
