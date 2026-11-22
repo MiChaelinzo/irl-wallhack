@@ -44,9 +44,13 @@ def test_index_assets_exist_and_served(client):
         assert client.get(ref).status_code == 200, ref
 
 
+JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+
+
 def test_no_external_urls():
     for f in STATIC.iterdir():
-        text = f.read_text()
+        # The JSON Schema dialect identifier is a name, never fetched.
+        text = f.read_text().replace(JSON_SCHEMA_DIALECT, "")
         assert not re.search(r"https?://", text), f"external URL in {f.name}"
         assert "//cdn" not in text
 

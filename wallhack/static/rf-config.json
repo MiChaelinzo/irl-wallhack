@@ -151,7 +151,32 @@
     "2.4": 10.0,
     "5": 9.0,
     "6": 9.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 2.0,
+     "typical": 3.0,
+     "max": 6.0
+    },
+    "5": {
+     "min": 3.0,
+     "typical": 4.0,
+     "max": 8.0
+    },
+    "6": {
+     "min": 3.0,
+     "typical": 4.5,
+     "max": 9.0
+    }
+   },
+   "frequency_exponent": 0.41,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Plain single or double glazing. Low-emissivity or metal-coated glass can exceed 20 dB and is not covered, add it as a custom material."
   },
   "drywall": {
    "label": "Drywall",
@@ -164,7 +189,32 @@
     "2.4": 12.0,
     "5": 11.0,
     "6": 11.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 2.0,
+     "typical": 4.0,
+     "max": 6.0
+    },
+    "5": {
+     "min": 3.0,
+     "typical": 5.0,
+     "max": 8.0
+    },
+    "6": {
+     "min": 3.0,
+     "typical": 5.5,
+     "max": 9.0
+    }
+   },
+   "frequency_exponent": 0.32,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Single or double plasterboard on studs. Insulation or foil backing raises the loss."
   },
   "wood": {
    "label": "Wood",
@@ -177,7 +227,32 @@
     "2.4": 11.0,
     "5": 10.0,
     "6": 10.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 3.0,
+     "typical": 5.0,
+     "max": 8.0
+    },
+    "5": {
+     "min": 4.0,
+     "typical": 6.5,
+     "max": 10.0
+    },
+    "6": {
+     "min": 4.0,
+     "typical": 7.0,
+     "max": 11.0
+    }
+   },
+   "frequency_exponent": 0.34,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Solid timber or timber stud partitions. Thickness and moisture content change the loss."
   },
   "brick": {
    "label": "Brick",
@@ -190,7 +265,32 @@
     "2.4": 8.0,
     "5": 7.0,
     "6": 7.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 5.0,
+     "typical": 9.0,
+     "max": 14.0
+    },
+    "5": {
+     "min": 6.0,
+     "typical": 11.0,
+     "max": 18.0
+    },
+    "6": {
+     "min": 7.0,
+     "typical": 12.0,
+     "max": 20.0
+    }
+   },
+   "frequency_exponent": 0.29,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Single-leaf brick or block wall. Plaster, cavities and thickness move the loss within the range."
   },
   "concrete": {
    "label": "Concrete",
@@ -203,7 +303,32 @@
     "2.4": 6.0,
     "5": 5.0,
     "6": 5.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 8.0,
+     "typical": 13.0,
+     "max": 20.0
+    },
+    "5": {
+     "min": 10.0,
+     "typical": 17.0,
+     "max": 28.0
+    },
+    "6": {
+     "min": 11.0,
+     "typical": 19.0,
+     "max": 32.0
+    }
+   },
+   "frequency_exponent": 0.38,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Plain concrete or dense block wall without dense reinforcement."
   },
   "metal": {
    "label": "Metal",
@@ -216,7 +341,186 @@
     "2.4": 1.0,
     "5": 1.0,
     "6": 1.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 15.0,
+     "typical": 26.0,
+     "max": 40.0
+    },
+    "5": {
+     "min": 18.0,
+     "typical": 30.0,
+     "max": 45.0
+    },
+    "6": {
+     "min": 20.0,
+     "typical": 32.0,
+     "max": 48.0
+    }
+   },
+   "frequency_exponent": 0.21,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Sheet metal, lift shafts, foil-backed panels. Close to total blockage, the measured loss is set by leakage at gaps and edges."
+  },
+  "reinforced_concrete": {
+   "label": "Reinforced concrete",
+   "attenuation_db": {
+    "2.4": 20.0,
+    "5": 26.0,
+    "6": 29.0
+   },
+   "reflection_loss_db": {
+    "2.4": 4.0,
+    "5": 3.0,
+    "6": 3.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 15.0,
+     "typical": 20.0,
+     "max": 32.0
+    },
+    "5": {
+     "min": 19.0,
+     "typical": 26.0,
+     "max": 40.0
+    },
+    "6": {
+     "min": 21.0,
+     "typical": 29.0,
+     "max": 45.0
+    }
+   },
+   "frequency_exponent": 0.37,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Concrete with steel reinforcement. The rebar mesh spacing relative to the wavelength dominates and varies a lot, so the range is wide."
+  },
+  "stone": {
+   "label": "Stone",
+   "attenuation_db": {
+    "2.4": 12.0,
+    "5": 15.0,
+    "6": 17.0
+   },
+   "reflection_loss_db": {
+    "2.4": 7.0,
+    "5": 6.0,
+    "6": 6.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 8.0,
+     "typical": 12.0,
+     "max": 20.0
+    },
+    "5": {
+     "min": 10.0,
+     "typical": 15.0,
+     "max": 25.0
+    },
+    "6": {
+     "min": 11.0,
+     "typical": 17.0,
+     "max": 28.0
+    }
+   },
+   "frequency_exponent": 0.35,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Natural stone masonry. Thickness and porosity vary widely."
+  },
+  "flooring": {
+   "label": "Flooring",
+   "attenuation_db": {
+    "2.4": 6.0,
+    "5": 8.0,
+    "6": 9.0
+   },
+   "reflection_loss_db": {
+    "2.4": 10.0,
+    "5": 9.0,
+    "6": 9.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 3.0,
+     "typical": 6.0,
+     "max": 12.0
+    },
+    "5": {
+     "min": 4.0,
+     "typical": 8.0,
+     "max": 15.0
+    },
+    "6": {
+     "min": 4.0,
+     "typical": 9.0,
+     "max": 17.0
+    }
+   },
+   "frequency_exponent": 0.41,
+   "confidence": "low",
+   "simulation_cost": "reference_slab",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values",
+    "ITU-R P.1238 (indoor propagation, floor penetration loss) for the floor-loss context"
+   ],
+   "notes": "Light timber or composite floor build-up. The 2D engine applies floors as a fixed floor_loss_db per floor crossed, this entry is a reference for that value and for a future 3D model. Selecting it for a wall models a thin partition."
+  },
+  "roofing": {
+   "label": "Roofing",
+   "attenuation_db": {
+    "2.4": 8.0,
+    "5": 10.0,
+    "6": 11.0
+   },
+   "reflection_loss_db": {
+    "2.4": 9.0,
+    "5": 8.0,
+    "6": 8.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 4.0,
+     "typical": 8.0,
+     "max": 16.0
+    },
+    "5": {
+     "min": 5.0,
+     "typical": 10.0,
+     "max": 20.0
+    },
+    "6": {
+     "min": 6.0,
+     "typical": 11.0,
+     "max": 22.0
+    }
+   },
+   "frequency_exponent": 0.32,
+   "confidence": "low",
+   "simulation_cost": "reference_slab",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values",
+    "ITU-R P.1238 (indoor propagation, floor penetration loss) for the floor-loss context"
+   ],
+   "notes": "Tiles or sheet over timber, no metal foil. Foil-backed or metal roofing is much higher. The 2D engine has no roof, this entry is a reference for a future 3D model. Selecting it for a wall models a thin partition."
   }
  },
  "kind_defaults": {

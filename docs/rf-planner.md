@@ -10,7 +10,7 @@ MODEL ESTIMATE, not a measurement. Implemented in `wallhack/rfmodel.py` (referen
 `PL(d) = PL0(band) + 10 * n(band) * log10(max(d, 1 m))`. `PL0` follows free space,
 `PL0(f) = 40 + 20 * log10(f / 2.4 GHz)`, using 2.4, 5.5 and 6.5 GHz for the three bands.
 
-**Materials.** Each wall has an optional `material` (drywall, wood, brick, concrete, glass, metal, or a
+**Materials.** Each wall has an optional `material` (drywall, wood, glass, brick, concrete, reinforced concrete, metal, stone, flooring, roofing, or a
 project-defined one in the twin's `materials`). Without it the kind default applies (interior drywall,
 exterior brick), which equals the original 4 dB and 9 dB at 2.4 GHz. A door or window opening replaces the
 wall loss where the path crosses it.
