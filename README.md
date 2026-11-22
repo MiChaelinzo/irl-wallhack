@@ -145,6 +145,9 @@ Off by default (`llm_provider` empty). Set it with `--config`/`config.json` or `
 | RF intelligence scores | Complete | Model constants are textbook values, UNVERIFIED against real buildings. |
 | Judge mode | Complete | Statuses are checked against this README by a test. |
 
+## Platform documentation
+The audit and design set is in [docs/platform/README.md](docs/platform/README.md): repository audit with evidence-based scores, technical debt, architecture, security review, Wi-Fi physics and inaccuracy report, material database, rendering measurements, the frontend stack decision ([ADR](docs/platform/adr-frontend-stack.md), no rewrite done), roadmap, a ranked top 100 list with Done / Partial / Not started status, a top 10 demo script and a hackathon pitch with caveats.
+
 ## Privacy and consent
 Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything unless you enable an OpenAI or Azure LLM provider, which sends finding text (not raw signals) to that cloud service after a per-request confirmation. `--lan` exposes the dashboard to your network behind a pairing token; use it only on a network you trust. Sensing people without their knowledge may be illegal where you live.
 
@@ -217,6 +220,9 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | nexmon build and firmware install, monitor-mode config, tcpdump capture, real CSI decoding with real frames, real breathing accuracy, systemd unit | UNVERIFIED (no Pi 4 in the sandbox) |
 | ESP32 CSI over UDP: packets, token (collector and `Runtime` wiring) and timestamps over a local socket | VERIFIED |
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
+| 100,000 point RF benchmark (100,489 points, 1000 walls, 4 APs: worker final about 1.9 s node and 2.1 s headless Chromium, first frame about 145 ms; quadtree measured slower than the grid and not adopted) | VERIFIED on the benchmark machine (`docs/perf-rf.md`); UNVERIFIED on a Raspberry Pi 4 and on a real GPU |
+| Platform documentation set (`docs/platform/`: audit, architecture, security review, physics, roadmap, top 100, pitch) and `tests/test_platform_docs.py` | VERIFIED for existence, ranking and cited files (automated test); scores and competitor statements are judgements, competitor statements are general knowledge and not freshly researched |
+| Educational mode, AR and computer vision, floor-plan extraction, planner LLM explain endpoint, campus and smart-city planning | NOT BUILT (design only in `docs/platform/`) |
 
 ## Tests
 The QR tests decode codes with OpenCV and are skipped without it (`pip install opencv-python-headless`; CI installs it).
