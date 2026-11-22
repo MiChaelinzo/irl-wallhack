@@ -111,7 +111,7 @@ def test_oversized_json_bodies_are_refused():
     big = b'{"x":"' + b"a" * 1_100_000 + b'"}'
     with TestClient(app, base_url="http://localhost") as c:
         h = {"Content-Type": "application/json"}
-        assert c.put("/api/twin", content=big, headers=h).status_code == 413
+        assert c.put("/api/twin", content=big, headers=h).status_code == 422   # under the twin's own, larger limit
         assert c.post("/api/insights/explain", content=big, headers=h).status_code == 413
         assert c.post("/api/settings", content=big, headers=h).status_code == 413
         assert c.put("/api/twin", content=b"{bad", headers=h).status_code == 422

@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### RF planner engine
+- fix: an AP with an unknown band and no channel was accepted when no band list was passed; `validateProject` now checks the band against `rf-config.json` bands.
+- fix: projects with an empty or whitespace-only name failed to load in `twin.validate_twin` (and a whitespace name was kept by the planner); both now use `Untitled`.
+- fix: `PUT /api/twin` had the 1 MB cap, so a twin with floor-plan images (up to 600000 characters each) returned 413. It now has its own limit, `app.MAX_TWIN_BODY_BYTES`, derived from the `limits` in `rf-config.json` (`max_floors` x (`max_background_chars` + items x `twin_json_bytes_per_item`) + `twin_body_overhead_bytes`, about 23 MB). Every other route keeps the 1 MB cap (`MAX_BODY_BYTES`).
 - fix: the editor, note box and scenario names allowed 80 characters while the validator allowed 64, so a 65 to 80 character label made the saved project fail to reload. All of them now read `limits.max_text_chars` from `rf-config.json` (input `maxlength`, `PlannerState.clipText`, a visible "shortened" message). On import, wall, AP and device names, labels, note text and scenario names longer than the limit are truncated instead of rejected, so projects saved by earlier builds load; ids and other fields stay strict.
 - fix: an AP with an unknown band and no band list in the options raised a TypeError; it is now a `ProjectError`. The module-level mutable text limit is gone: the limit is passed explicitly, and `makeScenario`, `renameScenario`, `duplicateScenario` and `validateCapacity` take it as an argument.
 - fix: knife-edge diffraction used `v = sqrt(2 delta / lambda)`; the Fresnel-Kirchhoff parameter is `sqrt(4 delta / lambda)` (`engine.knife_edge.v_scale` is now 4.0). Enhanced and multipath modes lose about 3 dB more behind wall corners; basic mode and legacy numbers are unchanged. New test with a hand-computed J(v) case.

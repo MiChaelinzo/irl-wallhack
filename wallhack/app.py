@@ -22,6 +22,18 @@ from .twin import TwinError
 
 MAX_BODY_BYTES = 1_000_000
 
+
+def _twin_body_limit() -> int:
+    """Largest PUT /api/twin body: every floor at its limits (background image, walls, openings and the other lists
+    at twin_json_bytes_per_item each) plus a fixed overhead. All inputs are rf-config.json limits."""
+    lim = rfmodel.LIMITS
+    items = lim["max_walls_per_floor"] + lim["max_openings_per_floor"] + 5 * lim["max_items_per_list"]
+    per_floor = lim["max_background_chars"] + items * lim["twin_json_bytes_per_item"]
+    return lim["max_floors"] * per_floor + lim["twin_body_overhead_bytes"]
+
+
+MAX_TWIN_BODY_BYTES = _twin_body_limit()
+
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("wallhack")
 
@@ -120,15 +132,15 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc))
         return runtime.settings()
 
-    async def read_json(request: Request):
-        """Parse a JSON body, refusing more than MAX_BODY_BYTES before it is fully buffered."""
+    async def read_json(request: Request, max_bytes: int = MAX_BODY_BYTES):
+        """Parse a JSON body, refusing more than max_bytes before it is fully buffered."""
         declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        if declared.isdigit() and int(declared) > max_bytes:
             raise HTTPException(status_code=413, detail="request body too large")
         chunks, size = [], 0
         async for chunk in request.stream():
             size += len(chunk)
-            if size > MAX_BODY_BYTES:
+            if size > max_bytes:
                 raise HTTPException(status_code=413, detail="request body too large")
             chunks.append(chunk)
         try:
@@ -149,7 +161,7 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     async def put_twin(request: Request):
         require_same_origin(request)
         require_json(request)
-        body = await read_json(request)
+        body = await read_json(request, MAX_TWIN_BODY_BYTES)
         try:
             return await run_in_threadpool(runtime.set_twin, body)
         except TwinError as exc:

@@ -34,7 +34,7 @@ MAX_CUSTOM_MATERIALS = rfmodel.LIMITS["max_custom_materials"]
 MATERIAL_DB_RANGE = tuple(rfmodel.LIMITS["material_db_range"])
 THICKNESS_M_RANGE = (0.01, 2.0)
 SCALE_M_PER_PX_RANGE = (0.0001, 100.0)
-MAX_BACKGROUND_CHARS = rfmodel.LIMITS["max_background_chars"]     # a data URL; keeps the whole twin under the 1 MB request limit
+MAX_BACKGROUND_CHARS = rfmodel.LIMITS["max_background_chars"]     # a data URL; PUT /api/twin has its own body limit derived from the limits (app.MAX_TWIN_BODY_BYTES)
 BACKGROUND_PATTERN = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
 
 

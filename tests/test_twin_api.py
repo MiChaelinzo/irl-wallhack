@@ -1,3 +1,4 @@
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -79,3 +80,28 @@ def test_put_twin_accepts_5000_walls_under_the_body_cap(client):
     assert size < MAX_BODY_BYTES * 0.9, size     # leaves room for rooms, APs and a small background
     assert client.put("/api/twin", json=t).status_code == 200
     assert len(client.get("/api/twin").json()["floors"][0]["walls"]) == 5000
+
+
+def _twin_with_backgrounds(chars_per_floor):
+    t = sample_twin()
+    for f in t["floors"]:
+        f["background"] = "data:image/png;base64," + "A" * chars_per_floor
+    return t
+
+
+def test_twin_with_max_size_backgrounds_exceeds_1mb_but_is_accepted(client):
+    from wallhack import rfmodel
+    t = _twin_with_backgrounds(rfmodel.LIMITS["max_background_chars"] - 100)
+    body = json.dumps(t)
+    assert len(body) > 1_000_000
+    r = client.put("/api/twin", content=body, headers={"content-type": "application/json"})
+    assert r.status_code == 200
+
+
+def test_twin_body_above_the_derived_limit_is_413_and_other_routes_keep_1mb(client):
+    from wallhack.app import MAX_BODY_BYTES, MAX_TWIN_BODY_BYTES
+    assert MAX_BODY_BYTES == 1_000_000 and MAX_TWIN_BODY_BYTES > MAX_BODY_BYTES
+    big = json.dumps({"name": "x", "pad": "A" * MAX_TWIN_BODY_BYTES})
+    assert client.put("/api/twin", content=big, headers={"content-type": "application/json"}).status_code == 413
+    mid = json.dumps({"pad": "A" * (MAX_BODY_BYTES + 10)})
+    assert client.post("/api/settings", content=mid, headers={"content-type": "application/json"}).status_code == 413
