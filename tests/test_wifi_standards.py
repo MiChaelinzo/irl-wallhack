@@ -191,6 +191,35 @@ def test_twin_rejects_invalid_standard_fields(fields, message):
         twin.validate_twin(one_ap_twin(**fields))
 
 
+@pytest.mark.parametrize("bands", [[[1]], [{"a": 1}], [6], [None], ["6", ["6"]]])
+def test_twin_rejects_non_string_mlo_bands_with_a_twin_error(bands):
+    with pytest.raises(twin.TwinError, match="mlo_bands"):
+        twin.validate_twin(one_ap_twin(band="5", standard="wifi7", mlo_bands=bands))
+
+
+def standard_band_cases():
+    return [(s, b) for s, spec in rfmodel.WIFI["standards"].items() for b in spec["widths_mhz_by_band"]]
+
+
+@pytest.mark.parametrize("standard, band", standard_band_cases())
+def test_every_standard_and_band_analyzes_without_an_explicit_width(standard, band):
+    project = open_project(10, 8, [])
+    project["floors"][0]["aps"] = [ap("ap0", 3.0, 3.0, band=band, standard=standard)]
+    out = rfmodel.analyze_floor(project, "g", 2.0, None, "basic")
+    width = out["ap_grids"][0]["width_mhz"] if "ap_grids" in out else None
+    assert out["sinr"] and (width is None or width in rfmodel.standard_widths(standard, band))
+
+
+@needs_node
+@pytest.mark.parametrize("standard, band", standard_band_cases())
+def test_js_default_width_per_standard_and_band_matches_python(standard, band):
+    project = open_project(10, 8, [])
+    project["floors"][0]["aps"] = [ap("ap0", 3.0, 3.0, band=band, standard=standard)]
+    py = rfmodel.analyze_floor(project, "g", 2.0, None, "basic")
+    js = run_js("out(E.analyzeFloor(P.project, 'g', {env, cellM: 2.0, mode: 'basic'}))", {"project": project})
+    assert_close(py, js, f"{standard}/{band}")
+
+
 def test_wifi7_320_mhz_only_in_6_ghz_and_wifi4_never_in_6_ghz():
     assert 320 in rfmodel.standard_widths("wifi7", "6")
     assert all(320 not in rfmodel.standard_widths("wifi7", b) for b in ("2.4", "5"))
@@ -245,6 +274,9 @@ def test_js_coverage_with_sector_and_gain_matches_python():
     ({"standard": "wifi7", "band": "6", "width_mhz": 320}, True),
     ({"standard": "wifi7", "band": "5", "width_mhz": 320}, False),
     ({"standard": "wifi4", "band": "6"}, False),
+    ({"standard": "wifi7", "band": "5", "mlo_bands": [[1]]}, False),
+    ({"standard": "wifi7", "band": "5", "mlo_bands": [{"a": 1}]}, False),
+    ({"standard": "wifi7", "band": "5", "mlo_bands": [6, None]}, False),
     ({"standard": "nope"}, False),
     ({"standard": "wifi6", "mlo_bands": ["5"]}, False),
     ({"standard": "wifi7", "band": "5", "mlo_bands": ["6", "2.4"], "spatial_streams": 4}, True),

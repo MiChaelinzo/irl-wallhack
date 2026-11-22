@@ -396,7 +396,13 @@ def legacy_table_width(band: str, width_mhz: int, config: dict = CONFIG) -> int:
 
 def _ap_radio(ap: dict, band: str) -> Tuple[int, int]:
     b = BANDS[band]
-    return ap.get("channel", b["default_channel"]), ap.get("width_mhz", b["default_width_mhz"])
+    if "width_mhz" in ap:
+        width = ap["width_mhz"]
+    elif "standard" in ap:
+        width = default_width_mhz(ap["standard"], band)   # Wi-Fi 4 has no 80 MHz channel on 5 GHz
+    else:
+        width = b["default_width_mhz"]
+    return ap.get("channel", b["default_channel"]), width
 
 
 AP_MODEL_FIELDS = ("standard", "spatial_streams", "mlo_bands", "antenna_gain_dbi", "azimuth_deg", "pattern",

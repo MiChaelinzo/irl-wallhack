@@ -145,7 +145,8 @@ def _ap_model_fields(a: dict, ap: dict, q: str) -> None:
         mlo, bands = rfmodel.WIFI["mlo"], a["mlo_bands"]
         if standard not in mlo["standards"]:
             raise TwinError(f"{q}.mlo_bands: needs one of the standards {mlo['standards']}")
-        if (not isinstance(bands, list) or len(bands) > mlo["max_links"] - 1 or len(set(bands)) != len(bands)
+        if (not isinstance(bands, list) or any(not isinstance(b, str) for b in bands)
+                or len(bands) > mlo["max_links"] - 1 or len(set(bands)) != len(bands)
                 or any(b == band or b not in rfmodel.standard_spec(standard)["widths_mhz_by_band"] for b in bands)):
             raise TwinError(f"{q}.mlo_bands: must be up to {mlo['max_links'] - 1} different other bands the standard allows")
         ap["mlo_bands"] = list(bands)

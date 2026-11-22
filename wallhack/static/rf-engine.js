@@ -424,9 +424,11 @@
   function tableWidth(config, ap) { return ap.standard !== undefined ? legacyTableWidth(config, ap.band, ap.width_mhz) : ap.width_mhz; }
 
   function apRadio(config, ap, band) {
-    var b = config.bands[band];
-    return { channel: ap.channel !== undefined ? ap.channel : b.default_channel,
-             width: ap.width_mhz !== undefined ? ap.width_mhz : b.default_width_mhz };
+    var b = config.bands[band], width;
+    if (ap.width_mhz !== undefined) { width = ap.width_mhz; }
+    else if (ap.standard !== undefined) { width = defaultWidthMhz(config, ap.standard, band); }   // Wi-Fi 4 has no 80 MHz channel on 5 GHz
+    else { width = b.default_width_mhz; }
+    return { channel: ap.channel !== undefined ? ap.channel : b.default_channel, width: width };
   }
 
   // ---------------------------------------------------------------- WiFi standards, SINR, MLO (ESTIMATES)
