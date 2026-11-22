@@ -22,6 +22,7 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parent.parent
 PORT = 8765
 REPEAT = 5
+SCALE_POINTS = 100000
 RENDER_FRAMES = 60
 DRAG_STEPS = 90
 APS_FOR_PAGE = 4
@@ -35,6 +36,17 @@ WORKER_RUN = """async (repeat) => {
   const rows = await RFPerf.measure({ RF: window.RFEngine, State: window.PlannerState, config, now: () => performance.now() }, backend, { repeat });
   w.terminate();
   return rows;
+}"""
+
+WORKER_SCALE_RUN = """async (o) => {
+  const config = await (await fetch('/static/rf-config.json')).json();
+  const w = new Worker('/static/rf-worker.js'), backend = { onmessage: null, send: (m) => w.postMessage(m) };
+  w.onmessage = (e) => backend.onmessage && backend.onmessage(e.data);
+  const deps = { RF: window.RFEngine, State: window.PlannerState, config, now: () => performance.now() };
+  const rows = await RFPerf.scaleCompute(deps, backend, o);
+  w.terminate();
+  const idx = RFPerf.indexComparison(deps, o);
+  return { rows: rows.concat(idx), parity_db: idx.parity_db };
 }"""
 
 DRAG = """async (steps) => {
@@ -116,6 +128,10 @@ def main() -> int:
         node_json = Path(tmp) / "node.json"
         node_out = subprocess.run(["node", str(ROOT / "tools" / "perf_rf.js"), "--json", str(node_json), "--repeat", str(REPEAT)], capture_output=True, text=True, check=True).stdout
         node_data = json.loads(node_json.read_text())
+        scale_json = Path(tmp) / "scale.json"
+        subprocess.run(["node", str(ROOT / "tools" / "perf_rf.js"), "--points", str(SCALE_POINTS), "--json", str(scale_json), "--repeat", str(REPEAT)], capture_output=True, text=True, check=True)
+        node_scale_data = json.loads(scale_json.read_text())
+        node_scale = node_scale_data["rows"]
     server = subprocess.Popen([sys.executable, "-m", "wallhack", "--source", "simulator", "--seed", "7", "--scenario", "two_zones", "--port", str(PORT), "--no-browser"], cwd=ROOT,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -134,6 +150,7 @@ def main() -> int:
             page.wait_for_function("window.PlannerApp && window.PlannerApp.ready", timeout=20000)
             page.add_script_tag(content=LIB)
             rows = page.evaluate(WORKER_RUN, REPEAT)
+            scale = page.evaluate(WORKER_SCALE_RUN, {"repeat": REPEAT, "points": SCALE_POINTS, "apCount": 4})
             page.close()
             worker_page = page_run(browser, base, "", "worker")
             canvas_page = page_run(browser, base, "?renderer=canvas2d", "canvas2d")
@@ -145,6 +162,10 @@ def main() -> int:
                               capture_output=True, text=True, check=True).stdout
     node_table = subprocess.run(["node", "-e", "const P = require(process.argv[1]); console.log(P.table(JSON.parse(process.argv[2])))", str(ROOT / "tools" / "perf_rf_lib.js"), json.dumps(node_data["rows"])],
                                 capture_output=True, text=True, check=True).stdout
+    def render(rs):
+        return subprocess.run(["node", "-e", "const P = require(process.argv[1]); console.log(P.table(JSON.parse(process.argv[2])))", str(ROOT / "tools" / "perf_rf_lib.js"), json.dumps(rs)],
+                              capture_output=True, text=True, check=True).stdout
+    scale_table, node_scale_table = render(scale["rows"]), render(node_scale)
     machine = "%s, %d logical cores, %s, Python %s, node %s, Chromium %s (headless, Playwright)" % (cpu_name(), os.cpu_count(), platform.platform(), platform.python_version(), node_data["machine"]["node"], version)
     pages = [worker_page, canvas_page, main_page]
     lines = ["# RF planner performance (measured)", "",
@@ -185,6 +206,23 @@ def main() -> int:
               "- The uniform wall index helps less than expected with this floor: brute force was %sx slower than the index at 0.5 m. `rayWallHit` rejects most walls with a cheap bounding box test, so brute force is cheap per cell. The index matters more as walls per ray grow." % brute["speedup"],
               "- Idle frame intervals of the same page differ between runs (compositing in software), so frame interval comparisons between rows are rough. The long task count is the more reliable smoothness signal: no task over 50 ms blocked the main thread while dragging with the Web Worker.",
               "- The main-thread fallback (no Worker) keeps working but its drag frame interval is longer, as expected from computing in 8 ms slices on the UI thread.", ""]
+    def srow(rs, text):
+        return next(r for r in rs if text in r["name"])
+    gq, gg, ge = srow(node_scale, "bench quadtree"), srow(node_scale, "bench uniform grid"), srow(node_scale, "engine uniform grid")
+    gb, gf = srow(node_scale, "engine brute force"), srow(node_scale, "final result")
+    lines += ["## 100,000 point scenario", "",
+              "Floor 100 m x 100 m (seed 7, 1000 walls, 4 access points, basic mode, 2.4 GHz), cell size chosen for at least %d grid points (%d points). Run with `node tools/perf_rf.js --points %d`. Each case is run %d times; the first run is the cold figure in the notes, the table shows the median, min and max of the %d warm runs after it. Cold means first run in a fresh process, not a cold cache of the app." % (SCALE_POINTS, ge["points"], SCALE_POINTS, REPEAT + 1, REPEAT), "",
+              "### Web Worker in headless Chromium (worker rows) and main thread of the page (index strategy rows)", "", scale_table, "",
+              "### Node (worker core and index strategies)", "", node_scale_table, "",
+              "Largest difference between the bench grids and the engine grid: %s dB in node, %s dB in the browser." % (node_scale_data["parity_db"], scale["parity_db"]), "",
+              "- `engine uniform grid` and `engine brute force` are the real `rf-engine.js` with and without its index. The three `bench` rows use one shared, bench-local kernel (`localGrid` in `tools/perf_rf_lib.js`) that only changes how wall candidates are picked, so they compare index structures with nothing else varying. Index construction is inside the timed region for every indexed row.",
+              "- Same kernel, quadtree against uniform grid: the uniform grid took %s ms and the quadtree %s ms (median), so the quadtree is %sx slower. Brute force on the same kernel took %s ms." % (gg["median_ms"], gq["median_ms"], round(gq["median_ms"] / gg["median_ms"], 1), srow(node_scale, "bench brute force")["median_ms"]),
+              "- **Decision: keep the uniform grid, do not adopt the quadtree.** The quadtree does not beat the grid on this scenario (axis-aligned walls of 2 to 8 m spread evenly over the floor, which is the case a grid is built for). `rf-engine.js` is unchanged.",
+              "- The quadtree (%s ms) is faster than the engine's own grid path (%s ms), but that gap is not an index effect: the same grid idea on the bench kernel takes %s ms. The engine's per-ray work outside the index (candidate sort for summation order parity with Python, per call closures, per call object lookups) is where the time goes. That is a hypothesis from these numbers, not profiled, and it is the place to look first if more speed is needed." % (gq["median_ms"], ge["median_ms"], gg["median_ms"]),
+              "- A quadtree could win on clustered floors (dense buildings in a large empty area). That case was not measured, so no claim is made.",
+              "- Octrees are 3D. The engine is 2D with a per-floor loss (`floor_loss_db`), so an octree does not apply until true 3D propagation exists.",
+              "- GPU: nothing here uses the GPU. A WebGL or WebGPU compute path for propagation is a design idea only and is not built. The WebGL path in the planner draws an already computed RSSI grid.",
+              "- Incremental rendering already exists: `rf-worker.js` posts a coarse pass first, then refines tile by tile (`progress` messages, at most one every 60 ms), and `planner.js` hands each message's grid to the heat renderer in `planner-heat.js`, which redraws it (chip text: \"coarse pass, refining\", then \"refining N%\"). For 100,000 points the first usable frame came after the coarse pass (see the worker rows) while the final result follows later.", ""]
     doc = "\n".join(lines)
     print(doc)
     if not args.no_write:

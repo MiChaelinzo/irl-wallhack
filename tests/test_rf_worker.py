@@ -161,3 +161,21 @@ def test_analysis_jobs_in_worker_core():
     assert {"issues", "placements", "count", "power", "channels"} <= set(r["keys"])
     assert r["cancelled"] == 1 and r["planned"] == 0
     assert [x[0] for x in r["rank"]] == ["y", "x"] and r["rank"][0][1] > r["rank"][1][1]
+
+
+def test_perf_lib_small_scenario_is_deterministic():
+    """tools/perf_rf_lib.js: the seeded floor repeats exactly and every wall index strategy yields the engine's grid."""
+    body = """
+    const Perf = require(process.argv[1] + '/../../tools/perf_rf_lib.js');
+    const a = Perf.stressProject(7, 4, 200, 100), b = Perf.stressProject(7, 4, 200, 100);
+    let tick = 0;
+    const deps = { RF: E, config, now: () => tick++ };
+    const rows = Perf.indexComparison(deps, { repeat: 1, points: 2000, apCount: 2, walls: 200 });
+    out({ same: JSON.stringify(a) === JSON.stringify(b), walls: a.floors[0].walls.length, depth: a.floors[0].depth_m,
+          names: rows.map(r => r.name.split(', ').pop()), points: rows[0].points, parity: rows.parity_db });
+    """
+    res = run_js(body, {})
+    assert res["same"] and res["walls"] == 200 and res["depth"] == 100
+    assert res["names"] == ["engine uniform grid", "engine brute force", "bench brute force", "bench uniform grid", "bench quadtree"]
+    assert res["points"] >= 2000
+    assert res["parity"] < 1e-3
