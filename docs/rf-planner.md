@@ -31,7 +31,7 @@ reflection values are rounded typical figures within the ranges reported by ITU-
 indoor measurements. They are typical estimates. Real walls vary with thickness, moisture and
 reinforcement, so calibrate with a site survey.
 
-**Not modelled.** Fast or slow fading, antenna patterns, polarisation, furniture and people, second-order
+**Not modelled.** Fast or slow fading, polarisation, furniture and people, second-order
 reflections, 3D geometry (the plan is 2D; floors add a fixed loss), coherent phase effects.
 
 ## Analytics
