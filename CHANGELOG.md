@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### RF planner engine
+- feat: WiFi 4, 5, 6, 6E and 7 (`rf-config.json` `wifi_standards`), per-width and stream PHY rates from the IEEE 802.11 OFDM formula, noise floor from the width, SINR with co-channel and adjacent-channel interference (`interference`), SINR throughput as the new optional `sinr` analytics section, and an MLO capacity model for Wi-Fi 7. New optional AP fields `standard`, `width_mhz`, `spatial_streams`, `mlo_bands`, `antenna_gain_dbi`, `azimuth_deg`, `pattern`, `beamwidth_deg`, `front_to_back_db`, validated in `twin.py` and `planner-state.js`; AP panel gets standard, width, antenna and azimuth controls. Legacy projects give identical results. Refraction is documented as not modelled. Formulas and sources in `docs/rf-planner.md`.
 - fix: the sticky header covered the top of the planner panels (compare, analytics) when they were scrolled into view. `--header-h` in `style.css` now drives `scroll-padding-top` and `scroll-margin-top`; the four planner compare and analytics screenshots are regenerated.
 - fix: an AP with an unknown band and no channel was accepted when no band list was passed; `validateProject` now checks the band against `rf-config.json` bands.
 - fix: projects with an empty or whitespace-only name failed to load in `twin.validate_twin` (and a whitespace name was kept by the planner); both now use `Untitled`.

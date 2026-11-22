@@ -187,6 +187,9 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
 | RF planner basic-mode engine maths and Python/JavaScript parity | VERIFIED (golden fixture of the legacy numbers, hand-computed cases and parity tests within 0.1 dB) |
 | RF planner enhanced and multipath modes (single reflection, knife-edge diffraction `v = sqrt(4 delta / lambda)`) | PARTIALLY VERIFIED (knife-edge value checked against a hand-computed Fresnel case; reflection and diffraction totals not compared with an independent reference) |
+| WiFi 4-7 PHY-rate formula, noise floor, SINR with co-channel and adjacent-channel coupling, antenna pattern, MLO capacity, AP field validation, Python/JavaScript parity (`tests/test_wifi_standards.py`) | VERIFIED (hand-computed values and parity tests; legacy output unchanged) |
+| WiFi standards SINR throughput, adjacent-channel rejection table, per-MCS minimum SNR, antenna and MLO numbers against real radios | UNVERIFIED (rounded planning figures, never compared with measurements) |
+| AP panel controls for standard, width, antenna pattern and azimuth | PARTIALLY VERIFIED (JavaScript syntax check only; not clicked in a browser) |
 | RF planner propagation accuracy against real buildings, throughput and capacity numbers | UNVERIFIED (planning estimates only) |
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |

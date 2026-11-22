@@ -162,7 +162,8 @@
       if (app.backend) { app.backend.send({ type: "update", ops: ev.ops }); }
       var kinds = ev.ops.map(function (o) { return o.t; });
       var moveOnly = kinds.every(function (k) { return k === "wall.set" || k === "ap.set" || k === "label.set"; }) &&
-        ev.ops.every(function (o) { return !("tx_dbm" in o.after || "band" in o.after || "channel" in o.after || "name" in o.after); });
+        ev.ops.every(function (o) { return !("tx_dbm" in o.after || "band" in o.after || "channel" in o.after || "name" in o.after ||
+          "standard" in o.after || "width_mhz" in o.after || "pattern" in o.after); });
       if (!moveOnly) { fillApList(); }
       if (kinds.some(function (k) { return k === "floor.set"; })) { syncFloorPanel(); }
       if (!kinds.every(function (k) { return k.indexOf("label.") === 0 || k.indexOf("annotation.") === 0 || k.indexOf("device.") === 0; }) && !kinds.every(function (k) { return k === "floor.set" && !("width_m" in ev.ops[0].after || "depth_m" in ev.ops[0].after); })) { requestCompute(); }
@@ -237,10 +238,40 @@
       }
       fillChannels();
       bandSelect.addEventListener("change", function () {
-        apSet({ band: bandSelect.value || undefined, channel: undefined }, "Change band");
+        apSet({ band: bandSelect.value || undefined, channel: undefined, standard: undefined, width_mhz: undefined,
+                spatial_streams: undefined, mlo_bands: undefined }, "Change band");
       });
       chan.addEventListener("change", function () { apSet({ channel: chan.value ? parseInt(chan.value, 10) : undefined }, "Change channel"); });
-      [["TX dBm", tx], ["Band", bandSelect], ["Channel", chan]].forEach(function (p) {
+      var effectiveBand = ap.band || app.settings.band || "2.4", standards = app.config.wifi_standards.standards;
+      var std = document.createElement("select");
+      std.title = "MODEL ESTIMATE: the WiFi standard sets the PHY rate table and the SINR throughput";
+      std.appendChild(option("", "none (legacy)"));
+      Object.keys(standards).filter(function (id) { return standards[id].widths_mhz_by_band[effectiveBand]; })
+        .forEach(function (id) { std.appendChild(option(id, standards[id].label)); });
+      std.value = ap.standard || "";
+      std.addEventListener("change", function () {
+        apSet({ standard: std.value || undefined, width_mhz: undefined, spatial_streams: undefined, mlo_bands: undefined }, "Change WiFi standard");
+      });
+      var width = document.createElement("select");
+      width.appendChild(option("", "default"));
+      (ap.standard ? standards[ap.standard].widths_mhz_by_band[effectiveBand] : app.config.bands[effectiveBand].widths_mhz)
+        .forEach(function (w) { width.appendChild(option(String(w), w + " MHz")); });
+      width.value = ap.width_mhz === undefined ? "" : String(ap.width_mhz);
+      width.addEventListener("change", function () { apSet({ width_mhz: width.value ? parseInt(width.value, 10) : undefined }, "Change channel width"); });
+      var pattern = document.createElement("select");
+      pattern.title = "MODEL ESTIMATE: horizontal antenna pattern, omni by default";
+      Object.keys(app.config.antenna.patterns).forEach(function (id) { pattern.appendChild(option(id, app.config.antenna.patterns[id].label)); });
+      pattern.value = ap.pattern || "omni";
+      pattern.addEventListener("change", function () { apSet({ pattern: pattern.value === "omni" ? undefined : pattern.value }, "Change antenna pattern"); });
+      var azimuth = document.createElement("input"), range = app.config.antenna.azimuth_deg_range;
+      azimuth.type = "number"; azimuth.min = range[0]; azimuth.max = range[1]; azimuth.step = 5; azimuth.value = ap.azimuth_deg === undefined ? 0 : ap.azimuth_deg;
+      azimuth.disabled = pattern.value === "omni";
+      azimuth.title = "Degrees, 0 points east, 90 points south on the plan";
+      azimuth.addEventListener("change", function () {
+        var v = parseFloat(azimuth.value);
+        if (isFinite(v) && v >= range[0] && v <= range[1]) { apSet({ azimuth_deg: v }, "Change antenna azimuth"); } else { azimuth.value = ap.azimuth_deg === undefined ? 0 : ap.azimuth_deg; say("Azimuth must be " + range[0] + " to " + range[1] + " degrees"); }
+      });
+      [["TX dBm", tx], ["Band", bandSelect], ["Channel", chan], ["Standard", std], ["Width", width], ["Antenna", pattern], ["Azimuth", azimuth]].forEach(function (p) {
         var l = document.createElement("label"); l.appendChild(document.createTextNode(p[0])); l.appendChild(p[1]); fields.appendChild(l);
       });
       li.appendChild(head); li.appendChild(fields); list.appendChild(li);

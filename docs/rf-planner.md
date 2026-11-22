@@ -69,6 +69,39 @@ of `coverage_grid`, area per cell is `cell_m^2`.
   `rssi_ceiling_dbm`), dead-zone fraction, overlap fraction and AP count (fraction of `ap_count_full_penalty`).
   The weights are planning preferences in `scoring.weights`, and the breakdown is returned so the number can be explained.
 
+## WiFi standards, interference, antenna and MLO
+Everything here is a MODEL ESTIMATE. All constants are in `rf-config.json` (`wifi_standards`, `interference`, `antenna`), `rfmodel.py` is the reference and `rf-engine.js` mirrors it (`tests/test_wifi_standards.py`). The new AP fields are optional. An AP without them, and a project without a `standard` on any AP, produces exactly the previous coverage grids and analytics (no `sinr` key).
+
+AP fields: `standard` (`wifi4`, `wifi5`, `wifi6`, `wifi6e`, `wifi7`), `width_mhz`, `spatial_streams`, `mlo_bands`, `antenna_gain_dbi`, `azimuth_deg`, `pattern` (`omni` or `sector`), `beamwidth_deg`, `front_to_back_db`. Both validators (`twin.py`, `planner-state.js`) reject an unknown standard, a standard not allowed on the AP band (Wi-Fi 4 and 5 on 6 GHz, Wi-Fi 5 on 2.4 GHz), a width the standard does not allow on that band (320 MHz only for Wi-Fi 7 in 6 GHz), more streams than the standard allows, and `mlo_bands` on anything but Wi-Fi 7.
+
+| Standard | IEEE amendment | Bands | Widths (MHz) | Max streams | Max MCS |
+| --- | --- | --- | --- | --- | --- |
+| Wi-Fi 4 | 802.11n | 2.4, 5 | 20, 40 | 4 | 7 (64-QAM) |
+| Wi-Fi 5 | 802.11ac | 5 | 20 to 160 | 8 | 9 (256-QAM) |
+| Wi-Fi 6 | 802.11ax | 2.4, 5 | 20 to 160 (2.4: 20, 40) | 8 | 11 (1024-QAM) |
+| Wi-Fi 6E | 802.11ax | 2.4, 5, 6 | 20 to 160 | 8 | 11 |
+| Wi-Fi 7 | 802.11be | 2.4, 5, 6 | up to 160, 320 in 6 GHz | 16 | 13 (4096-QAM) |
+
+### PHY rate
+`rate = N_sd x N_bpscs x R x N_ss / (T_sym + T_GI)` in Mbps (bits per microsecond), with `N_sd` data subcarriers (n/ac 52, 108, 234, 468 for 20, 40, 80, 160 MHz; ax/be 234, 468, 980, 1960 and 3920 for 320 MHz), `N_bpscs` bits per subcarrier (1 to 12), `R` the coding rate, `N_ss` streams, `T_sym` 3.2 us (n, ac) or 12.8 us (ax, be) and `T_GI` 0.8 us (the default, the long guard interval; `default_guard_interval_us`). Sources: IEEE 802.11n-2009 clause 20, 802.11ac-2013 clause 21, 802.11ax-2021 clause 27, 802.11be-2024 clause 36. Checks: 65 Mbps (n, MCS 7, 20 MHz, 1 stream), 390 Mbps (ac, MCS 9, 80 MHz), 143.4 Mbps (ax, MCS 11, 20 MHz). Assumptions: 802.11ac MCS 9 is not defined for every width and stream count, this model ignores that. Default streams are 2 (`default_streams`), a planning assumption.
+
+### Noise and SINR
+`noise_dbm = -174 + 10 log10(BW_Hz) + NF` (thermal noise density at 290 K, `NF` 6 dB, `interference.noise_figure_db`). `SINR = signal - 10 log10(noise_mW + sum_j c_ij x activity x P_j)`, where `P_j` is the RSSI of AP `j` at the cell in mW (the serving AP is the best-RSSI AP, as in the analytics) and `c_ij` the coupling factor below. `activity_factor` is 1 (every interferer transmits all the time, a worst case). The PHY rate is the highest MCS up to the standard maximum whose `min_snr_db` the SINR reaches (0 below MCS 0). The `min_snr_db` values are rounded typical planning figures. The standard normative receiver minimum sensitivity is a dBm value, not an SNR. Throughput is the PHY rate times `analytics.mac_efficiency`.
+
+APs without a `standard` that appear next to ones with a standard use the band fallback (`interference.fallback_standard`: 2.4 Wi-Fi 4, 5 Wi-Fi 5, 6 Wi-Fi 6E) in the SINR section only.
+
+### Co-channel and adjacent-channel interference
+The channel number is taken as the centre of the occupied bandwidth (`centre MHz = base + 5 x channel`, bases 2407, 5000, 5950 from the IEEE 802.11 channel numbering). Interferer `B` spreads its power evenly over its width, so the part inside the victim band `A` is `overlap / width_B`. The rest leaks in through the transmit spectrum mask, rejected by `rejection_table` at the gap between the band edges (20 dB at 0 MHz, 28 dB from 10 MHz, 40 dB from 20 MHz, rounded from the 20 MHz OFDM mask of IEEE 802.11: about -20 dBr at 11 MHz, -28 dBr at 20 MHz, -40 dBr at 30 MHz from the centre). `c_ab = inband + (1 - inband) x 10^(-rejection/10)`, and 0 when there is no overlap and the gap exceeds `negligible_gap_mhz` (40) or the bands differ. The 40 dB floor is a conservative bound, not a measured value. Receiver filter selectivity, the primary and secondary channel layout of bonded channels and carrier-sense time sharing are not modelled.
+
+### Antenna
+The gain is added to `tx_dbm` per path, towards the first segment of the path (the receiver for the direct path, the reflection point or the corner for indirect paths). Omni with 0 dBi (the default) adds nothing. The sector pattern is the 3GPP TR 36.814 horizontal pattern `A(phi) = -min(12 (phi / phi_3dB)^2, A_m)`, defaults 70 degrees and 25 dB. Azimuth 0 points east (+x) and grows clockwise on the plan (90 is south). Horizontal plane only, no elevation, polarisation or mutual coupling.
+
+### MLO (Wi-Fi 7)
+`mlo_bands` lists up to two more bands the AP also transmits on, at the same position and power, on the default channel width of the band (`default_width_mhz`, capped by the standard). The capacity is `sum of the fastest max_links (3) link rates x mac_efficiency`, each extra link is noise limited (no interference). It is a CAPACITY MODEL, labelled as such in the output, not a measurement: real MLO gains depend on the client, the MLO mode (STR, eMLSR) and the traffic.
+
+### Not modelled
+Refraction is not modelled (negligible indoors at these frequencies, and the plan is 2D), and no real-world fading, beamforming, MU-MIMO, OFDMA scheduling or client mix is modelled. A `standard` AP uses the legacy `mcs_tables` entry of the nearest narrower width for the old `throughput_mbps` field (the tables have no 40 MHz entry at 5 GHz, for example), so that field stays defined.
+
 ## Smart planner
 `static/rf-optimizer.js` (`window.RFOptimizer`, node, Worker) is JS only and deterministic (no randomness).
 Settings live in `rf-config.json` under `planner`. It works on a coarser grid (`planner.cell_m`), so its
@@ -152,7 +185,7 @@ Against the original mission list. "complete" means the code exists and is cover
 | Analytics Dashboard | complete | Coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming candidates, per-AP throughput, client capacity, channel utilisation, all with table equivalents. Throughput, capacity and utilisation are ESTIMATES from a rate table. |
 | Performance Optimization | complete | Web Worker, 16x16 tiles, coarse then fine pass, per-AP cache, dirty-tile edits, spatial index, main-thread fallback. Measured in `perf-rf.md` (SwiftShader, Xeon). Deferred: cancelling inside one long planner step; real GPU and Pi 4 numbers UNVERIFIED. |
 | Scenario Comparison | complete | Saved scenarios, side by side, delta and slider views, metric diff, explainable optimisation score, ranking. |
-| Smart WiFi Planner | partial | Issue detection, greedy AP placement, AP count, power and channel advice, confidence (model sensitivity, not accuracy), undoable apply. Deferred: optional LLM explain endpoint (the deterministic texts work offline); adjacent-channel interference is simplified. |
+| Smart WiFi Planner | partial | Issue detection, greedy AP placement, AP count, power and channel advice, confidence (model sensitivity, not accuracy), undoable apply. Deferred: optional LLM explain endpoint (the deterministic texts work offline); adjacent-channel interference is modelled in the SINR estimate (see above) but the channel plan still counts co-channel conflicts only. |
 | Modern UI/UX | partial | Glass dark and light themes, keyboard shortcuts, tooltips, responsive layout without horizontal overflow at 390 px, ARIA labels. Touch and pinch code exists but was never exercised by a test or a device. |
 | Export Features | partial | PNG, CSV, project JSON, PDF, print and BoQ CSV through `PlannerExport.register`. Deferred: a "Save to local twin" button (the twin API caps the request at 1 MB, 5000 walls per floor and 600k background characters); PDF and PNG not opened in a real viewer. |
 | Architecture Improvements | complete | Engine (`rfmodel.py`, `rf-engine.js`, `rf-optimizer.js`) separate from UI files, `rf-config.json` materials and tables, registries (modes, materials, exports), JSDoc types checked by `make typecheck`, ADR and docs. |
