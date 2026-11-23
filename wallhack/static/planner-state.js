@@ -438,10 +438,16 @@
   // ------------------------------------------------------------------ operations
   // An operation is plain data. applyOp mutates the project, invertOp returns the operation that
   // undoes it. Builders (below) capture everything an inverse needs, so no operation reads state later.
-  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices" };
+  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices", opening: "openings", void: "voids" };
 
   function setProps(target, props) {
     Object.keys(props).forEach(function (k) { if (props[k] === undefined || props[k] === null) { delete target[k]; } else { target[k] = clone(props[k]); } });
+  }
+
+  /** The list an operation kind edits: a floor list, or project.interferers (no floor) for "interferer". Optional lists are created. */
+  function listOf(project, floor, kind) {
+    if (kind === "interferer") { return project.interferers || (project.interferers = []); }
+    return floor[LISTS[kind]] || (floor[LISTS[kind]] = []);
   }
 
   function applyOp(project, op) {
@@ -452,9 +458,10 @@
       project.floors.splice(fi, 1);
       return;
     }
-    var floor = findFloor(project, op.floor), parts = op.t.split("."), kind = parts[0], verb = parts[1];
+    var parts = op.t.split("."), kind = parts[0], verb = parts[1];
+    var floor = kind === "interferer" ? null : findFloor(project, op.floor);
     if (kind === "floor") { setProps(floor, op.after); return; }
-    var items = floor[LISTS[kind]];
+    var items = listOf(project, floor, kind), where = kind === "interferer" ? "the project" : "floor '" + op.floor + "'";
     if (verb === "add") {
       var at = op.index === undefined ? items.length : Math.min(op.index, items.length);
       items.splice(at, 0, clone(op.item));
@@ -463,12 +470,12 @@
       }
     } else if (verb === "remove") {
       var i = indexById(items, op.id);
-      if (i < 0) { throw new Error(kind + " '" + op.id + "' not found on floor '" + op.floor + "'"); }
+      if (i < 0) { throw new Error(kind + " '" + op.id + "' not found on " + where); }
       items.splice(i, 1);
       if (kind === "wall") { floor.openings = floor.openings.filter(function (o) { return o.wall !== op.id; }); }
     } else if (verb === "set") {
       var j = indexById(items, op.id);
-      if (j < 0) { throw new Error(kind + " '" + op.id + "' not found on floor '" + op.floor + "'"); }
+      if (j < 0) { throw new Error(kind + " '" + op.id + "' not found on " + where); }
       setProps(items[j], op.after);
     } else { throw new Error("unknown operation " + op.t); }
   }
@@ -483,14 +490,16 @@
     return { t: kind + ".add", floor: op.floor, item: op.item, index: op.index, openings: op.openings };
   }
 
+  /** Floor of an operation: null for kinds that live on the project (interferer). */
+  function floorOfKind(kind, project, floorId) { return kind === "interferer" ? null : findFloor(project, floorId); }
   function addOp(kind, project, floorId, item) {
-    var items = findFloor(project, floorId)[LISTS[kind]];
-    return { t: kind + ".add", floor: floorId, item: clone(item), index: items.length };
+    var items = listOf(project, floorOfKind(kind, project, floorId), kind);
+    return { t: kind + ".add", floor: kind === "interferer" ? undefined : floorId, item: clone(item), index: items.length };
   }
   function removeOp(kind, project, floorId, id) {
-    var floor = findFloor(project, floorId), items = floor[LISTS[kind]], i = indexById(items, id);
-    if (i < 0) { throw new Error(kind + " '" + id + "' not found on floor '" + floorId + "'"); }
-    var op = { t: kind + ".remove", floor: floorId, id: id, item: clone(items[i]), index: i };
+    var floor = floorOfKind(kind, project, floorId), items = listOf(project, floor, kind), i = indexById(items, id);
+    if (i < 0) { throw new Error(kind + " '" + id + "' not found" + (floor ? " on floor '" + floorId + "'" : "")); }
+    var op = { t: kind + ".remove", floor: floor ? floorId : undefined, id: id, item: clone(items[i]), index: i };
     if (kind === "wall") {
       op.openings = [];
       floor.openings.forEach(function (o, n) { if (o.wall === id) { op.openings.push({ item: clone(o), index: n }); } });
@@ -499,16 +508,16 @@
   }
   /** Set operation from the current values: only keys whose value changes are recorded. */
   function setOp(kind, project, floorId, id, after) {
-    var floor = findFloor(project, floorId), target = kind === "floor" ? floor : floor[LISTS[kind]][indexById(floor[LISTS[kind]], id)];
-    if (!target) { throw new Error(kind + " '" + id + "' not found on floor '" + floorId + "'"); }
+    var floor = floorOfKind(kind, project, floorId), target = kind === "floor" ? floor : listOf(project, floor, kind)[indexById(listOf(project, floor, kind), id)];
+    if (!target) { throw new Error(kind + " '" + id + "' not found" + (floor ? " on floor '" + floorId + "'" : "")); }
     var before = {}, keep = {};
     // An absent value is recorded as null (JSON keeps null, it would drop undefined, which broke undo of "remove channel").
     function orNull(v) { return v === undefined ? null : clone(v); }
     Object.keys(after).forEach(function (k) {
       if (JSON.stringify(orNull(target[k])) !== JSON.stringify(orNull(after[k]))) { before[k] = orNull(target[k]); keep[k] = orNull(after[k]); }
     });
-    return kind === "floor" ? { t: "floor.set", floor: floorId, before: before, after: keep }
-                            : { t: kind + ".set", floor: floorId, id: id, before: before, after: keep };
+    if (kind === "floor") { return { t: "floor.set", floor: floorId, before: before, after: keep }; }
+    return { t: kind + ".set", floor: floor ? floorId : undefined, id: id, before: before, after: keep };
   }
   /** Operation that appends a new empty floor (a whole floor record, see newFloor). */
   function addFloorOp(project, floor) { return { t: "floors.add", item: clone(floor), index: project.floors.length }; }
@@ -679,6 +688,74 @@
     try { return { project: parseProjectJson(raw, opts) }; } catch (e) { return { project: null, error: "Saved project ignored: " + e.message }; }
   }
 
+  // ------------------------------------------------------------------ editing limits (same numbers as Python and validateProject)
+  /**
+   * Why one more item of `kind` cannot be added, or null. Uses the limits of rf-config.json that validateProject and twin.py enforce,
+   * so an edit that passes here cannot make the project fail validation on reload.
+   */
+  function addLimitError(kind, project, floorId, cfg) {
+    var limits = cfg.limits;
+    if (kind === "opening") {
+      var f = findFloor(project, floorId);
+      return f.openings.length >= limits.max_openings_per_floor ? "A floor holds at most " + limits.max_openings_per_floor + " doors and windows" : null;
+    }
+    if (kind === "void") {
+      var g = findFloor(project, floorId);
+      return (g.voids || []).length >= limits.max_items_per_list ? "A floor holds at most " + limits.max_items_per_list + " openings in the floor" : null;
+    }
+    if (kind === "interferer") {
+      var max = cfg.external_sources.max_sources;
+      return (project.interferers || []).length >= max ? "A project holds at most " + max + " interference sources" : null;
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------------ view settings (heat map layer, palette, overlays)
+  // Not part of the project (no undo, not exported): they are kept in browser storage and mirrored in the page URL so a view can be shared.
+  var VIEW_KEY = "wallhack.planner.view";
+  var OVERLAY_IDS = ["roaming", "strongest", "blend"];
+  var COMBINED_LAYER = "combined";
+  var DEFAULT_VIEW = { layer: "rssi", palette: "classic", compare: "snr", combine: ["rssi", "snr"], overlays: [] };
+
+  function pickOne(value, allowed, fallback) { return typeof value === "string" && allowed.indexOf(value) >= 0 ? value : fallback; }
+  function pickMany(value, allowed) {
+    var list = Array.isArray(value) ? value : typeof value === "string" && value ? value.split(",") : [];
+    return allowed.filter(function (id) { return list.indexOf(id) >= 0; });   // allowed order, no duplicates, unknown ids dropped
+  }
+  /** A view from untrusted data (storage, URL): unknown values fall back to the defaults. palettes: list of palette ids. */
+  function normalizeView(raw, cfg, palettes) {
+    var layers = Object.keys(cfg.planner_layers.layers), r = raw && typeof raw === "object" ? raw : {};
+    var combine = pickMany(r.combine, layers);
+    return { layer: pickOne(r.layer, layers.concat([COMBINED_LAYER]), DEFAULT_VIEW.layer), palette: pickOne(r.palette, palettes, DEFAULT_VIEW.palette),
+             compare: pickOne(r.compare, layers, DEFAULT_VIEW.compare), combine: combine.length ? combine : DEFAULT_VIEW.combine.slice(),
+             overlays: pickMany(r.overlays, OVERLAY_IDS) };
+  }
+  /** View from a URL query string (?layer=sinr&palette=viridis&overlays=roaming,blend&compare=snr&combine=rssi,snr), only keys that are present. */
+  function viewFromSearch(search, cfg, palettes) {
+    var raw = {}, params = {};
+    String(search || "").replace(/^\?/, "").split("&").forEach(function (pair) {
+      if (!pair) { return; }
+      var i = pair.indexOf("="), key = i < 0 ? pair : pair.slice(0, i);
+      try { params[key] = decodeURIComponent(i < 0 ? "" : pair.slice(i + 1)); } catch (e) { /* malformed escape: ignore the key */ }
+    });
+    ["layer", "palette", "compare", "combine", "overlays"].forEach(function (k) { if (params[k] !== undefined) { raw[k] = params[k]; } });
+    return { raw: raw, view: normalizeView(raw, cfg, palettes) };
+  }
+  function viewToSearch(view) {
+    return "layer=" + encodeURIComponent(view.layer) + "&palette=" + encodeURIComponent(view.palette) + "&compare=" + encodeURIComponent(view.compare) +
+      "&combine=" + encodeURIComponent(view.combine.join(",")) + "&overlays=" + encodeURIComponent(view.overlays.join(","));
+  }
+  function saveView(storage, view) {
+    try { storage.setItem(VIEW_KEY, JSON.stringify(view)); return true; } catch (e) { return false; }   // the view is a convenience, a full store is not an error
+  }
+  /** Stored view; the URL wins key by key over storage. */
+  function loadView(storage, search, cfg, palettes) {
+    var stored = null;
+    try { stored = JSON.parse(storage.getItem(VIEW_KEY)); } catch (e) { stored = null; }
+    var fromUrl = viewFromSearch(search, cfg, palettes);
+    return normalizeView(Object.assign({}, stored && typeof stored === "object" ? stored : {}, fromUrl.raw), cfg, palettes);
+  }
+
   var api = { textLimit: textLimit, clipText: clipText, SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY,
               DEFAULT_BG_OPACITY: DEFAULT_BG_OPACITY, validateProject: validateProject, parseProjectJson: parseProjectJson,
               exportProjectJson: exportProjectJson, findFloor: findFloor, nextId: nextId, wallLength: wallLength, wallBox: wallBox,
@@ -686,7 +763,8 @@
               saveProject: saveProject, loadSavedProject: loadSavedProject, clone: clone,
               addFloorOp: addFloorOp, newFloor: newFloor, makeScenario: makeScenario, scenarioProject: scenarioProject, computeProject: computeProject,
               renameScenario: renameScenario, deleteScenario: deleteScenario, duplicateScenario: duplicateScenario, validateCapacity: validateCapacity,
-              MAX_SCENARIOS: MAX_SCENARIOS };
+              MAX_SCENARIOS: MAX_SCENARIOS, addLimitError: addLimitError, normalizeView: normalizeView, viewFromSearch: viewFromSearch, viewToSearch: viewToSearch,
+              saveView: saveView, loadView: loadView, VIEW_KEY: VIEW_KEY, OVERLAY_IDS: OVERLAY_IDS, DEFAULT_VIEW: DEFAULT_VIEW };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.PlannerState = api;
 })(typeof self !== "undefined" ? self : this);

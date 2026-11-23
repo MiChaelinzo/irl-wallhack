@@ -123,7 +123,81 @@
     return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
   }
 
-  var api = { GRID_STEPS_M: GRID_STEPS_M, ANGLE_STEP_DEG: ANGLE_STEP_DEG, IMAGE_MAX_PX: IMAGE_MAX_PX, snapValue: snapValue, snapPoint: snapPoint,
+
+  // ------------------------------------------------------------------ doors, windows, floor openings, interference sources (pure)
+  var MIN_OPENING_M = 0.1, MILLI = 1000;
+  function floorMilli(v) { return Math.floor(v * MILLI + 1e-9) / MILLI; }   // never rounds up, so pos + width stays within the wall
+
+  /** Nearest wall within `tol` metres of the point, with the distance along the wall (from its first end) of the closest point. */
+  function nearestWall(floor, pt, tol) {
+    var best = null;
+    floor.walls.forEach(function (w) {
+      var d = distToSegment(pt.x, pt.y, w);
+      if (d > tol || (best && d >= best.dist)) { return; }
+      var len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1;
+      var along = Math.max(0, Math.min(len, ((pt.x - w.x1) * (w.x2 - w.x1) + (pt.y - w.y1) * (w.y2 - w.y1)) / len));
+      best = { wall: w, dist: d, along: along, length: len };
+    });
+    return best;
+  }
+
+  /**
+   * An opening (door or window) of `width` metres centred on the closest point of the nearest wall, kept inside the wall.
+   * Walls shorter than `width` get an opening as long as the wall. Returns {wall, pos, width} or null when no wall is near.
+   */
+  function placeOpening(floor, pt, width, tol) {
+    var hit = nearestWall(floor, pt, tol);
+    if (!hit || hit.length < MIN_OPENING_M) { return null; }
+    var w = Math.min(width, hit.length), pos = Math.max(0, Math.min(hit.length - w, hit.along - w / 2));
+    return { wall: hit.wall.id, pos: floorMilli(pos), width: floorMilli(w) };
+  }
+
+  /** Id of the opening whose span on its wall lies within `tol` metres of the point, or null. */
+  function hitOpening(floor, pt, tol) {
+    var found = null, bestD = tol;
+    floor.openings.forEach(function (op) {
+      var w = floor.walls.filter(function (x) { return x.id === op.wall; })[0];
+      if (!w) { return; }
+      var len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1, ux = (w.x2 - w.x1) / len, uy = (w.y2 - w.y1) / len;
+      var d = distToSegment(pt.x, pt.y, { x1: w.x1 + ux * op.pos, y1: w.y1 + uy * op.pos, x2: w.x1 + ux * (op.pos + op.width), y2: w.y1 + uy * (op.pos + op.width) });
+      if (d <= bestD) { bestD = d; found = op.id; }
+    });
+    return found;
+  }
+
+  /** Vertices of a floor opening (void): its polygon, or the four corners of its rectangle. */
+  function voidPoints(v) {
+    return v.points ? v.points : [[v.x, v.y], [v.x + v.w, v.y], [v.x + v.w, v.y + v.d], [v.x, v.y + v.d]];
+  }
+  /** True if the point lies inside a void (even-odd rule, same as rfmodel.in_void). */
+  function voidContains(v, x, y) {
+    var pts = voidPoints(v), inside = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      if (((pts[i][1] > y) !== (pts[j][1] > y)) && x < (pts[j][0] - pts[i][0]) * (y - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) { inside = !inside; }
+    }
+    return inside;
+  }
+  function hitVoid(floor, pt) {
+    var list = floor.voids || [];
+    for (var i = list.length - 1; i >= 0; i--) { if (voidContains(list[i], pt.x, pt.y)) { return list[i].id; } }
+    return null;
+  }
+  /** Id of the interference source on `floorId` within `tol` metres of the point, or null. */
+  function hitInterferer(project, floorId, pt, tol) {
+    var list = project.interferers || [];
+    for (var i = list.length - 1; i >= 0; i--) {
+      if (list[i].floor === floorId && Math.hypot(list[i].x - pt.x, list[i].y - pt.y) <= tol) { return list[i].id; }
+    }
+    return null;
+  }
+  /** Rectangle {x, y, w, d} between two corners clamped to the floor, or null when a side is shorter than `min`. */
+  function voidRect(a, b, floor, min) {
+    var p = clampPoint(a, floor), q = clampPoint(b, floor), x = Math.min(p.x, q.x), y = Math.min(p.y, q.y), w = Math.abs(q.x - p.x), d = Math.abs(q.y - p.y);
+    return w < min || d < min ? null : { x: floorMilli(x), y: floorMilli(y), w: floorMilli(w), d: floorMilli(d) };
+  }
+
+  var api = { nearestWall: nearestWall, placeOpening: placeOpening, hitOpening: hitOpening, voidPoints: voidPoints, voidContains: voidContains, hitVoid: hitVoid,
+              hitInterferer: hitInterferer, voidRect: voidRect, GRID_STEPS_M: GRID_STEPS_M, ANGLE_STEP_DEG: ANGLE_STEP_DEG, IMAGE_MAX_PX: IMAGE_MAX_PX, snapValue: snapValue, snapPoint: snapPoint,
               wallEndpoints: wallEndpoints, angleDeg: angleDeg, snapAngle: snapAngle, rotateWall: rotateWall, rotateWallBy: rotateWallBy,
               distToSegment: distToSegment, wallHandles: wallHandles, hitTest: hitTest, wallsInBox: wallsInBox, clampPoint: clampPoint,
               calibratedScale: calibratedScale, fitWithin: fitWithin };
@@ -155,7 +229,7 @@
     var view = { scale: 30, ox: 20, oy: 20, w: 1, h: 1, dpr: 1 };
     var st = { tool: "select", material: "drywall", gridOn: true, step: DEFAULT_GRID_M, layers: { walls: true, labels: true, image: true },
                drag: null, hover: null, draft: null, marquee: null, calib: [], panKey: false, pointers: {}, pinch: null, gesture: 0,
-               images: {}, frame: 0, menu: null };
+               images: {}, frame: 0, menu: null, voidDraft: null, ghost: null, voidKind: "stairwell", sourceKind: "microwave" };
     var frameHooks = o.onFrame ? [o.onFrame] : [];
     var self = {};
 
@@ -286,6 +360,22 @@
           ["mid", "rot"].forEach(function (k) { c.beginPath(); c.arc(sx(h[k].x), sy(h[k].y), 5.5, 0, Math.PI * 2); c.fill(); c.stroke(); });
         }
       }
+      (f.voids || []).forEach(function (v) {
+        var pts = voidPoints(v);
+        c.beginPath();
+        pts.forEach(function (q, n) { if (n) { c.lineTo(sx(q[0]), sy(q[1])); } else { c.moveTo(sx(q[0]), sy(q[1])); } });
+        c.closePath(); c.fillStyle = "rgba(251,191,36,.16)"; c.fill();
+        c.setLineDash([7, 4]); c.lineWidth = 1.5; c.strokeStyle = css("--warn", "#fbbf24"); c.stroke(); c.setLineDash([]);
+        var cx = 0, cy = 0;
+        pts.forEach(function (q) { cx += q[0]; cy += q[1]; });
+        drawLabel(c, v.kind + " (floor opening)", sx(cx / pts.length), sy(cy / pts.length), 11, css("--warn", "#fbbf24"));
+      });
+      if (st.voidDraft) {
+        var vd = st.voidDraft;
+        c.fillStyle = "rgba(251,191,36,.12)"; c.strokeStyle = css("--warn", "#fbbf24"); c.setLineDash([5, 3]); c.lineWidth = 1.5;
+        c.fillRect(sx(vd.x0), sy(vd.y0), (vd.x1 - vd.x0) * view.scale, (vd.y1 - vd.y0) * view.scale);
+        c.strokeRect(sx(vd.x0), sy(vd.y0), (vd.x1 - vd.x0) * view.scale, (vd.y1 - vd.y0) * view.scale); c.setLineDash([]);
+      }
       f.aps.forEach(function (ap) {
         var on = sel.ap === ap.id;
         c.beginPath(); c.arc(sx(ap.x), sy(ap.y), 9, 0, Math.PI * 2);
@@ -294,6 +384,19 @@
         c.beginPath(); c.arc(sx(ap.x), sy(ap.y), 3, 0, Math.PI * 2); c.fillStyle = "#0b0b16"; c.fill();
         drawLabel(c, (ap.name || ap.id) + " " + ap.tx_dbm + " dBm", sx(ap.x), sy(ap.y) - 17, 11, css("--fg", "#e8edf6"));
       });
+      (store.project.interferers || []).forEach(function (src) {
+        if (src.floor !== f.id) { return; }
+        var spec = o.config && o.config.external_sources.kinds[src.kind], x = sx(src.x), y = sy(src.y), on = st.selectedSource === src.id;
+        c.beginPath(); c.moveTo(x, y - 10); c.lineTo(x + 10, y); c.lineTo(x, y + 10); c.lineTo(x - 10, y); c.closePath();
+        c.fillStyle = "#fb7185"; c.fill(); c.lineWidth = on ? 3 : 1.5; c.strokeStyle = on ? css("--fg", "#e8edf6") : css("--card-solid", "#161b28"); c.stroke();
+        c.fillStyle = "#0b0b16"; c.font = "700 9px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+        c.fillText(src.kind === "microwave" ? "MW" : src.kind === "bluetooth" ? "BT" : "Wi", x, y);
+        drawLabel(c, (src.name || (spec && spec.label) || src.kind) + " (interference)", x, y - 18, 11, css("--fg", "#e8edf6"));
+      });
+      if (st.ghost) {
+        c.save(); c.globalAlpha = 0.8; c.strokeStyle = st.ghost.kind === "door" ? css("--ok", "#4ade80") : css("--accent", "#2dd4bf"); c.lineWidth = Math.max(5, 0.18 * view.scale); c.lineCap = "butt";
+        c.beginPath(); c.moveTo(sx(st.ghost.x1), sy(st.ghost.y1)); c.lineTo(sx(st.ghost.x2), sy(st.ghost.y2)); c.stroke(); c.restore();
+      }
       if (st.layers.labels) {
         (f.labels || []).forEach(function (l) {
           drawLabel(c, l.text, sx(l.x), sy(l.y), 13, sel.label === l.id ? css("--accent", "#2dd4bf") : css("--fg", "#e8edf6"));
@@ -356,12 +459,14 @@
     // ---------------------------------------------------------------- settings
     self.setTool = function (t) {
       st.tool = t; st.draft = null; st.marquee = null; if (t !== "calibrate") { st.calib = []; }
+      st.ghost = null; st.voidDraft = null;
       o.edit.style.cursor = t === "pan" ? "grab" : t === "select" ? "default" : "crosshair";
       if (o.onTool) { o.onTool(t); }
       say({ select: "Select tool", wall: "Draw wall tool: drag on the plan", ap: "Place access point tool: click on the plan",
             label: "Room label tool: click on the plan", pan: "Pan tool", calibrate: "Calibrate: click two points on the floor-plan image",
             "note-text": "Text note tool: click on the plan", "note-arrow": "Arrow note tool: drag on the plan", "note-pin": "Pin note tool: click on the plan",
-            "device": "IoT device tool: click on the plan" }[t]);
+            "device": "IoT device tool: click on the plan", door: "Door tool: click on a wall", window: "Window tool: click on a wall",
+            void: "Floor opening tool: drag a rectangle for a stairwell, atrium or shaft", interferer: "Interference source tool: click on the plan" }[t]);
       self.invalidate();
     };
     self.getTool = function () { return st.tool; };
@@ -383,6 +488,7 @@
     }
     self.deleteSelection = function () {
       var f = floor(), sel = store.selection, ops = [];
+      if (st.selectedSource && !sel.walls.length && !sel.ap && !sel.label) { var sid = st.selectedSource; st.selectedSource = null; self.deleteInterferer(sid); return; }
       sel.walls.forEach(function (id) { ops.push(S.removeOp("wall", store.project, f.id, id)); });
       if (sel.ap) { ops.push(S.removeOp("ap", store.project, f.id, sel.ap)); }
       if (sel.label) { ops.push(S.removeOp("label", store.project, f.id, sel.label)); }
@@ -445,6 +551,56 @@
       store.exec({ label: "Add access point", ops: [S.addOp("ap", store.project, f.id, { id: id, x: p.x, y: p.y, tx_dbm: DEFAULT_TX_DBM })] });
       store.select({ ap: id });
     };
+
+
+    // ---------------------------------------------------------------- doors, windows, floor openings, interference sources
+    function layerConfig() { return o.config.planner_layers.editor; }
+    function limitBlocked(kind, floorId) {
+      var err = S.addLimitError(kind, store.project, floorId, o.config);
+      if (err) { say(err); }
+      return !!err;
+    }
+    function openingEnds(f, op) {
+      var w = f.walls.filter(function (x) { return x.id === op.wall; })[0], len = S.wallLength(w) || 1, ux = (w.x2 - w.x1) / len, uy = (w.y2 - w.y1) / len;
+      return { kind: op.kind, x1: w.x1 + ux * op.pos, y1: w.y1 + uy * op.pos, x2: w.x1 + ux * (op.pos + op.width), y2: w.y1 + uy * (op.pos + op.width) };
+    }
+    /** Door or window on the wall nearest the point. Undoable. Returns the new id or null. */
+    self.addOpeningAt = function (kind, pt) {
+      var f = floor(), place = placeOpening(f, pt, layerConfig().opening_width_m[kind], tolM() * 2);
+      if (!place) { say("Click on a wall to place a " + kind); return null; }
+      if (limitBlocked("opening", f.id)) { return null; }
+      var id = S.nextId(f.openings, kind);
+      store.exec({ label: "Add " + kind, ops: [S.addOp("opening", store.project, f.id, { id: id, kind: kind, wall: place.wall, pos: place.pos, width: place.width })] });
+      say("Added " + kind + " " + id + " (" + place.width.toFixed(2) + " m wide)");
+      return id;
+    };
+    self.setOpeningKind = function (id, kind) {
+      var f = floor();
+      store.exec({ label: "Change opening to " + kind, ops: [S.setOp("opening", store.project, f.id, id, { kind: kind })] });
+    };
+    self.deleteOpening = function (id) { store.exec({ label: "Delete opening", ops: [S.removeOp("opening", store.project, floor().id, id)] }); };
+    /** Stairwell, atrium or shaft rectangle in the floor (a void). Undoable. */
+    self.addVoid = function (rect, kind) {
+      var f = floor();
+      if (limitBlocked("void", f.id)) { return null; }
+      var id = S.nextId(f.voids || [], "void");
+      store.exec({ label: "Add " + kind, ops: [S.addOp("void", store.project, f.id, Object.assign({ id: id, kind: kind }, rect))] });
+      say("Added " + kind + " " + id + ": " + rect.w.toFixed(1) + " x " + rect.d.toFixed(1) + " m opening in the floor");
+      return id;
+    };
+    self.deleteVoid = function (id) { store.exec({ label: "Delete floor opening", ops: [S.removeOp("void", store.project, floor().id, id)] }); };
+    self.addInterfererAt = function (pt, kind) {
+      var f = floor(), p = clampPoint(pt, f);
+      if (limitBlocked("interferer", f.id)) { return null; }
+      var id = S.nextId(store.project.interferers || [], "src");
+      store.exec({ label: "Add interference source", ops: [S.addOp("interferer", store.project, null, { id: id, kind: kind || st.sourceKind, floor: f.id, x: p.x, y: p.y })] });
+      say("Added interference source " + id);
+      return id;
+    };
+    self.deleteInterferer = function (id) { store.exec({ label: "Delete interference source", ops: [S.removeOp("interferer", store.project, null, id)] }); };
+    self.setVoidKind = function (kind) { st.voidKind = kind; };
+    self.setSourceKind = function (kind) { st.sourceKind = kind; };
+    self.selectSource = function (id) { st.selectedSource = id; self.invalidate(); };
 
     // ---------------------------------------------------------------- floating text input (labels, calibration)
     function askText(title, initial, wx, wy, done) {
@@ -557,12 +713,22 @@
     function contextItems(hit, pt) {
       var items = [], f = floor(), sel = store.selection;
       var at = clampPoint(snap(pt).snapped ? snap(pt) : pt, f);
-      if (hit && hit.type === "wall") {
+      var opId = hitOpening(f, pt, tolM()), srcId = hitInterferer(store.project, f.id, pt, tolM() * 2), voidId = !hit ? hitVoid(f, pt) : null;
+      if (srcId) {
+        items.push({ heading: "Interference source" }, { label: "Delete source", run: function () { self.deleteInterferer(srcId); } });
+      } else if (opId) {
+        var opening = f.openings.filter(function (x) { return x.id === opId; })[0], other = opening.kind === "door" ? "window" : "door";
+        items.push({ heading: opening.kind === "door" ? "Door" : "Window" }, { label: "Change to " + other, run: function () { self.setOpeningKind(opId, other); } },
+          { label: "Delete " + opening.kind, run: function () { self.deleteOpening(opId); } });
+      } else if (voidId) {
+        items.push({ heading: "Opening in the floor" }, { label: "Delete floor opening", run: function () { self.deleteVoid(voidId); } });
+      } else if (hit && hit.type === "wall") {
         if (sel.walls.indexOf(hit.id) < 0) { store.select({ walls: [hit.id] }); }
         items.push({ heading: "Material" });
         Object.keys(o.materials).forEach(function (id) { items.push({ label: o.materials[id].label || id, run: function () { self.setSelectionMaterial(id); } }); });
         items.push({ heading: "Wall" },
           { label: "Duplicate (Ctrl+D)", run: self.duplicateSelection }, { label: "Rotate 90 degrees (R)", run: function () { self.rotateSelection(90); } },
+          { label: "Add door here", run: function () { self.addOpeningAt("door", pt); } }, { label: "Add window here", run: function () { self.addOpeningAt("window", pt); } },
           { label: "Delete (Del)", run: self.deleteSelection });
       } else if (hit && hit.type === "ap") {
         store.select({ ap: hit.id });
@@ -572,7 +738,10 @@
         items.push({ heading: "Label" }, { label: "Edit text", run: function () { self.editLabel(hit.id); } }, { label: "Delete (Del)", run: self.deleteSelection });
       } else {
         items.push({ heading: "Here" }, { label: "Add access point here", run: function () { self.addApAt(at); } },
-          { label: "Set label here", run: function () { self.addLabelAt(at); } }, { label: "Fit view (0)", run: self.fit });
+          { label: "Set label here", run: function () { self.addLabelAt(at); } },
+          { label: "Add interference source here", run: function () { self.addInterfererAt(at); } },
+          { label: "Add stairwell here (3 x 3 m)", run: function () { var r = voidRect(at, { x: at.x + 3, y: at.y + 3 }, f, layerConfig().min_void_m); if (r) { self.addVoid(r, "stairwell"); } else { say("Not enough room for a stairwell here"); } } },
+          { label: "Fit view (0)", run: self.fit });
       }
       return items;
     }
@@ -600,6 +769,13 @@
       if (tool === "wall") {
         var p = snap(raw, null, e.altKey);
         st.drag = { type: "wall" }; st.draft = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+      } else if (tool === "door" || tool === "window") {
+        self.addOpeningAt(tool, raw);
+      } else if (tool === "interferer") {
+        self.addInterfererAt(snap(raw, null, e.altKey));
+      } else if (tool === "void") {
+        var vp = clampPoint(snap(raw, null, e.altKey), f);
+        st.drag = { type: "void", x0: vp.x, y0: vp.y }; st.voidDraft = { x0: vp.x, y0: vp.y, x1: vp.x, y1: vp.y };
       } else if (tool === "ap") {
         self.addApAt(snap(raw, null, e.altKey));
       } else if (tool === "label") {
@@ -625,7 +801,11 @@
         } else if (hit && hit.type === "label") {
           store.select({ label: hit.id });
           st.drag = { type: "label", id: hit.id };
+        } else if (!hit && hitInterferer(store.project, f.id, raw, tolM() * 2)) {
+          var sid = hitInterferer(store.project, f.id, raw, tolM() * 2);
+          store.select({}); st.selectedSource = sid; st.drag = { type: "interferer", id: sid };
         } else {
+          st.selectedSource = null;
           if (!e.shiftKey) { store.select({}); }
           st.drag = { type: "marquee", x0: raw.x, y0: raw.y, add: e.shiftKey, base: store.selection.walls.slice() };
         }
@@ -645,6 +825,11 @@
       var raw = toWorld(e.clientX, e.clientY), f = floor(), d = st.drag;
       if (o.onPointer) { o.onPointer(raw, e); }
       if (!d) {
+        if (st.tool === "door" || st.tool === "window") {
+          var gp = placeOpening(f, raw, layerConfig().opening_width_m[st.tool], tolM() * 2);
+          st.ghost = gp ? Object.assign({ kind: st.tool }, openingEnds(f, { wall: gp.wall, pos: gp.pos, width: gp.width })) : null;
+          self.invalidate();
+        }
         var hit = st.tool === "select" ? hitTest(f, store.selection, raw, tolM(), ROT_OFFSET_PX / view.scale) : null;
         var key = hit ? hit.type + hit.id + (hit.handle || "") : "";
         if (key !== st.hover) {
@@ -655,6 +840,10 @@
       }
       if (d.type === "pan") { self.panBy(e.clientX - d.x, e.clientY - d.y); d.x = e.clientX; d.y = e.clientY; return; }
       if (d.type === "ext") { o.onToolPointer(d.tool, "move", raw, e); self.invalidate(); return; }
+      if (d.type === "void") {
+        var vq = clampPoint(snap(raw, null, e.altKey), f); st.voidDraft.x0 = Math.min(d.x0, vq.x); st.voidDraft.y0 = Math.min(d.y0, vq.y);
+        st.voidDraft.x1 = Math.max(d.x0, vq.x); st.voidDraft.y1 = Math.max(d.y0, vq.y); d.x1 = vq.x; d.y1 = vq.y; self.invalidate(); return;
+      }
       if (d.type === "wall") {
         var q = snap(raw, null, e.altKey);
         if (e.shiftKey && !e.altKey) { var ang = snapAngle(angleDeg({ x1: st.draft.x1, y1: st.draft.y1, x2: q.x, y2: q.y }), ANGLE_STEP_DEG, false) * Math.PI / 180, len = Math.hypot(q.x - st.draft.x1, q.y - st.draft.y1); q = { x: st.draft.x1 + Math.cos(ang) * len, y: st.draft.y1 + Math.sin(ang) * len }; }
@@ -692,6 +881,9 @@
       } else if (d.type === "ap") {
         var pa = clampPoint(snap(raw, null, e.altKey), f);
         store.exec({ label: "Move access point", key: key2, ops: [S.setOp("ap", store.project, f.id, d.id, { x: pa.x, y: pa.y })] });
+      } else if (d.type === "interferer") {
+        var pi = clampPoint(snap(raw, null, e.altKey), f);
+        store.exec({ label: "Move interference source", key: key2, ops: [S.setOp("interferer", store.project, null, d.id, { x: pi.x, y: pi.y })] });
       } else if (d.type === "label") {
         var pl = clampPoint(snap(raw, null, e.altKey), f);
         store.exec({ label: "Move label", key: key2, ops: [S.setOp("label", store.project, f.id, d.id, { x: pl.x, y: pl.y })] });
@@ -709,6 +901,11 @@
         var dr = st.draft;
         st.draft = null;
         if (Math.hypot(dr.x2 - dr.x1, dr.y2 - dr.y1) >= MIN_WALL_M) { addWall(dr.x1, dr.y1, dr.x2, dr.y2); } else { say("Wall too short, drag further"); }
+      }
+      if (d && d.type === "void" && st.voidDraft) {
+        var rect = voidRect({ x: d.x0, y: d.y0 }, { x: d.x1 === undefined ? d.x0 : d.x1, y: d.y1 === undefined ? d.y0 : d.y1 }, floor(), layerConfig().min_void_m);
+        st.voidDraft = null;
+        if (rect) { self.addVoid(rect, st.voidKind); } else { say("Opening too small, drag a rectangle of at least " + layerConfig().min_void_m + " m"); }
       }
       st.marquee = null;
       if (d && d.type === "pan") { o.edit.style.cursor = st.tool === "pan" ? "grab" : "default"; }
@@ -762,6 +959,10 @@
       else if (k === "a" || k === "A") { self.setTool("ap"); }
       else if (k === "l" || k === "L") { self.setTool("label"); }
       else if (k === "c" || k === "C") { self.setTool("calibrate"); }
+      else if (k === "d" || k === "D") { self.setTool("door"); }
+      else if (k === "o" || k === "O") { self.setTool("window"); }
+      else if (k === "s" || k === "S") { self.setTool("void"); }
+      else if (k === "x" || k === "X") { self.setTool("interferer"); }
       else if (k === "h" || k === "H") { self.setTool("pan"); }
       else if (k === "g" || k === "G") { self.toggleGrid(); }
       else if (k === "r" || k === "R") { self.rotateSelection(90); }

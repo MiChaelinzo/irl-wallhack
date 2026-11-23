@@ -15,11 +15,18 @@
   // "classic" follows site-survey tools; "cvd" is a colour-blind safe (viridis like) ramp.
   var PALETTES = {
     classic: [[-100, "#2b0a3d"], [-90, "#7a1230"], [-85, "#c0392b"], [-75, "#f39c12"], [-65, "#f1e05a"], [-55, "#4cc36b"], [-45, "#1fb5b0"], [-30, "#3b82f6"]],
-    cvd: [[-100, "#fde725"], [-85, "#b5de2b"], [-75, "#6ece58"], [-65, "#35b779"], [-55, "#21918c"], [-45, "#31688e"], [-30, "#440154"]]
+    cvd: [[-100, "#fde725"], [-85, "#b5de2b"], [-75, "#6ece58"], [-65, "#35b779"], [-55, "#21918c"], [-45, "#31688e"], [-30, "#440154"]],
+    viridis: evenStops(["#440154", "#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#fde725"]),
+    cividis: evenStops(["#00204d", "#31446b", "#666970", "#958f78", "#cbba69", "#ffea46"])
   };
+  var PALETTE_LABELS = { classic: "Classic RF", cvd: "Colour-blind safe (inverted viridis)", viridis: "Viridis (colour-blind safe)", cividis: "Cividis (colour-blind safe)" };
   var BAND_SAMPLE_DBM = { excellent: -48, good: -60, fair: -70, poor: -80, none: -95 };
   var MAX_CONTOUR_CELLS = 400000;
 
+  /** Colour stops spread evenly over the RSSI range, weakest first. Used for perceptually uniform ramps. */
+  function evenStops(hexes) {
+    return hexes.map(function (h, i) { return [RSSI_MIN + (RSSI_MAX - RSSI_MIN) * i / (hexes.length - 1), h]; });
+  }
   function hexToRgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
 
   /** Colour [r,g,b] (0..255) for an RSSI on a palette: linear interpolation between stops. */
@@ -109,6 +116,125 @@
     });
   }
 
+
+  // ------------------------------------------------------------------ map layers (heat map modes)
+  // A layer is a per-cell value over the analysis grid. The renderer only knows RSSI, so a layer is turned into a
+  // "goodness" 0..1 (1 = good end of the scale, flipped for latency, loss and the like) and drawn through the same
+  // colour scale as a pseudo RSSI. The legend and probe text always show the real values and units.
+  var COMBINED_ID = "combined";
+  var COMBINED_SPEC = { label: "Combined (weakest of the selected layers)", unit: "% of best", lo: 0, hi: 100, higher_is_better: true, needs: null };
+  var NEEDS_SINR_REASON = "Needs an access point with a WiFi standard. Choose one in the access point list (Standard).";
+
+  function layerIds(config) { return Object.keys(config.planner_layers.layers); }
+  function layerSpec(config, id) { return id === COMBINED_ID ? COMBINED_SPEC : config.planner_layers.layers[id]; }
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  /** 0 (worst end) to 1 (best end) of a value on a layer, NaN stays NaN. */
+  function goodness(spec, v) {
+    if (v !== v) { return NaN; }
+    var t = clamp01((v - spec.lo) / (spec.hi - spec.lo));
+    return spec.higher_is_better ? t : 1 - t;
+  }
+  function pseudoDbm(t) { return RSSI_MIN + t * (RSSI_MAX - RSSI_MIN); }
+  function flatten(rows, cols, n) {
+    var out = new Float32Array(n);
+    for (var r = 0; r < rows.length; r++) {
+      for (var c = 0; c < cols; c++) { var v = rows[r][c]; out[r * cols + c] = v === null || v === undefined ? NaN : v; }
+    }
+    return out;
+  }
+
+  /**
+   * Per-cell values of one layer. ctx: {config, RF, analytics, rssi (Float32Array, best RSSI per cell), nowall (same with walls
+   * removed, only for wall_loss), values (optional {id: result} already computed)}. Returns {values: Float32Array (NaN where the layer has no value), reason: string|null}.
+   * Layers that need SINR return reason when no AP has a WiFi standard. ESTIMATES, see planner_layers.source in rf-config.json.
+   */
+  function layerValues(id, ctx) {
+    if (ctx.values && ctx.values[id]) { return ctx.values[id]; }   // computed in the worker, where the full analysis lives
+    var cfg = ctx.config, pl = cfg.planner_layers, a = ctx.analytics, cols = a.cols, rows = a.rows, n = cols * rows, out = new Float32Array(n), i;
+    var spec = pl.layers[id];
+    if (!spec) { throw new Error("unknown layer " + id); }
+    if (spec.needs === "sinr" && !a.sinr) { out.fill(NaN); return { values: out, reason: NEEDS_SINR_REASON }; }
+    var bestAp = flatten(a.best_ap, cols, n);   // index into a.aps, -1 for no service
+    function perAp(key) { for (i = 0; i < n; i++) { var k = bestAp[i]; out[i] = k >= 0 ? a.aps[k][key] : NaN; } }
+    function snr() {
+      var o = new Float32Array(n);
+      for (i = 0; i < n; i++) {
+        var k = bestAp[i], width = k >= 0 ? a.aps[k].width_mhz : pl.default_width_mhz;
+        o[i] = ctx.rssi[i] - ctx.RF.noiseFloorDbm(cfg, width);
+      }
+      return o;
+    }
+    if (id === "rssi") { out.set(ctx.rssi); }
+    else if (id === "snr") { out.set(snr()); }
+    else if (id === "sinr") { out.set(flatten(a.sinr.sinr_db, cols, n)); }
+    else if (id === "bandwidth") { out.set(flatten(a.sinr ? a.sinr.throughput_mbps : a.throughput_mbps, cols, n)); }
+    else if (id === "latency") { out.set(flatten(a.sinr.reliability.latency_ms, cols, n)); }
+    else if (id === "loss") { out.set(flatten(a.sinr.reliability.loss_pct, cols, n)); }
+    else if (id === "quality") {
+      var rate = flatten(a.sinr ? a.sinr.throughput_mbps : a.throughput_mbps, cols, n), dead = cfg.analytics.dead_zone_dbm, best = cfg.analytics.quality_bands[0].min_dbm, w = pl.quality_weights;
+      var bw = pl.layers.bandwidth.hi;
+      for (i = 0; i < n; i++) { out[i] = 100 * (w.signal * clamp01((ctx.rssi[i] - dead) / (best - dead)) + w.throughput * clamp01(rate[i] / bw)); }
+    } else if (id === "wall_loss") {
+      if (!ctx.nowall) { out.fill(NaN); return { values: out, reason: "Wall attenuation needs the wall-free reference map, which was not computed." }; }
+      for (i = 0; i < n; i++) { out[i] = Math.max(0, ctx.nowall[i] - ctx.rssi[i]); }
+    } else if (id === "interference") {
+      var s = snr(), sinr = flatten(a.sinr.sinr_db, cols, n);
+      for (i = 0; i < n; i++) { out[i] = sinr[i] !== sinr[i] ? NaN : Math.max(0, s[i] - sinr[i]); }
+    } else if (id === "utilisation") { perAp("channel_utilisation_pct"); }
+    else if (id === "capacity") { perAp("client_capacity"); }
+    return { values: out, reason: null };
+  }
+
+  /**
+   * Heat grid for the renderer from a layer or from the combined layer (per cell minimum goodness of `combinedIds`).
+   * Returns {rssi: Float32Array (pseudo dBm), cols, rows, cellM, layer: true, id, spec, values, reason, stats}.
+   */
+  function layerGrid(id, ctx, combinedIds) {
+    var a = ctx.analytics, n = a.cols * a.rows, spec = layerSpec(ctx.config, id), values, reason = null, ids = [], i, k;
+    var grid = new Float32Array(n);
+    if (id === COMBINED_ID) {
+      var parts = [], skipped = [];
+      (combinedIds || []).forEach(function (cid) {
+        var r = layerValues(cid, ctx);
+        if (r.reason) { skipped.push(layerSpec(ctx.config, cid).label); } else { parts.push({ spec: layerSpec(ctx.config, cid), values: r.values }); ids.push(cid); }
+      });
+      values = new Float32Array(n);
+      for (i = 0; i < n; i++) {
+        var lowest = 1, any = false;
+        for (k = 0; k < parts.length; k++) { var g = goodness(parts[k].spec, parts[k].values[i]); if (g === g) { any = true; if (g < lowest) { lowest = g; } } }
+        values[i] = any ? 100 * lowest : NaN;
+      }
+      if (!parts.length) { reason = "Select at least one layer to combine."; }
+      else if (skipped.length) { reason = "Not included (no data): " + skipped.join(", ") + "."; }
+    } else {
+      var r2 = layerValues(id, ctx);
+      values = r2.values; reason = r2.reason;
+    }
+    var sum = 0, count = 0, min = Infinity, max = -Infinity;
+    for (i = 0; i < n; i++) {
+      var v = values[i], t = goodness(spec, v);
+      grid[i] = pseudoDbm(t === t ? t : 0);
+      if (v === v) { sum += v; count++; if (v < min) { min = v; } if (v > max) { max = v; } }
+    }
+    return { rssi: grid, cols: a.cols, rows: a.rows, cellM: a.cell_m, layer: true, id: id, spec: spec, values: values, reason: reason, combined: ids,
+             stats: count ? { min: min, mean: sum / count, max: max, cells: count } : null };
+  }
+
+  /** CSS gradient from the bad end to the good end of a layer on a palette. */
+  function gradientCss(paletteId, steps) {
+    var n = steps || 8, parts = [];
+    for (var i = 0; i < n; i++) {
+      var c = colorAt(paletteId, pseudoDbm(i / (n - 1)));
+      parts.push("rgb(" + c.join(",") + ") " + Math.round(100 * i / (n - 1)) + "%");
+    }
+    return "linear-gradient(to right, " + parts.join(", ") + ")";
+  }
+  /** Legend text for the ends of a layer scale: [bad end, good end] with units. */
+  function layerEnds(spec) {
+    var lo = spec.lo + " " + spec.unit, hi = spec.hi + " " + spec.unit;
+    return spec.higher_is_better ? [lo + " (weak)", hi + " (strong)"] : [hi + " (worst)", lo + " (best)"];
+  }
+
   // ------------------------------------------------------------------ tooltip text
   /** Rows [label, value] for a probeAt result. */
   function describeProbe(p, config) {
@@ -124,7 +250,8 @@
     return rows;
   }
 
-  var api = { RSSI_MIN: RSSI_MIN, RSSI_MAX: RSSI_MAX, PALETTES: PALETTES, BAND_NAMES: BAND_NAMES, colorAt: colorAt, buildLut: buildLut,
+  var api = { RSSI_MIN: RSSI_MIN, RSSI_MAX: RSSI_MAX, PALETTES: PALETTES, PALETTE_LABELS: PALETTE_LABELS, BAND_NAMES: BAND_NAMES, COMBINED_ID: COMBINED_ID,
+              layerIds: layerIds, layerSpec: layerSpec, goodness: goodness, layerValues: layerValues, layerGrid: layerGrid, gradientCss: gradientCss, layerEnds: layerEnds, colorAt: colorAt, buildLut: buildLut,
               bandOf: bandOf, bandColor: bandColor, rssiToByte: rssiToByte, legendRows: legendRows, contourSegments: contourSegments,
               bandContours: bandContours, describeProbe: describeProbe };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
@@ -228,7 +355,7 @@
       var lut = buildLut(r.opts.palette);
       for (var i = 0; i < g.rssi.length; i++) {
         var v = g.rssi[i], c;
-        if (r.opts.banded) { c = bandRgb[bandOf(config, v)]; } else { var k = rssiToByte(v) * 4; c = [lut[k], lut[k + 1], lut[k + 2]]; }
+        if (r.opts.banded && !r.layerMode) { c = bandRgb[bandOf(config, v)]; } else { var k = rssiToByte(v) * 4; c = [lut[k], lut[k + 1], lut[k + 2]]; }
         d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 255;
       }
       thumbCtx.putImageData(img, 0, 0);
@@ -237,8 +364,10 @@
 
     r.setGrid = function (g) {
       r.grid = g; gridDirty = true; thumbDirty = true;
-      r.contours = bandContours(config, g.rssi, g.cols, g.rows, g.cellM);
+      r.layerMode = !!g.layer;   // layers other than RSSI have no dBm bands: no contours, banding or dead-zone hatch
+      r.contours = r.layerMode ? [] : bandContours(config, g.rssi, g.cols, g.rows, g.cellM);
     };
+    r.clearGrid = function () { r.grid = null; r.contours = []; r.layerMode = false; if (r.lastView) { r.draw(r.lastView); } };
     r.setOptions = function (patch) {
       Object.keys(patch).forEach(function (k) { r.opts[k] = patch[k]; });
       lutDirty = true; thumbDirty = true;
@@ -269,8 +398,8 @@
         ctx.uniform1f(u.u_dead, (config.analytics.dead_zone_dbm - RSSI_MIN) / (RSSI_MAX - RSSI_MIN));
         lutDirty = false;
       }
-      ctx.uniform1f(u.u_opacity, r.opts.opacity); ctx.uniform1f(u.u_banded, r.opts.banded ? 1 : 0);
-      ctx.uniform1f(u.u_hatch, r.opts.deadZones ? 1 : 0); ctx.uniform1f(u.u_dpr, view.dpr);
+      ctx.uniform1f(u.u_opacity, r.opts.opacity); ctx.uniform1f(u.u_banded, r.opts.banded && !r.layerMode ? 1 : 0);
+      ctx.uniform1f(u.u_hatch, r.opts.deadZones && !r.layerMode ? 1 : 0); ctx.uniform1f(u.u_dpr, view.dpr);
       ctx.viewport(0, 0, canvas.width, canvas.height);
       ctx.clearColor(0, 0, 0, 0); ctx.clear(ctx.COLOR_BUFFER_BIT);
       function cx(x) { return x / view.w * 2 - 1; }
@@ -301,7 +430,7 @@
       c.globalAlpha = r.opts.opacity;
       c.drawImage(thumb, rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
       c.globalAlpha = 1;
-      if (r.opts.deadZones) {   // hatch the dead cells: draw a pattern clipped to a nearest-neighbour mask of them
+      if (r.opts.deadZones && !r.layerMode) {   // hatch the dead cells: draw a pattern clipped to a nearest-neighbour mask of them
         var mask = r.deadMask || (r.deadMask = doc.createElement("canvas")), mctx = mask.getContext("2d");
         mask.width = g.cols; mask.height = g.rows;
         var img = mctx.createImageData(g.cols, g.rows), dead = config.analytics.dead_zone_dbm;
@@ -381,6 +510,24 @@
       name.textContent = row.name; rng.textContent = row.range; rng.className = "muted";
       li.appendChild(sw); li.appendChild(name); li.appendChild(doc.createTextNode(" ")); li.appendChild(rng); list.appendChild(li);
     });
+  };
+
+  /**
+   * Legend for a layer: a gradient bar from the bad to the good end with the real values and units at both ends,
+   * so the scale never relies on colour alone. `info` is a layerGrid result (or null while it is computed).
+   */
+  api.fillLayerLegend = function (list, config, layerId, paletteId, info) {
+    list.textContent = "";
+    var spec = layerSpec(config, layerId), ends = layerEnds(spec);
+    var li = doc.createElement("li"), bar = doc.createElement("i"), lo = doc.createElement("span"), hi = doc.createElement("span");
+    li.className = "legend-ramp"; bar.className = "ramp"; bar.setAttribute("aria-hidden", "true"); bar.style.background = gradientCss(paletteId);
+    lo.textContent = ends[0]; hi.textContent = ends[1];
+    li.appendChild(lo); li.appendChild(bar); li.appendChild(hi); list.appendChild(li);
+    var note = doc.createElement("li"), txt = spec.label + ", " + spec.unit + ". ";
+    if (info && info.reason) { txt += info.reason; }
+    else if (info && info.stats) { txt += "Floor: min " + info.stats.min.toFixed(1) + ", mean " + info.stats.mean.toFixed(1) + ", max " + info.stats.max.toFixed(1) + " " + spec.unit + ". Cells without service are drawn at the worst end."; }
+    else { txt += "Computing..."; }
+    note.textContent = txt; note.className = "muted"; list.appendChild(note);
   };
 
   // ------------------------------------------------------------------ mini-map

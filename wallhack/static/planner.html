@@ -32,6 +32,17 @@
       <button type="button" data-tool="pan" aria-pressed="false" title="Pan (H or hold Space)">Pan</button>
       <button type="button" data-tool="calibrate" aria-pressed="false" title="Calibrate image scale (C)">Calibrate</button>
     </div>
+    <h3>Doors, openings, sources</h3>
+    <div class="tool-row" role="toolbar" aria-label="Doors, windows, floor openings and interference sources">
+      <button type="button" data-tool="door" aria-pressed="false" title="Place a door on a wall (D)">Door</button>
+      <button type="button" data-tool="window" aria-pressed="false" title="Place a window on a wall (O)">Window</button>
+      <button type="button" data-tool="void" aria-pressed="false" title="Draw a stairwell, atrium or shaft opening in the floor (S)">Floor opening</button>
+      <button type="button" data-tool="interferer" aria-pressed="false" title="Place a non-WiFi or neighbour interference source (X)">Interference</button>
+    </div>
+    <div class="tool-row">
+      <label class="inline">Opening kind <select id="voidKind" aria-label="Kind of floor opening"></select></label>
+      <label class="inline">Source kind <select id="sourceKind" aria-label="Kind of interference source"></select></label>
+    </div>
     <div class="tool-row">
       <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
       <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
@@ -64,6 +75,8 @@
     <h2 id="pStage">Floor plan and signal map</h2>
     <div class="stage-bar">
       <label class="inline">Floor <select id="floorSel" aria-label="Floor"></select></label>
+      <button id="floorDown" type="button" title="Floor below (Page Down)" aria-label="Floor below">Down</button>
+      <button id="floorUp" type="button" title="Floor above (Page Up)" aria-label="Floor above">Up</button>
       <span id="estimateLabel" class="chip sim">MODEL ESTIMATE, not a measurement</span>
       <span id="coverageChip" class="chip">coverage: -</span>
       <span id="deadChip" class="chip">dead zone: -</span>
@@ -85,7 +98,8 @@
         <label class="field">Band <select id="bandSel"><option value="">Per AP</option><option value="2.4">2.4 GHz</option><option value="5">5 GHz</option><option value="6">6 GHz</option></select></label>
         <label class="field">Propagation <select id="modeSel"></select></label>
         <label class="field">Resolution <select id="cellSel"><option value="">Auto</option><option value="2">2 m</option><option value="1">1 m</option><option value="0.5">0.5 m</option><option value="0.25">0.25 m</option></select></label>
-        <label class="field">Colours <select id="paletteSel"><option value="classic">Classic RF</option><option value="cvd">Colour-blind safe</option></select></label>
+        <label class="field">Map layer <select id="layerSel" aria-describedby="layerNote"></select></label>
+        <label class="field">Colours <select id="paletteSel"></select></label>
       </div>
       <label class="field">Heat opacity <input id="heatOpacity" type="range" min="0.2" max="1" step="0.05" value="0.72"></label>
       <div class="checks">
@@ -97,8 +111,9 @@
         <label class="check"><input id="tgLabels" type="checkbox" checked> Labels</label>
         <label class="check"><input id="tgImage" type="checkbox" checked> Image</label>
       </div>
-      <h3>Signal quality</h3>
+      <h3 id="legendTitle">Signal quality</h3>
       <ul id="legend" class="legend-list"></ul>
+      <p id="layerNote" class="muted hint" role="status"></p>
     </section>
     <section class="card" aria-labelledby="pFloor">
       <h2 id="pFloor">Floor</h2>
@@ -132,6 +147,8 @@
   <h2 id="helpTitle">Keyboard shortcuts</h2>
   <table>
     <tr><th>V / W / A / L / C / H</th><td>Select, wall, access point, label, calibrate, pan</td></tr>
+    <tr><th>D / O / S / X</th><td>Door, window, floor opening (stairwell), interference source</td></tr>
+    <tr><th>Page Up / Page Down</th><td>Floor above, floor below</td></tr>
     <tr><th>Space (hold)</th><td>Pan with the pointer</td></tr>
     <tr><th>Delete</th><td>Delete selection</td></tr>
     <tr><th>Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y</th><td>Undo, redo</td></tr>

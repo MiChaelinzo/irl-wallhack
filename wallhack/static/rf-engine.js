@@ -1240,7 +1240,8 @@
               mloCapacityMbps: mloCapacityMbps, roundTo: roundTo, findFloor: findFloor,
               resolveInterferers: resolveInterferers, externalCoupling: externalCoupling, packetErrorRate: packetErrorRate,
               linkReliability: linkReliability, spectrumAnalysis: spectrumAnalysis, signalDecay: signalDecay,
-              inVoid: inVoid, floorPenetrationDb: floorPenetrationDb };
+              inVoid: inVoid, floorPenetrationDb: floorPenetrationDb, apRadio: apRadio, sourceSpanMhz: sourceSpanMhz,
+              channelCentreMhz: channelCentreMhz };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFEngine = api;
 })(typeof self !== "undefined" ? self : this);

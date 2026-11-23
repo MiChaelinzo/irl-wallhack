@@ -26,6 +26,9 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 ![RF planner](docs/screenshot-planner.png)
 
 ![Planner analytics](docs/screenshot-planner-analytics.png)
+![Planner map layers: SINR beside wall attenuation, viridis palette](docs/screenshot-planner-layers.png)
+![Planner engineering dashboard](docs/screenshot-planner-dashboard.png)
+![Planner spectrum view](docs/screenshot-planner-spectrum.png)
 ![Scenario comparison](docs/screenshot-planner-compare.png)
 ![Planner, light theme](docs/screenshot-planner-light.png)
 ![Planner on a phone](docs/screenshot-planner-mobile.png)
@@ -198,6 +201,7 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | AP panel controls for standard, width, antenna pattern and azimuth | PARTIALLY VERIFIED (JavaScript syntax check only; not clicked in a browser) |
 | RF planner propagation accuracy against real buildings, throughput and capacity numbers | UNVERIFIED (planning estimates only) |
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
+| RF planner lab UI: AP WiFi standard, width, streams and MLO controls, 11 map layers plus a combined layer, side-by-side compare, colour-blind palettes (viridis, cividis), roaming, strongest-AP and blend overlays, spectrum canvas, engineering dashboard, door, window, stairwell and interference-source editing, floor up and down | PARTIALLY VERIFIED (driven in headless Chromium by `tools/planner_smoke.py`, live, `--demo`, `--canvas2d` and `--no-worker`, zero console errors; pure parts tested in node; AP panel controls clicked through the page; no real GPU, no touch, no screen reader, colour-blind rendering judged from the palette definitions, not simulated) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |
 | RF planner PDF and PNG exports opened in a real viewer | UNVERIFIED (structure and signature checked by script only) |
 | LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |

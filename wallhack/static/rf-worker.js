@@ -22,7 +22,7 @@
   var BOX_PAD_M = 0.05;          // padding on wall boxes in the dirty test
 
   var inWorker = typeof importScripts === "function" && typeof root.document === "undefined";
-  if (inWorker) { root.importScripts("rf-engine.js", "planner-state.js", "rf-optimizer.js"); }
+  if (inWorker) { root.importScripts("rf-engine.js", "planner-state.js", "rf-optimizer.js", "planner-heat.js"); }
 
   function Stale() { this.stale = true; }
 
@@ -31,7 +31,7 @@
    * the returned object's handle(message) receives requests.
    */
   function createCore(deps, post, hooks) {
-    var RF = deps.RF, State = deps.State, Opt = deps.Opt, clock = (hooks && hooks.now) || function () { return Date.now(); };
+    var RF = deps.RF, State = deps.State, Opt = deps.Opt, Heat = deps.Heat || root.PlannerHeat, clock = (hooks && hooks.now) || function () { return Date.now(); };
     var pause = (hooks && hooks.pause) || function () { return new Promise(function (r) { setTimeout(r, 0); }); };
     var config = null, env = null, project = null, matsSig = "{}", mode = "basic", band = null;
     var cache = {};              // "receivingFloor|apFloor|apId" -> entry
@@ -111,7 +111,21 @@
     }
     function unionBox(a, b) {
       if (!a) { return b; }
+      if (!b) { return a; }
       return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+    }
+
+    /** Box of the wall an opening operation touches (before it is applied for set and remove, the added item for add). */
+    function openingBox(op) {
+      var floor = State.findFloor(project, op.floor), item = op.item, i;
+      if (!item) { for (i = 0; i < floor.openings.length; i++) { if (floor.openings[i].id === op.id) { item = floor.openings[i]; } } }
+      if (op.t === "opening.set" && op.after.wall !== undefined && item) { return unionBox(wallBoxById(floor, item.wall), wallBoxById(floor, op.after.wall)); }
+      return item ? wallBoxById(floor, item.wall) : null;
+    }
+    function wallBoxById(floor, id) {
+      var w = null;
+      floor.walls.forEach(function (x) { if (x.id === id) { w = x; } });
+      return w ? State.wallBox(w) : null;
     }
 
     function applyDelta(ops) {
@@ -119,6 +133,15 @@
         if (op.t === "mode") { mode = op.mode; return; }
         if (op.t === "band") { band = op.band || null; return; }
         var kind = op.t.split(".")[0], box = null;
+        if (kind === "interferer") { State.applyOp(project, op); return; }   // sources only matter to the analysis, not to the RSSI grids
+        if (kind === "void") { State.applyOp(project, op); cache = {}; return; }   // voids change the floor loss between floors: everything may change
+        if (kind === "opening") {
+          box = openingBox(op);
+          State.applyOp(project, op);
+          box = unionBox(box, openingBox(op));
+          if (box) { invalidateBox(op.floor, box); }
+          return;
+        }
         if (kind === "wall") {
           if (op.t === "wall.add" || op.t === "wall.remove") { box = State.wallBox(op.item); }
           else { var old = wallOf(op.floor, op.id); if (old) { box = State.wallBox(old); } }
@@ -261,10 +284,40 @@
                client_capacity: an.total_client_capacity };
     }
 
+    /** Per-cell values of the requested map layers (planner-heat.js layerValues) for one analysis. Float32Arrays, transferred. */
+    function layerResults(msg, an, s) {
+      if (!Heat) { throw new Error("map layers need planner-heat.js"); }
+      var floor = State.findFloor(project, msg.floor), shared = { env: env, cellM: s.cellM, band: s.band, mode: s.mode };
+      function flatBest(proj) {
+        var g = RF.coverageGrid(proj, msg.floor, shared), out = new Float32Array(g.rows * g.cols);
+        g.rssi.forEach(function (row, r) { out.set(row, r * g.cols); });
+        return out;
+      }
+      var rssi = flatBest(project), nowall = null;
+      if (msg.layers.indexOf("wall_loss") >= 0) {
+        var bare = State.clone(project), bf = State.findFloor(bare, msg.floor);
+        bf.walls = []; bf.openings = [];
+        nowall = flatBest(bare);
+      }
+      var out = {}, ctx = { config: config, RF: RF, analytics: an, rssi: rssi, nowall: nowall };
+      msg.layers.forEach(function (id) { out[id] = Heat.layerValues(id, ctx); });
+      out.rssi = out.rssi || { values: rssi, reason: null };   // the dashboard always needs the best RSSI per cell
+      return out;
+    }
+    function transferables(result) {
+      var list = [];
+      if (result.layers) { Object.keys(result.layers).forEach(function (id) { list.push(result.layers[id].values.buffer); }); }
+      return list;
+    }
+
     function buildJob(msg) {
       var steps = [], result = {}, o;
       if (msg.type === "analyze") {
-        steps.push({ text: "analysing", run: function () { result = { type: "analysis", floor: msg.floor, analytics: slim(RF.analyzeFloor(project, msg.floor, settings(msg))) }; } });
+        steps.push({ text: "analysing", run: function () {
+          var s = settings(msg), an = RF.analyzeFloor(project, msg.floor, s);
+          result = { type: "analysis", floor: msg.floor, analytics: slim(an) };
+          if (msg.layers && msg.layers.length) { result.layers = layerResults(msg, an, s); }
+        } });
       } else if (msg.type === "compare") {
         steps.push({ text: "comparing", run: function () {
           o = settings(msg);
@@ -319,7 +372,7 @@
       function alive() { return jobLatest[msg.type] === msg.id && !jobCancelled[msg.id]; }
       function next() {
         if (!alive()) { post({ type: "cancelled", id: msg.id, job: msg.type }); return null; }
-        if (i >= job.steps.length) { post(Object.assign({ id: msg.id }, job.result())); return null; }
+        if (i >= job.steps.length) { var res = Object.assign({ id: msg.id }, job.result()); post(res, transferables(res)); return null; }
         var step = job.steps[i];
         post({ type: "progress", job: msg.type, id: msg.id, step: i, steps: job.steps.length, text: step.text });
         i += 1;

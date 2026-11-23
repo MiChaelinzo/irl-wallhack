@@ -191,6 +191,18 @@ Project JSON `schema_version` is 2 (version 1 files still load). New optional fi
 
 Not done: editing doors and windows in the UI, a "save to local twin" button (the twin API caps size, planner projects stay in the browser and in JSON files), a GPU measurement, touch and Raspberry Pi verification.
 
+## Map layers, spectrum, dashboard and editing (RF lab UI)
+
+All values are MODEL ESTIMATES. Constants are in `rf-config.json` under `planner_layers` (ranges, quality weights, dashboard thresholds, editor defaults).
+
+- **Layers**: the Heat map card picks RSSI, SNR, SINR, quality score, bandwidth, latency, packet-loss likelihood, wall attenuation, interference (SNR minus SINR), channel utilisation, capacity or a combined map (the weakest of the ticked layers in every cell). RSSI is the live worker grid. Other layers come from the analysis job (`analyze` with `layers`), at the analysis cell size, and are drawn through the same colour scale as goodness 0 to 1, so the strong end is always good. Latency, loss, SINR and interference need an AP with a WiFi standard; otherwise the legend says so. Wall attenuation is the best RSSI without walls minus the best RSSI with them.
+- **Palettes**: classic, colour-blind safe (inverted viridis), viridis, cividis. They apply to the WebGL and canvas paths and to the legend and charts.
+- **Overlays**: overlap and handoff cells, strongest AP (Okabe-Ito colours), signal blend; all from `analytics.roaming.map` and `best_ap`.
+- **Spectrum tab**: `RFEngine.spectrumAnalysis` per band and candidate width: congestion bars, the span of each AP and source, suggested channels.
+- **Dashboard tab**: signal histogram, coverage, edge coverage (cells within `edge_margin_m` of the outer wall), weakest and strongest rooms (or tiles when a floor has no rooms), mean throughput and the efficiency score defined in `planner_layers.dashboard.efficiency_note`.
+- **Editing**: tools Door (D), Window (O), Floor opening (S, drag a rectangle), Interference (X); Environment tab lists and edits sources, floor openings, doors and windows; sources can be dragged. Limits are those of `rf-config.json` (`addLimitError`).
+- **View persistence**: layer, palette, compare, combine and overlays are kept in browser storage and the URL query. They are not part of the project JSON.
+
 ## Status
 Against the original mission list. "complete" means the code exists and is covered by tests or the browser smoke; accuracy against real buildings is UNVERIFIED throughout.
 

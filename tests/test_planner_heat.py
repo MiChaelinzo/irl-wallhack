@@ -74,3 +74,26 @@ def test_tooltip_rows_carry_rssi_throughput_distance_obstructions_and_the_estima
     assert labels == ["Signal", "Throughput", "Best AP", "Distance", "Obstructions", ""]
     assert "dBm" in r["rows"][0][1] and "1 wall" in r["rows"][4][1] and r["rows"][3][1] == "8.0 m"
     assert r["rows"][-1][1] == "MODEL ESTIMATE, not a measurement" and r["none"][1][1] == "none"
+
+
+def test_colour_blind_palettes_are_ordered_dark_to_bright_and_distinct():
+    r = run_js("out({v: [-100, -65, -30].map(x => H.colorAt('viridis', x)), c: [-100, -30].map(x => H.colorAt('cividis', x)), ids: Object.keys(H.PALETTES)})")
+    assert r["v"][0] == [0x44, 0x01, 0x54] and r["v"][2] == [0xfd, 0xe7, 0x25] and r["v"][1] != r["v"][0]
+    assert r["c"][0] == [0x00, 0x20, 0x4d] and r["c"][1] == [0xff, 0xea, 0x46] and {"classic", "cvd", "viridis", "cividis"} <= set(r["ids"])
+
+
+def test_layer_grids_flip_bad_is_low_layers_and_report_missing_sinr():
+    r = run_js("""
+      const a = {cols: 2, rows: 1, cell_m: 1, best_ap: [[0, -1]], aps: [{width_mhz: 20, channel_utilisation_pct: 30, client_capacity: 12}], throughput_mbps: [[100, 0]]};
+      const ctx = {config, RF: E, analytics: a, rssi: Float32Array.from([-40, -90])};
+      const snr = H.layerValues('snr', ctx), sinr = H.layerValues('sinr', ctx), q = H.layerGrid('quality', ctx), u = H.layerGrid('utilisation', ctx);
+      const comb = H.layerGrid('combined', ctx, ['rssi', 'utilisation']);
+      out({snr: Array.from(snr.values), sinrReason: !!sinr.reason, sinrNaN: Array.from(sinr.values).every(Number.isNaN),
+           q: Array.from(q.values), uGrid: Array.from(u.rssi), comb: Array.from(comb.values), ends: H.layerEnds(config.planner_layers.layers.latency),
+           good: [H.goodness({lo: 0, hi: 10, higher_is_better: false}, 0), H.goodness({lo: 0, hi: 10, higher_is_better: true}, 20), H.goodness({lo: 0, hi: 1, higher_is_better: true}, NaN)]});
+    """)
+    assert abs(r["snr"][0] - (-40 - rfmodel.noise_floor_dbm(20))) < 1e-3   # the Python model is the source of truth
+    assert r["sinrReason"] and r["sinrNaN"]
+    assert r["q"][0] > r["q"][1] and r["uGrid"][0] > r["uGrid"][1] == -100
+    assert r["comb"][0] > r["comb"][1] and r["good"][0] == 1 and r["good"][1] == 1 and r["good"][2] is None
+    assert "worst" in r["ends"][0] and "best" in r["ends"][1]

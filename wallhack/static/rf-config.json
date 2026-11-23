@@ -1337,5 +1337,131 @@
    "switch_ports": 24,
    "spare_port_pct": 20.0
   }
+ },
+ "planner_layers": {
+  "label": "ESTIMATE: map layers derived from the propagation model, a planning aid, not measurements",
+  "source": "Each layer is a per-cell value over the analysis grid. Layers that need an AP with a WiFi standard (SINR, latency, packet loss, interference) come from the SINR and reliability sections of the analysis (docs/platform/15-wifi-physics.md). SNR is the best RSSI minus the thermal plus noise-figure floor of the serving AP width. Wall attenuation is the best RSSI computed with the walls of the floor removed minus the best RSSI with them, so it is the loss the walls and openings add. Quality score blends the signal position between the dead zone level and the best quality band edge with the throughput position between 0 and bandwidth.hi, using quality_weights, planning preferences not physics. Channel utilisation and capacity are those of the serving AP in the analytics section. The ranges lo and hi map a value onto the colour scale, higher_is_better flips it so that a good value is always the strong end of the scale.",
+  "default_width_mhz": 20,
+  "quality_weights": {
+   "signal": 0.6,
+   "throughput": 0.4
+  },
+  "layers": {
+   "rssi": {
+    "label": "RSSI",
+    "unit": "dBm",
+    "lo": -100.0,
+    "hi": -30.0,
+    "higher_is_better": true,
+    "needs": null
+   },
+   "snr": {
+    "label": "SNR",
+    "unit": "dB",
+    "lo": 0.0,
+    "hi": 60.0,
+    "higher_is_better": true,
+    "needs": null
+   },
+   "sinr": {
+    "label": "SINR",
+    "unit": "dB",
+    "lo": -5.0,
+    "hi": 40.0,
+    "higher_is_better": true,
+    "needs": "sinr"
+   },
+   "quality": {
+    "label": "Quality score",
+    "unit": "points",
+    "lo": 0.0,
+    "hi": 100.0,
+    "higher_is_better": true,
+    "needs": null
+   },
+   "bandwidth": {
+    "label": "Bandwidth estimate",
+    "unit": "Mbps",
+    "lo": 0.0,
+    "hi": 600.0,
+    "higher_is_better": true,
+    "needs": null
+   },
+   "latency": {
+    "label": "Latency estimate",
+    "unit": "ms",
+    "lo": 2.0,
+    "hi": 40.0,
+    "higher_is_better": false,
+    "needs": "sinr"
+   },
+   "loss": {
+    "label": "Packet-loss likelihood",
+    "unit": "%",
+    "lo": 0.0,
+    "hi": 10.0,
+    "higher_is_better": false,
+    "needs": "sinr"
+   },
+   "wall_loss": {
+    "label": "Wall attenuation",
+    "unit": "dB",
+    "lo": 0.0,
+    "hi": 40.0,
+    "higher_is_better": false,
+    "needs": null
+   },
+   "interference": {
+    "label": "Interference (SNR minus SINR)",
+    "unit": "dB",
+    "lo": 0.0,
+    "hi": 30.0,
+    "higher_is_better": false,
+    "needs": "sinr"
+   },
+   "utilisation": {
+    "label": "Channel utilisation",
+    "unit": "%",
+    "lo": 0.0,
+    "hi": 100.0,
+    "higher_is_better": false,
+    "needs": null
+   },
+   "capacity": {
+    "label": "Capacity (clients per AP)",
+    "unit": "clients",
+    "lo": 0.0,
+    "hi": 60.0,
+    "higher_is_better": true,
+    "needs": null
+   }
+  },
+  "dashboard": {
+   "histogram_bin_db": 5.0,
+   "edge_margin_m": 1.0,
+   "zone_tile_m": 5.0,
+   "zones": 3,
+   "efficiency_target_mbps": 100.0,
+   "efficiency_note": "Efficiency score is the average over cells of min(1, estimated bandwidth / efficiency_target_mbps), in percent. The target is a planning assumption."
+  },
+  "editor": {
+  "label": "Editing defaults for doors, windows and floor openings, drawing conveniences, not physics",
+  "opening_width_m": {
+   "door": 0.9,
+   "window": 1.2
+  },
+  "opening_snap_wall_m": 0.5,
+  "min_void_m": 0.5
+ },
+ "overlay_ap_colours": [
+   "#e69f00",
+   "#56b4e9",
+   "#009e73",
+   "#f0e442",
+   "#0072b2",
+   "#d55e00",
+   "#cc79a7",
+   "#999999"
+  ]
  }
 }
