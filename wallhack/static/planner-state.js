@@ -226,6 +226,10 @@
         if (d.name !== undefined) { dev.name = nameText(d, "name", q, maxText); }
         floor.devices.push(dev);
       });
+      if (f.voids !== undefined) {
+        floor.voids = list(f, "voids", p, maxItems).map(function (v, i) { return validateVoid(v, p + ".voids[" + i + "]", width, depth, cfg, maxText); });
+        unique(floor.voids.map(function (v) { return v.id; }), p + ".voids");
+      }
       unique(floor.aps.map(function (a) { return a.id; }), p + ".aps");
       unique(floor.labels.map(function (l) { return l.id; }), p + ".labels");
       unique(floor.annotations.map(function (a) { return a.id; }), p + ".annotations");
@@ -233,6 +237,7 @@
       out.floors.push(floor);
     });
     unique(out.floors.map(function (f) { return f.id; }), "floors");
+    if (data.interferers !== undefined) { out.interferers = validateInterferers(data.interferers, out.floors, cfg, maxText); }
     unique(out.floors.map(function (f) { return String(f.level); }), "floors.level");
     var apIds = Object.create(null);
     out.floors.forEach(function (f) { f.aps.forEach(function (a) { apIds[a.id] = a; }); });
@@ -263,6 +268,62 @@
   function whole(v, path, lo, hi) {
     if (typeof v !== "number" || Math.floor(v) !== v || v < lo || v > hi) { throw ProjectError(path + ": must be a whole number from " + lo + " to " + hi); }
     return v;
+  }
+
+  /** A stairwell, atrium or shaft opening in the floor, same rules as twin._void: a rectangle (x, y, w, d) or a polygon (points). */
+  function validateVoid(v, q, width, depth, cfg, maxText) {
+    object(v, q);
+    var void_ = { id: text(v, "id", q, maxText), kind: choice(v, "kind", cfg.voids.kinds, q) };
+    if (v.points !== undefined) {
+      if (v.x !== undefined || v.y !== undefined || v.w !== undefined || v.d !== undefined) { throw ProjectError(q + ": give either points or x, y, w, d, not both"); }
+      var limit = cfg.voids.max_points;
+      if (!Array.isArray(v.points) || v.points.length < 3 || v.points.length > limit) { throw ProjectError(q + ".points: must be a list of 3 to " + limit + " points"); }
+      void_.points = v.points.map(function (pt, i) {
+        var r = q + ".points[" + i + "]";
+        if (!Array.isArray(pt) || pt.length !== 2) { throw ProjectError(r + ": must be a point [x, y]"); }
+        return [num(pt[0], r + "[0]", 0, width), num(pt[1], r + "[1]", 0, depth)];
+      });
+      return void_;
+    }
+    var x = num(v.x, q + ".x", 0, width), y = num(v.y, q + ".y", 0, depth), w = num(v.w, q + ".w", 0.1), d = num(v.d, q + ".d", 0.1);
+    if (x + w > width + 1e-9 || y + d > depth + 1e-9) { throw ProjectError(q + ": void extends outside the floor"); }
+    void_.x = x; void_.y = y; void_.w = w; void_.d = d;
+    return void_;
+  }
+
+  /** Non-WiFi and neighbour sources (project.interferers), same rules as twin._interferers. */
+  function validateInterferers(data, floors, cfg, maxText) {
+    var ext = cfg.external_sources;
+    if (!Array.isArray(data) || data.length > ext.max_sources) { throw ProjectError("interferers: must be a list of at most " + ext.max_sources + " sources"); }
+    var byFloor = Object.create(null);
+    floors.forEach(function (f) { byFloor[f.id] = f; });
+    var out = data.map(function (s, i) {
+      var q = "interferers[" + i + "]";
+      object(s, q);
+      var kind = choice(s, "kind", Object.keys(ext.kinds), q), floor = byFloor[s.floor];
+      if (!floor) { throw ProjectError(q + ".floor: unknown floor id " + JSON.stringify(s.floor)); }
+      var src = { id: text(s, "id", q, maxText), kind: kind, floor: floor.id, x: num(s.x, q + ".x", 0, floor.width_m), y: num(s.y, q + ".y", 0, floor.depth_m) };
+      if (s.name !== undefined) { src.name = text(s, "name", q, maxText); }
+      if (s.tx_dbm !== undefined) { src.tx_dbm = num(s.tx_dbm, q + ".tx_dbm", ext.tx_dbm_range[0], ext.tx_dbm_range[1]); }
+      if (s.duty_cycle !== undefined) { src.duty_cycle = num(s.duty_cycle, q + ".duty_cycle", ext.duty_cycle_range[0], ext.duty_cycle_range[1]); }
+      var radio = ["band", "channel", "width_mhz"].filter(function (k) { return s[k] !== undefined; });
+      if (kind !== "neighbour_wifi" && radio.length) { throw ProjectError(q + "." + radio[0] + ": only a neighbour_wifi source has a band, channel or width"); }
+      if (kind === "neighbour_wifi") {
+        var band = s.band !== undefined ? choice(s, "band", Object.keys(cfg.bands), q) : ext.kinds[kind].default_band;
+        if (s.band !== undefined) { src.band = band; }
+        if (s.channel !== undefined) {
+          if (cfg.bands[band].channels.indexOf(s.channel) < 0) { throw ProjectError(q + ".channel: must be one of " + cfg.bands[band].channels.join(", ") + " for this band"); }
+          src.channel = s.channel;
+        }
+        if (s.width_mhz !== undefined) {
+          if (cfg.bands[band].widths_mhz.indexOf(s.width_mhz) < 0) { throw ProjectError(q + ".width_mhz: must be one of " + cfg.bands[band].widths_mhz.join(", ") + " for this band"); }
+          src.width_mhz = s.width_mhz;
+        }
+      }
+      return src;
+    });
+    unique(out.map(function (s) { return s.id; }), "interferers");
+    return out;
   }
 
   /** Optional standard, width, streams, MLO and antenna fields of an AP, same rules as twin._ap_model_fields. */

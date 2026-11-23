@@ -175,7 +175,7 @@
 
     function computeTile(entry, lvName, floor, cellM, t, prepCache) {
       var lv = entry[lvName], e = entry.src;
-      RF.computeApRegion(floor, e.ap, { env: env, cellM: lv.cellM, band: band, mode: mode, floorsApart: Math.abs(e.floor.level - floor.level), prepCache: prepCache },
+      RF.computeApRegion(floor, e.ap, { env: env, cellM: lv.cellM, band: band, mode: mode, floorsApart: Math.abs(e.floor.level - floor.level), apFloor: e.floor, prepCache: prepCache },
                          tileRegion(lv, t), lv.grid);
       lv.valid[t] = 1;
     }

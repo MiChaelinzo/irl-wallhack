@@ -21,19 +21,19 @@
     var ax = E.gridAxes(floor, cellM);
     var apList = [];
     project.floors.forEach(function (f) {
-      f.aps.forEach(function (ap) { apList.push({ ap: ap, apart: Math.abs(f.level - floor.level) }); });
+      f.aps.forEach(function (ap) { apList.push({ ap: ap, apart: Math.abs(f.level - floor.level), floor: f }); });
     });
     return { project: project, floor: floor, config: config, pc: pc, env: env, cellM: cellM, cols: ax.cols, rows: ax.rows,
              cells: ax.cols * ax.rows, mode: opts.mode || "basic", band: opts.band || null, apList: apList,
              threshold: config.analytics.coverage_dbm };
   }
 
-  function gridFor(ctx, env, ap, apart) {
-    return E.computeApGrid(ctx.floor, ap, { env: env, cellM: ctx.cellM, mode: ctx.mode, band: ctx.band, floorsApart: apart });
+  function gridFor(ctx, env, ap, apart, apFloor) {
+    return E.computeApGrid(ctx.floor, ap, { env: env, cellM: ctx.cellM, mode: ctx.mode, band: ctx.band, floorsApart: apart, apFloor: apFloor });
   }
 
   function gridsFor(ctx, env, extra) {
-    return ctx.apList.concat(extra || []).map(function (e) { return gridFor(ctx, env, e.ap, e.apart); });
+    return ctx.apList.concat(extra || []).map(function (e) { return gridFor(ctx, env, e.ap, e.apart, e.floor); });
   }
 
   function bestOf(ctx, grids) {

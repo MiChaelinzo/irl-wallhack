@@ -164,6 +164,74 @@ def _ap_model_fields(a: dict, ap: dict, q: str) -> None:
         ap["front_to_back_db"] = _num(a["front_to_back_db"], f"{q}.front_to_back_db", *sector["front_to_back_db_range"])
 
 
+def _point_in_floor(value: Any, path: str, width: float, depth: float) -> List[float]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise TwinError(f"{path}: must be a point [x, y]")
+    return [_num(value[0], f"{path}[0]", 0, width), _num(value[1], f"{path}[1]", 0, depth)]
+
+
+def _void(v: dict, q: str, width: float, depth: float) -> dict:
+    """A stairwell, atrium or shaft opening in the floor: a rectangle (x, y, w, d) or a polygon (points)."""
+    void = {"id": _text(v, "id", q), "kind": _choice(v, "kind", tuple(rfmodel.VOIDS["kinds"]), q)}
+    if "points" in v:
+        if any(k in v for k in ("x", "y", "w", "d")):
+            raise TwinError(f"{q}: give either points or x, y, w, d, not both")
+        points = v["points"]
+        limit = rfmodel.VOIDS["max_points"]
+        if not isinstance(points, list) or not 3 <= len(points) <= limit:
+            raise TwinError(f"{q}.points: must be a list of 3 to {limit} points")
+        void["points"] = [_point_in_floor(pt, f"{q}.points[{i}]", width, depth) for i, pt in enumerate(points)]
+        return void
+    x, y = _num(v.get("x"), f"{q}.x", 0, width), _num(v.get("y"), f"{q}.y", 0, depth)
+    w, d = _num(v.get("w"), f"{q}.w", 0.1), _num(v.get("d"), f"{q}.d", 0.1)
+    if x + w > width + 1e-9 or y + d > depth + 1e-9:
+        raise TwinError(f"{q}: void extends outside the floor")
+    void.update({"x": x, "y": y, "w": w, "d": d})
+    return void
+
+
+def _interferers(data: Any, floors: List[dict]) -> List[dict]:
+    """Non-WiFi and neighbour sources: kind, floor, position and optional power, duty cycle and (neighbour WiFi) radio."""
+    ext = rfmodel.EXTERNAL
+    if not isinstance(data, list) or len(data) > ext["max_sources"]:
+        raise TwinError(f"interferers: must be a list of at most {ext['max_sources']} sources")
+    by_floor = {f["id"]: f for f in floors}
+    out = []
+    for i, s in enumerate(data):
+        q = f"interferers[{i}]"
+        if not isinstance(s, dict):
+            raise TwinError(f"{q}: must be an object")
+        kind = _choice(s, "kind", tuple(ext["kinds"]), q)
+        floor = by_floor.get(s.get("floor"))
+        if floor is None:
+            raise TwinError(f"{q}.floor: unknown floor id {s.get('floor')!r}")
+        src = {"id": _text(s, "id", q), "kind": kind, "floor": floor["id"],
+               "x": _num(s.get("x"), f"{q}.x", 0, floor["width_m"]), "y": _num(s.get("y"), f"{q}.y", 0, floor["depth_m"])}
+        _optional_text(s, "name", q, src)
+        if "tx_dbm" in s:
+            src["tx_dbm"] = _num(s["tx_dbm"], f"{q}.tx_dbm", *ext["tx_dbm_range"])
+        if "duty_cycle" in s:
+            src["duty_cycle"] = _num(s["duty_cycle"], f"{q}.duty_cycle", *ext["duty_cycle_range"])
+        radio = [k for k in ("band", "channel", "width_mhz") if k in s]
+        if kind != "neighbour_wifi" and radio:
+            raise TwinError(f"{q}.{radio[0]}: only a neighbour_wifi source has a band, channel or width")
+        if kind == "neighbour_wifi":
+            band = _choice(s, "band", tuple(rfmodel.BANDS), q) if "band" in s else ext["kinds"][kind]["default_band"]
+            if "band" in s:
+                src["band"] = band
+            if "channel" in s:
+                if isinstance(s["channel"], bool) or s["channel"] not in rfmodel.BANDS[band]["channels"]:
+                    raise TwinError(f"{q}.channel: must be one of {rfmodel.BANDS[band]['channels']} for this band")
+                src["channel"] = s["channel"]
+            if "width_mhz" in s:
+                if isinstance(s["width_mhz"], bool) or s["width_mhz"] not in rfmodel.BANDS[band]["widths_mhz"]:
+                    raise TwinError(f"{q}.width_mhz: must be one of {rfmodel.BANDS[band]['widths_mhz']} for this band")
+                src["width_mhz"] = int(s["width_mhz"])
+        out.append(src)
+    _unique([s["id"] for s in out], "interferers")
+    return out
+
+
 def _custom_materials(data: Any) -> Dict[str, dict]:
     """Project-defined materials: {id: {label, attenuation_db{band}, reflection_loss_db{band}}}."""
     if not isinstance(data, dict) or len(data) > MAX_CUSTOM_MATERIALS:
@@ -279,6 +347,9 @@ def validate_twin(data: Any) -> dict:
                 raise TwinError(f"{q}: opening extends past the end of wall {wall['id']!r}")
             floor["openings"].append({"id": _text(o, "id", q), "kind": _choice(o, "kind", OPENING_KINDS, q),
                                       "wall": wall["id"], "pos": pos, "width": width_o})
+        if "voids" in f:
+            floor["voids"] = [_void(v, f"{p}.voids[{i}]", width, depth) for i, v in enumerate(_items(f, "voids", p))]
+            _unique([v["id"] for v in floor["voids"]], f"{p}.voids")
         for i, it in enumerate(_items(f, "furniture", p)):
             q = f"{p}.furniture[{i}]"
             x, y = inside(it.get("x"), it.get("y"), q)
@@ -308,6 +379,8 @@ def validate_twin(data: Any) -> dict:
             _unique([i["id"] for i in floor[key]], f"{p}.{key}")
         out["floors"].append(floor)
     _unique([f["id"] for f in out["floors"]], "floors")
+    if "interferers" in data:
+        out["interferers"] = _interferers(data["interferers"], out["floors"])
     _unique([str(f["level"]) for f in out["floors"]], "floors.level")
     return out
 

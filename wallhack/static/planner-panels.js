@@ -178,10 +178,20 @@
       function sx(x) { return view.ox + x * view.scale; }
       function sy(y) { return view.oy + y * view.scale; }
       if (state.roaming && state.analysis && state.analysis.floor === app.store.floorId) {
-        c.save(); c.fillStyle = "rgba(251,191,36,.20)"; c.strokeStyle = "#fbbf24"; c.lineWidth = 1.5; c.setLineDash([5, 4]);
-        state.analysis.analytics.roaming.zones.forEach(function (z) {
-          c.fillRect(sx(z.bbox.x_min), sy(z.bbox.y_min), (z.bbox.x_max - z.bbox.x_min) * view.scale, (z.bbox.y_max - z.bbox.y_min) * view.scale);
-          c.strokeRect(sx(z.bbox.x_min), sy(z.bbox.y_min), (z.bbox.x_max - z.bbox.x_min) * view.scale, (z.bbox.y_max - z.bbox.y_min) * view.scale);
+        // exact per-cell data (analytics.roaming.map), horizontal runs of equal zones drawn as one rectangle
+        var an = state.analysis.analytics, map = an.roaming.map, cell = an.cell_m * view.scale;
+        var fills = { overlap: "rgba(251,191,36,.12)", handoff: "rgba(251,191,36,.40)" };
+        c.save();
+        map.zone.forEach(function (row, r) {
+          for (var col = 0; col < row.length; col++) {
+            var id = map.zone_ids[row[col]];
+            if (!fills[id]) { continue; }
+            var end = col;
+            while (end + 1 < row.length && row[end + 1] === row[col]) { end++; }
+            c.fillStyle = fills[id];
+            c.fillRect(sx(col * an.cell_m), sy(r * an.cell_m), cell * (end - col + 1), cell);
+            col = end;
+          }
         });
         c.restore();
       }
@@ -239,7 +249,7 @@
       var rg = el("input", { type: "checkbox", id: "tgRoaming" });
       rg.checked = state.roaming;
       rg.addEventListener("change", function () { state.roaming = rg.checked; app.editor.invalidate(); });
-      tools.appendChild(el("label", { class: "check" }, [rg, " Show roaming zones on the plan (bounding boxes)"]));
+      tools.appendChild(el("label", { class: "check" }, [rg, " Show roaming zones on the plan (exact cells: handoff strong, overlap light)"]));
       host.appendChild(tools);
 
       var bars = el("div", { class: "bars", "aria-hidden": "true" });

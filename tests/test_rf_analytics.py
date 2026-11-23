@@ -38,7 +38,17 @@ def test_best_ap_overlap_and_roaming():
     assert r["best_ap"] == [[0, 0, 1, 1], [0, -1, -1, -1]]
     assert r["overlap"]["cells"] == 2 and r["overlap"]["pairs"] == [{"a": "A", "b": "B", "cells": 2, "area_m2": 2.0}]
     assert r["roaming"]["cells"] == 2
-    assert r["roaming"]["zones"][0]["bbox"] == {"x_min": 1.0, "y_min": 0.0, "x_max": 3.0, "y_max": 1.0}
+    assert r["roaming"]["zones"] == [{"cells": 2, "area_m2": 2.0, "centroid": {"x": 2.0, "y": 0.5}}]   # no bounding box any more
+
+
+def test_roaming_map_is_exact_per_cell():
+    m = tiny()["roaming"]["map"]
+    assert m["zone_ids"] == ["single", "overlap", "handoff"]
+    assert m["second_ap"] == [[1, 1, 0, 0], [1, -1, -1, -1]]
+    assert m["margin_db"] == [[40.0, 6.0, 2.0, 4.0], [70.0, None, None, None]]
+    assert m["zone"] == [[0, 2, 2, 0], [0, 0, 0, 0]]
+    # blend: 50 % at zero margin rising to 100 % at roam_margin_db (8 dB), 100 % where one AP serves, none without a serving AP
+    assert m["blend_pct"] == [[100.0, 87.5, 62.5, 100.0], [100.0, None, None, None]]
 
 
 def test_throughput_capacity_and_utilisation():

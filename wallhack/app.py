@@ -25,11 +25,12 @@ MAX_BODY_BYTES = 1_000_000
 
 def _twin_body_limit() -> int:
     """Largest PUT /api/twin body: every floor at its limits (background image, walls, openings and the other lists
-    at twin_json_bytes_per_item each) plus a fixed overhead. All inputs are rf-config.json limits."""
+    at twin_json_bytes_per_item each, voids included) plus the interferer list and a fixed overhead. All inputs are rf-config.json limits."""
     lim = rfmodel.LIMITS
-    items = lim["max_walls_per_floor"] + lim["max_openings_per_floor"] + 5 * lim["max_items_per_list"]
+    items = lim["max_walls_per_floor"] + lim["max_openings_per_floor"] + 6 * lim["max_items_per_list"]
     per_floor = lim["max_background_chars"] + items * lim["twin_json_bytes_per_item"]
-    return lim["max_floors"] * per_floor + lim["twin_body_overhead_bytes"]
+    sources = rfmodel.EXTERNAL["max_sources"] * lim["twin_json_bytes_per_item"]
+    return lim["max_floors"] * per_floor + sources + lim["twin_body_overhead_bytes"]
 
 
 MAX_TWIN_BODY_BYTES = _twin_body_limit()

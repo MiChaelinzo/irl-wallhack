@@ -65,6 +65,12 @@ KNIFE_EDGE = ENGINE["knife_edge"]
 WIFI = CONFIG["wifi_standards"]
 INTERFERENCE = CONFIG["interference"]
 ANTENNA = CONFIG["antenna"]
+EXTERNAL = CONFIG["external_sources"]
+RELIABILITY = CONFIG["reliability"]
+VOIDS = CONFIG["voids"]
+SPECTRUM = CONFIG["spectrum"]
+DECAY = CONFIG["decay"]
+ROAMING = CONFIG["roaming"]
 LABEL = "ESTIMATE: log-distance model with wall attenuation, not a measurement"
 MODE_LABEL = "MODEL ESTIMATE ({mode} mode, {band} GHz), not a measurement"
 
@@ -114,11 +120,12 @@ def _touches(wall: dict, point: Tuple[float, float]) -> bool:
                for kx, ky in (("x1", "y1"), ("x2", "y2")))
 
 
-def wall_loss_db(floor: dict, px: float, py: float, qx: float, qy: float, band: str = DEFAULT_BAND,
-                 materials: Optional[Dict[str, dict]] = None, skip_id: Optional[str] = None,
-                 skip_point: Optional[Tuple[float, float]] = None) -> float:
-    """Total attenuation from the walls and openings the straight path p->q crosses on one floor.
+def wall_crossings(floor: dict, px: float, py: float, qx: float, qy: float, band: str = DEFAULT_BAND,
+                   materials: Optional[Dict[str, dict]] = None, skip_id: Optional[str] = None,
+                   skip_point: Optional[Tuple[float, float]] = None):
+    """Yield (wall, loss_db, opening) for every wall the straight path p->q crosses on one floor, in wall order.
 
+    `opening` is the door or window the path goes through (its loss replaces the wall loss), else None.
     `skip_id` ignores one wall (the reflector) and `skip_point` ignores walls with an end at that
     point (the corner a diffracted path bends around).
     """
@@ -126,7 +133,6 @@ def wall_loss_db(floor: dict, px: float, py: float, qx: float, qy: float, band: 
     openings: Dict[str, List[dict]] = {}
     for o in floor["openings"]:
         openings.setdefault(o["wall"], []).append(o)
-    total = 0.0
     for wall in floor["walls"]:
         if wall["id"] == skip_id or (skip_point is not None and _touches(wall, skip_point)):
             continue
@@ -134,10 +140,21 @@ def wall_loss_db(floor: dict, px: float, py: float, qx: float, qy: float, band: 
         if along is None:
             continue
         loss = wall_material(wall, materials)["attenuation_db"][band]
+        through = None
         for o in openings.get(wall["id"], ()):
             if o["pos"] <= along <= o["pos"] + o["width"]:
                 loss = CONFIG["openings"][o["kind"]]["attenuation_db"][band]
+                through = o
                 break
+        yield wall, loss, through
+
+
+def wall_loss_db(floor: dict, px: float, py: float, qx: float, qy: float, band: str = DEFAULT_BAND,
+                 materials: Optional[Dict[str, dict]] = None, skip_id: Optional[str] = None,
+                 skip_point: Optional[Tuple[float, float]] = None) -> float:
+    """Total attenuation from the walls and openings the straight path p->q crosses on one floor (see wall_crossings)."""
+    total = 0.0
+    for _wall, loss, _opening in wall_crossings(floor, px, py, qx, qy, band, materials, skip_id, skip_point):
         total += loss
     return total
 
@@ -205,28 +222,35 @@ def knife_edge_loss_db(v: float) -> float:
     return k["offset_db"] + k["log_scale"] * math.log10(math.sqrt((v - k["v_offset"]) ** 2 + 1.0) + v - k["v_offset"])
 
 
-def _diffracted_dbm(ap: dict, floor: dict, corner: Tuple[float, float], x: float, y: float, band: str,
-                    materials: Dict[str, dict]) -> float:
+def _knife_edge_for(ap: dict, corner: Tuple[float, float], x: float, y: float, band: str) -> float:
+    """Knife-edge loss (dB) of the path AP -> corner -> (x, y)."""
     ax, ay = ap["x"], ap["y"]
     d1, d2 = math.hypot(corner[0] - ax, corner[1] - ay), math.hypot(x - corner[0], y - corner[1])
     delta = max(0.0, d1 + d2 - math.hypot(x - ax, y - ay))
     wavelength = ENGINE["speed_of_light_mps"] / (BANDS[band]["ghz"] * 1e9)
-    v = math.sqrt(KNIFE_EDGE["v_scale"] * delta / wavelength)
-    loss = (path_loss_db(d1 + d2, band) + knife_edge_loss_db(v)
+    return knife_edge_loss_db(math.sqrt(KNIFE_EDGE["v_scale"] * delta / wavelength))
+
+
+def _diffracted_dbm(ap: dict, floor: dict, corner: Tuple[float, float], x: float, y: float, band: str,
+                    materials: Dict[str, dict]) -> float:
+    ax, ay = ap["x"], ap["y"]
+    d1, d2 = math.hypot(corner[0] - ax, corner[1] - ay), math.hypot(x - corner[0], y - corner[1])
+    loss = (path_loss_db(d1 + d2, band) + _knife_edge_for(ap, corner, x, y, band)
             + wall_loss_db(floor, ax, ay, corner[0], corner[1], band, materials, skip_point=corner)
             + wall_loss_db(floor, corner[0], corner[1], x, y, band, materials, skip_point=corner))
     return ap["tx_dbm"] + antenna_gain_toward(ap, corner[0], corner[1]) - loss
 
 
-def _indirect_levels(ap: dict, floor: dict, x: float, y: float, band: str, materials: Dict[str, dict]) -> List[float]:
-    """Levels (dBm, before floor loss) of every reflected and diffracted path to (x, y)."""
-    levels: List[float] = []
+def _indirect_paths(ap: dict, floor: dict, x: float, y: float, band: str, materials: Dict[str, dict]) -> List[tuple]:
+    """Every reflected and diffracted path to (x, y) as ("reflection", wall, dBm) or ("diffraction", corner, dBm),
+    levels before floor loss, reflections in wall order then diffractions in corner order."""
+    paths: List[tuple] = []
     blockers = []
     for wall in floor["walls"]:
         if _point_segment_distance(ap["x"], ap["y"], wall) <= MAX_REFLECTOR_RANGE_M:
             level = _reflected_dbm(ap, floor, wall, x, y, band, materials)
             if level is not None:
-                levels.append(level)
+                paths.append(("reflection", wall, level))
         if _ray_wall_hit(ap["x"], ap["y"], x, y, wall) is not None:
             blockers.append(wall)
     corners: List[Tuple[float, float]] = []
@@ -234,8 +258,13 @@ def _indirect_levels(ap: dict, floor: dict, x: float, y: float, band: str, mater
         for corner in ((wall["x1"], wall["y1"]), (wall["x2"], wall["y2"])):
             if corner not in corners:
                 corners.append(corner)
-    levels.extend(_diffracted_dbm(ap, floor, c, x, y, band, materials) for c in corners)
-    return levels
+    paths.extend(("diffraction", c, _diffracted_dbm(ap, floor, c, x, y, band, materials)) for c in corners)
+    return paths
+
+
+def _indirect_levels(ap: dict, floor: dict, x: float, y: float, band: str, materials: Dict[str, dict]) -> List[float]:
+    """Levels (dBm, before floor loss) of every reflected and diffracted path to (x, y)."""
+    return [level for _kind, _ref, level in _indirect_paths(ap, floor, x, y, band, materials)]
 
 
 def _basic_dbm(ap: dict, floor: dict, x: float, y: float, band: str, materials: Dict[str, dict]) -> float:
@@ -275,6 +304,41 @@ def check_mode(mode: str) -> str:
     return mode
 
 
+def _in_polygon(x: float, y: float, points: List[List[float]]) -> bool:
+    """Even-odd ray casting. Points on the edge may fall either way, the same in rf-engine.js."""
+    inside = False
+    j = len(points) - 1
+    for i in range(len(points)):
+        xi, yi, xj, yj = points[i][0], points[i][1], points[j][0], points[j][1]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def in_void(floor: dict, x: float, y: float) -> bool:
+    """True if (x, y) lies inside a stairwell, atrium or shaft opening of the floor. Floors without `voids` never do."""
+    for v in floor.get("voids", ()):
+        if "points" in v:
+            if _in_polygon(x, y, v["points"]):
+                return True
+        elif v["x"] <= x <= v["x"] + v["w"] and v["y"] <= y <= v["y"] + v["d"]:
+            return True
+    return False
+
+
+def floor_penetration_db(ap: dict, ap_floor: dict, floor: dict, x: float, y: float, floors_apart: int, band: str) -> float:
+    """Floor loss between the AP floor and the receiving floor. Every path end that sits inside a void on its own
+    floor removes `voids.open_end_reduction` of it (capped at all of it). Without voids it is floor_loss_db x floors."""
+    base = CONFIG["floor_loss_db"][band] * floors_apart
+    if floors_apart == 0:
+        return base
+    open_ends = int(in_void(ap_floor, ap["x"], ap["y"])) + int(in_void(floor, x, y))
+    if open_ends == 0:
+        return base
+    return base * (1.0 - min(1.0, open_ends * VOIDS["open_end_reduction"]))
+
+
 def rssi_from_ap(ap: dict, ap_floor: dict, floor: dict, x: float, y: float, floors_apart: int = 0,
                  band: Optional[str] = None, mode: str = "basic",
                  materials: Optional[Dict[str, dict]] = None) -> float:
@@ -284,7 +348,7 @@ def rssi_from_ap(ap: dict, ap_floor: dict, floor: dict, x: float, y: float, floo
     """
     b = check_band(band or ap.get("band", DEFAULT_BAND))
     level = MODES[check_mode(mode)](ap, floor, x, y, b, materials if materials is not None else CONFIG["materials"])
-    return level - CONFIG["floor_loss_db"][b] * floors_apart
+    return level - floor_penetration_db(ap, ap_floor, floor, x, y, floors_apart, b)
 
 
 def best_rssi(twin: dict, floor: dict, x: float, y: float, aps: Optional[List[Tuple[dict, dict]]] = None,
@@ -508,13 +572,89 @@ def mlo_capacity_mbps(link_rates: List[float], config: dict = CONFIG) -> float:
     return sum(sorted(link_rates, reverse=True)[:config["wifi_standards"]["mlo"]["max_links"]])
 
 
-def _mean(values: List[float]) -> Optional[float]:
-    return _round(sum(values) / len(values), 1) if values else None
+def resolve_interferers(twin: dict, config: dict = CONFIG) -> List[dict]:
+    """Non-WiFi and neighbour sources of the twin (`twin["interferers"]`) with every default filled in from rf-config.json.
+
+    Each entry has id, kind, floor, x, y, tx_dbm, duty_cycle, band, width_mhz and either `channel` (neighbour WiFi)
+    or `centre_mhz` (microwave oven, Bluetooth). MODEL: planning assumptions, see rf-config.json external_sources.
+    """
+    kinds = config["external_sources"]["kinds"]
+    out = []
+    for src in twin.get("interferers", ()):
+        spec = kinds[src["kind"]]
+        entry = {"id": src["id"], "kind": src["kind"], "floor": src["floor"], "x": src["x"], "y": src["y"],
+                 "tx_dbm": src.get("tx_dbm", spec["tx_dbm"]), "duty_cycle": src.get("duty_cycle", spec["duty_cycle"])}
+        if src["kind"] == "neighbour_wifi":
+            band = src.get("band", spec["default_band"])
+            entry.update({"band": band, "channel": src.get("channel", config["bands"][band]["default_channel"]),
+                          "width_mhz": src.get("width_mhz", config["bands"][band]["default_width_mhz"])})
+        else:
+            entry.update({"band": spec["band"], "centre_mhz": spec["centre_mhz"], "width_mhz": spec["width_mhz"]})
+        out.append(entry)
+    return out
+
+
+def source_span_mhz(src: dict, config: dict = CONFIG) -> Tuple[float, float]:
+    """Low and high edge (MHz) of the band a source occupies."""
+    centre = channel_centre_mhz(src["band"], src["channel"], config) if "channel" in src else src["centre_mhz"]
+    return centre - src["width_mhz"] / 2.0, centre + src["width_mhz"] / 2.0
+
+
+def external_coupling(src: dict, band: str, channel: int, width_mhz: float, config: dict = CONFIG) -> float:
+    """Fraction (linear) of a resolved external source's power that lands in the receive band (channel, width) of a victim.
+
+    Neighbour WiFi uses interference_coupling (transmit-mask skirt included). A non-WiFi source spreads its power evenly
+    over its span (Bluetooth hopping over the 78 MHz hop set), so the share is overlap / span width, no skirt.
+    """
+    if src["band"] != band:
+        return 0.0
+    if "channel" in src:
+        return interference_coupling(band, channel, width_mhz, src["channel"], src["width_mhz"], config)
+    centre = channel_centre_mhz(band, channel, config)
+    lo, hi = source_span_mhz(src, config)
+    return max(0.0, min(centre + width_mhz / 2.0, hi) - max(centre - width_mhz / 2.0, lo)) / src["width_mhz"]
+
+
+def packet_error_rate(sinr_db: float, mcs: int, config: dict = CONFIG) -> float:
+    """ESTIMATE of the packet error rate at an SINR for an MCS: a logistic curve that equals `per_at_min_snr` at the MCS minimum SNR."""
+    r = config["reliability"]
+    p0 = r["per_at_min_snr"]
+    x = (sinr_db - config["wifi_standards"]["mcs"][mcs]["min_snr_db"]) / r["per_scale_db"] + math.log((1.0 - p0) / p0)
+    return 1.0 / (1.0 + math.exp(x))
+
+
+def link_reliability(standard: str, sinr_db: float, rate_mbps: float, busy: float, config: dict = CONFIG) -> dict:
+    """ESTIMATES for one cell: PER, loss after retries, latency and the airtime one client needs. `rate_mbps` is the
+    throughput the SINR supports (PHY rate times MAC efficiency), `busy` the share of time external sources hold the channel.
+    No standard formula exists, the mapping and its assumptions are in rf-config.json reliability."""
+    r = config["reliability"]
+    mcs = highest_mcs(standard, sinr_db, config)
+    per = 1.0 if mcs is None else packet_error_rate(sinr_db, mcs, config)
+    busy = min(busy, r["max_busy_fraction"])
+    term, transmissions = 1.0, 0.0
+    for _ in range(r["retry_limit"] + 1):
+        transmissions += term
+        term *= per
+    goodput = rate_mbps * (1.0 - per) * (1.0 - busy)
+    airtime = 100.0 if goodput <= 0.0 else min(100.0, 100.0 * config["analytics"]["per_client_demand_mbps"] / goodput)
+    latency = r["base_latency_ms"] + (transmissions - 1.0) * r["retry_penalty_ms"] + busy / (1.0 - busy) * r["medium_wait_ms"]
+    return {"per_pct": 100.0 * per, "loss_pct": 100.0 * term, "latency_ms": latency, "airtime_pct": airtime}
+
+
+def _mean(values: List[float], decimals: int = 1) -> Optional[float]:
+    return _round(sum(values) / len(values), decimals) if values else None
 
 
 def _sinr_section(aps: List[dict], best_ap: List[int], flats: List[List[float]], cols: int, rows: int,
-                  config: dict, mlo_grids: Optional[dict]) -> dict:
-    """SINR, SINR-based throughput and MLO capacity for the cells each AP serves. ESTIMATES only."""
+                  config: dict, mlo_grids: Optional[dict], external: Optional[List[dict]] = None,
+                  cell_m: float = DEFAULT_CELL_M) -> dict:
+    """SINR, SINR-based throughput, MLO capacity and reliability for the cells each AP serves. ESTIMATES only.
+
+    `external` lists resolved non-WiFi and neighbour sources, each with its flat RSSI `grid` on this floor (see analyze_floor).
+    They add interference power coupling x duty cycle x level to every cell and, when they are above the carrier sense
+    level at the serving AP, busy airtime.
+    """
+    external = external or []
     interf, mac = config["interference"], config["analytics"]["mac_efficiency"]
     radios = []
     for ap in aps:
@@ -523,6 +663,7 @@ def _sinr_section(aps: List[dict], best_ap: List[int], flats: List[List[float]],
                        "noise": noise_floor_dbm(ap["width_mhz"], config)})
     coupling = [[(interference_coupling(a["band"], a["channel"], a["width_mhz"], b["channel"], b["width_mhz"], config)
                   if i != j and a["band"] == b["band"] else 0.0) for j, b in enumerate(aps)] for i, a in enumerate(aps)]
+    ext_coupling = [[external_coupling(src, ap["band"], ap["channel"], ap["width_mhz"], config) for src in external] for ap in aps]
     total = rows * cols
     sinr: List[Optional[float]] = [None] * total
     phy, rate = [0.0] * total, [0.0] * total
@@ -534,9 +675,22 @@ def _sinr_section(aps: List[dict], best_ap: List[int], flats: List[List[float]],
         for j in range(len(aps)):
             if coupling[i][j] > 0.0:
                 power_mw += coupling[i][j] * interf["activity_factor"] * 10.0 ** (flats[j][n] / 10.0)
+        for k, src in enumerate(external):
+            if ext_coupling[i][k] > 0.0:
+                power_mw += ext_coupling[i][k] * src["duty_cycle"] * 10.0 ** (src["grid"][n] / 10.0)
         sinr[n] = flats[i][n] - 10.0 * math.log10(10.0 ** (radios[i]["noise"] / 10.0) + power_mw)
         phy[n] = sinr_phy_rate_mbps(radios[i]["standard"], sinr[n], aps[i]["width_mhz"], radios[i]["streams"], config)
         rate[n] = phy[n] * mac
+    busy = []
+    for i, ap in enumerate(aps):
+        col = min(cols - 1, max(0, int(math.floor(ap["x"] / cell_m))))
+        row = min(rows - 1, max(0, int(math.floor(ap["y"] / cell_m))))
+        busy.append(sum(src["duty_cycle"] for k, src in enumerate(external) if ext_coupling[i][k] > 0.0
+                        and src["grid"][row * cols + col] + 10.0 * math.log10(ext_coupling[i][k]) >= config["analytics"]["carrier_sense_dbm"]))
+    rel: List[Optional[dict]] = [None] * total
+    for n in range(total):
+        if best_ap[n] >= 0:
+            rel[n] = link_reliability(radios[best_ap[n]]["standard"], sinr[n], rate[n], busy[best_ap[n]], config)
     per_ap = []
     for i, ap in enumerate(aps):
         cells = [n for n in range(total) if best_ap[n] == i]
@@ -548,7 +702,13 @@ def _sinr_section(aps: List[dict], best_ap: List[int], flats: List[List[float]],
                                                                r["streams"], config), 1),
                  "served_cells": len(cells), "mean_sinr_db": _mean([sinr[n] for n in cells]),
                  "mean_throughput_mbps": _mean([rate[n] for n in cells]),
-                 "interferers": [aps[j]["id"] for j in range(len(aps)) if coupling[i][j] > 0.0]}
+                 "interferers": [aps[j]["id"] for j in range(len(aps)) if coupling[i][j] > 0.0],
+                 "external_sources": [src["id"] for k, src in enumerate(external) if ext_coupling[i][k] > 0.0],
+                 "reliability": {"channel_busy_pct": _round(100.0 * min(busy[i], config["reliability"]["max_busy_fraction"]), 1),
+                                 "mean_per_pct": _mean([rel[n]["per_pct"] for n in cells], 2),
+                                 "mean_loss_pct": _mean([rel[n]["loss_pct"] for n in cells], 3),
+                                 "mean_latency_ms": _mean([rel[n]["latency_ms"] for n in cells], 1),
+                                 "mean_airtime_pct": _mean([rel[n]["airtime_pct"] for n in cells], 1)}}
         extra = (mlo_grids or {}).get(ap["id"])
         if extra:
             capacity = []
@@ -563,7 +723,21 @@ def _sinr_section(aps: List[dict], best_ap: List[int], flats: List[List[float]],
             entry["mlo"] = {"label": config["wifi_standards"]["mlo"]["label"], "links": [ap["band"]] + list(ap["mlo_bands"]),
                             "mean_capacity_mbps": _mean(capacity)}
         per_ap.append(entry)
-    return {"label": SINR_LABEL, "noise_figure_db": interf["noise_figure_db"],
+    def rel_rows(key: str, decimals: int) -> List[List[Optional[float]]]:
+        return [[None if rel[n] is None else _round(rel[n][key], decimals) for n in range(k * cols, (k + 1) * cols)]
+                for k in range(rows)]
+
+    served = [r for r in rel if r is not None]
+    reliability = {"label": config["reliability"]["label"], "per_pct": rel_rows("per_pct", 2),
+                   "loss_pct": rel_rows("loss_pct", 3), "latency_ms": rel_rows("latency_ms", 1),
+                   "airtime_pct": rel_rows("airtime_pct", 1),
+                   "mean_per_pct": _mean([r["per_pct"] for r in served], 2),
+                   "mean_loss_pct": _mean([r["loss_pct"] for r in served], 3),
+                   "mean_latency_ms": _mean([r["latency_ms"] for r in served], 1),
+                   "mean_airtime_pct": _mean([r["airtime_pct"] for r in served], 1)}
+    return {"label": SINR_LABEL, "noise_figure_db": interf["noise_figure_db"], "reliability": reliability,
+            "external_label": config["external_sources"]["label"],
+            "external": [{k: v for k, v in src.items() if k != "grid"} for src in external],
             "sinr_db": [[None if v is None else _round(v, 1) for v in sinr[k * cols:(k + 1) * cols]] for k in range(rows)],
             "throughput_mbps": [[_round(v, 1) for v in rate[k * cols:(k + 1) * cols]] for k in range(rows)],
             "mean_sinr_db": _mean([v for v in sinr if v is not None]),
@@ -600,7 +774,7 @@ def floor_by_id(twin: dict, floor_id: str) -> dict:
     return floor
 
 
-def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dict]:
+def _regions(cells: List[bool], cols: int, rows: int, cell_m: float, with_bbox: bool = True) -> List[dict]:
     """4-connected regions of True cells (flood fill), ordered by their first cell in row-major scan."""
     seen = [False] * len(cells)
     regions = []
@@ -620,12 +794,12 @@ def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dic
                     stack.append(m)
         rs = [n // cols for n in members]
         cs = [n % cols for n in members]
-        regions.append({
-            "cells": len(members), "area_m2": _round(len(members) * cell_m * cell_m, 2),
-            "bbox": {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
-                     "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)},
-            "centroid": {"x": _round((sum(cs) / len(cs) + 0.5) * cell_m, 2),
-                         "y": _round((sum(rs) / len(rs) + 0.5) * cell_m, 2)}})
+        region = {"cells": len(members), "area_m2": _round(len(members) * cell_m * cell_m, 2)}
+        if with_bbox:
+            region["bbox"] = {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
+                              "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)}
+        region["centroid"] = {"x": _round((sum(cs) / len(cs) + 0.5) * cell_m, 2), "y": _round((sum(rs) / len(rs) + 0.5) * cell_m, 2)}
+        regions.append(region)
     return regions
 
 
@@ -633,12 +807,14 @@ def _table_width(ap: dict, config: dict) -> int:
     return legacy_table_width(ap["band"], ap["width_mhz"], config) if "standard" in ap else ap["width_mhz"]
 
 
-def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_grids: Optional[dict] = None) -> dict:
+def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_grids: Optional[dict] = None,
+              external: Optional[List[dict]] = None) -> dict:
     """Coverage analytics of one floor. `grid_result` is a coverage_grid result, `aps` the ap_grids list.
 
     ESTIMATES only. See docs/rf-planner.md for every formula. When any AP sets `standard` the result gains
     a "sinr" section (all other fields are unchanged). `mlo_grids` maps an AP id to {band: RSSI grid} of its
-    extra MLO links, built by analyze_floor.
+    extra MLO links, built by analyze_floor. `external` lists resolved non-WiFi and neighbour sources with their flat
+    RSSI `grid` (resolve_interferers plus a grid per source, built by analyze_floor), folded into the "sinr" section.
     """
     a = config["analytics"]
     rows, cols, cell_m = grid_result["rows"], grid_result["cols"], grid_result["cell_m"]
@@ -651,17 +827,24 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
     dead = [v < a["dead_zone_dbm"] for v in best]
     dead_zones = _regions(dead, cols, rows, cell_m)
     best_ap, overlap_cells, roam_cells = [], [False] * total, [False] * total
+    second_ap, margin, zone, blend = [-1] * total, [None] * total, [0] * total, [None] * total
+    zone_ids = config["roaming"]["zone_ids"]
     pair_cells: Dict[Tuple[int, int], int] = {}
     roam_pairs: Dict[Tuple[int, int], int] = {}
     for n in range(total):
         order = sorted(range(len(aps)), key=lambda i: (-flats[i][n], i))
         best_ap.append(order[0] if order and best[n] >= a["dead_zone_dbm"] else -1)
+        if best_ap[n] >= 0:
+            blend[n] = 100.0
         if len(order) < 2:
             continue
         top = flats[order[0]][n]
+        if best_ap[n] >= 0:
+            second_ap[n], margin[n] = order[1], top - flats[order[1]][n]
         usable = [i for i in order if flats[i][n] >= a["overlap_min_dbm"] and flats[i][n] >= top - a["overlap_margin_db"]]
         if len(usable) >= 2:
             overlap_cells[n] = True
+            zone[n] = zone_ids.index("overlap")
             for x in range(len(usable)):
                 for y in range(x + 1, len(usable)):
                     key = tuple(sorted((usable[x], usable[y])))
@@ -669,6 +852,8 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
         second = flats[order[1]][n]
         if top >= a["roam_min_dbm"] and second >= a["roam_min_dbm"] and top - second <= a["roam_margin_db"]:
             roam_cells[n] = True
+            zone[n] = zone_ids.index("handoff")
+            blend[n] = 50.0 + 50.0 * min(top - second, a["roam_margin_db"]) / a["roam_margin_db"]
             key = tuple(sorted((order[0], order[1])))
             roam_pairs[key] = roam_pairs.get(key, 0) + 1
 
@@ -718,12 +903,17 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
                     "pct": _round(100.0 * sum(overlap_cells) / total, 1), "pairs": pair_list(pair_cells)},
         "roaming": {"cells": sum(roam_cells), "area_m2": _round(sum(roam_cells) * area, 2),
                     "pct": _round(100.0 * sum(roam_cells) / total, 1), "pairs": pair_list(roam_pairs),
-                    "zones": _regions(roam_cells, cols, rows, cell_m)},
+                    "zones": _regions(roam_cells, cols, rows, cell_m, with_bbox=False),
+                    "map": {"label": config["roaming"]["label"], "zone_ids": zone_ids,
+                            "second_ap": [second_ap[r * cols:(r + 1) * cols] for r in range(rows)],
+                            "margin_db": [[None if v is None else _round(v, 1) for v in margin[r * cols:(r + 1) * cols]] for r in range(rows)],
+                            "zone": [zone[r * cols:(r + 1) * cols] for r in range(rows)],
+                            "blend_pct": [[None if v is None else _round(v, 1) for v in blend[r * cols:(r + 1) * cols]] for r in range(rows)]}},
         "throughput_mbps": [[_round(r, 1) for r in rates[k * cols:(k + 1) * cols]] for k in range(rows)],
         "mean_throughput_mbps": _round(sum(rates) / total, 1) if total else 0.0,
         "aps": per_ap, "total_client_capacity": sum(e["client_capacity"] for e in per_ap)}
     if any("standard" in ap for ap in aps):
-        result["sinr"] = _sinr_section(aps, best_ap, flats, cols, rows, config, mlo_grids)
+        result["sinr"] = _sinr_section(aps, best_ap, flats, cols, rows, config, mlo_grids, external, cell_m)
     return result
 
 
@@ -737,7 +927,12 @@ def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, ban
             if ap.get("mlo_bands"):
                 mlo_grids[ap["id"]] = {b: ap_grids(twin, floor_id, cell_m, [(ap, f)], b, mode)[0]["grid"]
                                        for b in ap["mlo_bands"]}
-    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids)
+    external = []
+    for src in resolve_interferers(twin):
+        pseudo = {"id": src["id"], "x": src["x"], "y": src["y"], "tx_dbm": src["tx_dbm"], "band": src["band"]}
+        grid = ap_grids(twin, floor_id, cell_m, [(pseudo, floor_by_id(twin, src["floor"]))], src["band"], mode)[0]["grid"]
+        external.append(dict(src, grid=[v for row in grid for v in row]))
+    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids, external)
 
 
 def _obstructions(floor: dict, px: float, py: float, qx: float, qy: float) -> Tuple[int, int]:
@@ -757,18 +952,30 @@ def _obstructions(floor: dict, px: float, py: float, qx: float, qy: float) -> Tu
     return walls, doors
 
 
-def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] = None, mode: str = "basic") -> dict:
-    """Point probe for hover tooltips: RSSI, best AP, distance, obstruction count, throughput estimate."""
-    floor = floor_by_id(twin, floor_id)
-    materials = material_table(twin)
+def _best_ap_at(twin: dict, floor: dict, x: float, y: float, band: Optional[str], mode: str,
+                materials: Dict[str, dict]) -> Optional[tuple]:
+    """(rssi, ap, ap_floor, band) of the strongest AP at a point, RSSI rounded to 0.1 dBm, or None without APs."""
     levels = {f["id"]: f["level"] for f in twin["floors"]}
     best = None
     for f in twin["floors"]:
         for ap in f["aps"]:
             used = check_band(band or ap.get("band", DEFAULT_BAND))
-            rssi = round(rssi_from_ap(ap, f, floor, x, y, abs(levels[f["id"]] - levels[floor_id]), used, mode, materials), 1)
+            rssi = round(rssi_from_ap(ap, f, floor, x, y, abs(levels[f["id"]] - levels[floor["id"]]), used, mode, materials), 1)
             if best is None or rssi > best[0]:
                 best = (rssi, ap, f, used)
+    return best
+
+
+def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] = None, mode: str = "basic",
+             explain: bool = False) -> dict:
+    """Point probe for hover tooltips: RSSI, best AP, distance, obstruction count, throughput estimate.
+
+    With `explain` the result gains an "explain" entry: every term of the level and plain-language text (explain_point).
+    """
+    floor = floor_by_id(twin, floor_id)
+    materials = material_table(twin)
+    levels = {f["id"]: f["level"] for f in twin["floors"]}
+    best = _best_ap_at(twin, floor, x, y, band, mode, materials)
     out = {"x": x, "y": y, "floor": floor_id, "label": ANALYTICS_LABEL}
     if best is None:
         out.update({"rssi_dbm": NO_SIGNAL_DBM, "quality": quality_band(NO_SIGNAL_DBM), "ap_id": None,
@@ -785,4 +992,240 @@ def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] 
                 "floors_crossed": abs(levels[ap_floor["id"]] - levels[floor_id]),
                 "throughput_mbps": _round(estimated_throughput_mbps(
                     rssi, used, legacy_table_width(used, width) if "standard" in ap else width), 1)})
+    if explain:
+        out["explain"] = _explain(twin, floor, ap, ap_floor, x, y, used, mode, materials, rssi)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Explanation of one point: every term of the level, in numbers and in text. A MODEL, like the map.
+# ---------------------------------------------------------------------------------------------
+EXPLAIN_LABEL = "MODEL ESTIMATE: explanation of the modelled level at one point, each term is a typical planning value, not a measurement"
+
+
+def _f1(value: float) -> str:
+    """One decimal, rounded half up first so Python and JavaScript print the same digits."""
+    return f"{_round(value, 1):.1f}"
+
+
+def _wall_material_name(wall: dict) -> str:
+    return wall.get("material") or KIND_DEFAULT_MATERIAL[wall["kind"]]
+
+
+def _explain_sinr(twin: dict, floor: dict, ap: dict, ap_floor: dict, x: float, y: float, band: str, mode: str,
+                  materials: Dict[str, dict], rssi: float) -> dict:
+    """SINR terms at a point for an AP with a `standard`: noise, every co-channel/adjacent AP and every external source."""
+    interf = INTERFERENCE
+    levels = {f["id"]: f["level"] for f in twin["floors"]}
+    channel, width = _ap_radio(ap, band)
+    std = ap.get("standard") or interf["fallback_standard"][band]
+    noise = noise_floor_dbm(width)
+    terms, power_mw = [], 0.0
+    for f in twin["floors"]:
+        for other in f["aps"]:
+            ob = other.get("band", DEFAULT_BAND)
+            if other is ap or ob != band:
+                continue
+            o_channel, o_width = _ap_radio(other, ob)
+            coupling = interference_coupling(band, channel, width, o_channel, o_width)
+            if coupling <= 0.0:
+                continue
+            level = _round(rssi_from_ap(other, f, floor, x, y, abs(levels[f["id"]] - levels[floor["id"]]), ob, mode, materials), 1)
+            mw = coupling * interf["activity_factor"] * 10.0 ** (level / 10.0)
+            power_mw += mw
+            terms.append({"id": other["id"], "kind": "ap", "level_dbm": level, "coupling": _round(coupling, 4),
+                          "duty_cycle": interf["activity_factor"], "power_dbm": _round(10.0 * math.log10(mw), 1)})
+    for src in resolve_interferers(twin):
+        coupling = external_coupling(src, band, channel, width)
+        if coupling <= 0.0:
+            continue
+        pseudo = {"id": src["id"], "x": src["x"], "y": src["y"], "tx_dbm": src["tx_dbm"], "band": src["band"]}
+        src_floor = floor_by_id(twin, src["floor"])
+        level = _round(rssi_from_ap(pseudo, src_floor, floor, x, y, abs(src_floor["level"] - floor["level"]), src["band"], mode, materials), 1)
+        mw = coupling * src["duty_cycle"] * 10.0 ** (level / 10.0)
+        power_mw += mw
+        terms.append({"id": src["id"], "kind": src["kind"], "level_dbm": level, "coupling": _round(coupling, 4),
+                      "duty_cycle": src["duty_cycle"], "power_dbm": _round(10.0 * math.log10(mw), 1)})
+    sinr = rssi - 10.0 * math.log10(10.0 ** (noise / 10.0) + power_mw)
+    mcs = highest_mcs(std, sinr)
+    streams = ap.get("spatial_streams", default_streams(std))
+    rate = sinr_phy_rate_mbps(std, sinr, width, streams) * ANALYTICS["mac_efficiency"]
+    rel = link_reliability(std, sinr, rate, 0.0)
+    return {"standard": std, "noise_floor_dbm": _round(noise, 1), "interference": terms, "sinr_db": _round(sinr, 1),
+            "mcs": mcs, "throughput_mbps": _round(rate, 1), "per_pct": _round(rel["per_pct"], 2),
+            "latency_ms": _round(rel["latency_ms"], 1), "loss_pct": _round(rel["loss_pct"], 3),
+            "label": SINR_LABEL}
+
+
+def _explain(twin: dict, floor: dict, ap: dict, ap_floor: dict, x: float, y: float, band: str, mode: str,
+             materials: Dict[str, dict], rssi: float) -> dict:
+    """Terms of the level of `ap` at (x, y) on `floor`. loss terms sum to total_loss_db and direct_dbm = eirp_dbm - total_loss_db."""
+    apart = abs(ap_floor["level"] - floor["level"])
+    d = math.hypot(x - ap["x"], y - ap["y"])
+    gain = antenna_gain_toward(ap, x, y)
+    path = path_loss_db(d, band)
+    walls = []
+    for wall, loss, opening in wall_crossings(floor, ap["x"], ap["y"], x, y, band, materials):
+        name = _wall_material_name(wall)
+        walls.append({"wall": wall["id"], "material": name, "material_label": materials[name]["label"],
+                      "through": opening["kind"] if opening else "wall", "loss_db": _round(loss, 2)})
+    walls_db = sum(w["loss_db"] for w in walls)
+    floor_full = CONFIG["floor_loss_db"][band] * apart
+    floor_db = floor_penetration_db(ap, ap_floor, floor, x, y, apart, band)
+    total = _round(path, 2) + walls_db + _round(floor_db, 2)
+    direct = ap["tx_dbm"] + gain - total
+    indirect = []
+    if mode != "basic":
+        for kind, ref, level in _indirect_paths(ap, floor, x, y, band, materials):
+            level = level - floor_db
+            if kind == "reflection":
+                name = _wall_material_name(ref)
+                indirect.append({"type": "reflection", "wall": ref["id"], "material": name,
+                                 "material_label": materials[name]["label"],
+                                 "reflection_loss_db": materials[name]["reflection_loss_db"][band],
+                                 "level_dbm": _round(level, 1)})
+            else:
+                indirect.append({"type": "diffraction", "corner": [ref[0], ref[1]],
+                                 "knife_edge_loss_db": _round(_knife_edge_for(ap, ref, x, y, band), 2),
+                                 "level_dbm": _round(level, 1)})
+    paths = [("direct", direct)] + [(e["type"] + (" via " + e["wall"] if e["type"] == "reflection" else ""), e["level_dbm"]) for e in indirect]
+    dominant = max(paths, key=lambda p: p[1])[0]
+    out = {"label": EXPLAIN_LABEL, "ap_id": ap["id"], "band": band, "mode": mode, "distance_m": _round(d, 2),
+           "tx_dbm": ap["tx_dbm"], "antenna_gain_db": _round(gain, 2), "eirp_dbm": _round(ap["tx_dbm"] + gain, 2),
+           "path_loss_db": _round(path, 2), "walls": walls, "walls_loss_db": _round(walls_db, 2),
+           "floors_crossed": apart, "floor_loss_db": _round(floor_db, 2),
+           "floor_loss_without_voids_db": _round(floor_full, 2), "total_loss_db": _round(total, 2),
+           "direct_dbm": _round(direct, 2), "indirect": indirect, "dominant_path": dominant, "rssi_dbm": rssi}
+    lines = [f"Strongest AP {ap['id']} on {band} GHz, {mode} mode, {_f1(d)} m away.",
+             f"Transmit {_f1(ap['tx_dbm'])} dBm plus antenna gain {_f1(gain)} dB gives {_f1(ap['tx_dbm'] + gain)} dBm EIRP.",
+             f"Path loss {_f1(path)} dB at {_f1(d)} m (log-distance, exponent {BANDS[band]['path_loss_exponent']:g})."]
+    for w in walls:
+        what = f"{w['through']} in wall {w['wall']}" if w["through"] != "wall" else f"wall {w['wall']}"
+        lines.append(f"Crosses {what} ({w['material_label']}): {_f1(w['loss_db'])} dB.")
+    if not walls:
+        lines.append("Crosses no walls.")
+    if apart:
+        note = " (reduced by a stairwell or atrium opening)" if floor_db < floor_full else ""
+        lines.append(f"Floor loss {_f1(floor_db)} dB for {apart} floor(s){note}.")
+    lines.append(f"Total loss {_f1(total)} dB, so the direct path arrives at {_f1(direct)} dBm.")
+    for e in indirect:
+        if e["type"] == "reflection":
+            lines.append(f"Reflection off wall {e['wall']} ({e['material_label']}, reflection loss {_f1(e['reflection_loss_db'])} dB) arrives at {_f1(e['level_dbm'])} dBm.")
+        else:
+            lines.append(f"Diffraction around the corner at ({_f1(e['corner'][0])}, {_f1(e['corner'][1])}) m "
+                         f"(knife edge {_f1(e['knife_edge_loss_db'])} dB) arrives at {_f1(e['level_dbm'])} dBm.")
+    if mode == "multipath":
+        lines.append(f"Multipath adds the powers of all paths: {_f1(rssi)} dBm (strongest path: {dominant}).")
+    elif mode == "enhanced":
+        lines.append(f"Enhanced takes the strongest path ({dominant}): {_f1(rssi)} dBm.")
+    else:
+        lines.append(f"Basic mode uses the direct path only: {_f1(rssi)} dBm.")
+    if ap.get("standard") or any(a.get("standard") for f in twin["floors"] for a in f["aps"]):
+        sinr = _explain_sinr(twin, floor, ap, ap_floor, x, y, band, mode, materials, rssi)
+        out["sinr"] = sinr
+        lines.append(f"Noise floor {_f1(sinr['noise_floor_dbm'])} dBm.")
+        for t in sinr["interference"]:
+            lines.append(f"Interference from {t['id']} ({t['kind']}): {_f1(t['power_dbm'])} dBm after coupling {t['coupling']:g} and duty cycle {t['duty_cycle']:g}.")
+        lines.append(f"SINR {_f1(sinr['sinr_db'])} dB"
+                     + (f", MCS {sinr['mcs']}, about {_f1(sinr['throughput_mbps'])} Mbps, packet error {sinr['per_pct']:g} %, latency {_f1(sinr['latency_ms'])} ms (estimates)." if sinr["mcs"] is not None
+                        else ", below the lowest MCS: no usable link."))
+    out["text"] = lines
+    return out
+
+
+
+# ---------------------------------------------------------------------------------------------
+# Spectrum analysis and signal decay. ESTIMATES from the project's own APs and sources.
+# ---------------------------------------------------------------------------------------------
+SPECTRUM_LABEL = SPECTRUM["label"]
+DECAY_LABEL = DECAY["label"]
+
+
+def congestion_level(congestion: float, config: dict = CONFIG) -> str:
+    """Id of the first congestion level whose `max` the value does not exceed."""
+    for level in config["spectrum"]["levels"]:
+        if level["max"] is None or congestion <= level["max"]:
+            return level["id"]
+    raise ValueError("spectrum levels need a closing level with max null")
+
+
+def spectrum_analysis(twin: dict, band: str, width_mhz: Optional[int] = None, exclude_ap: Optional[str] = None,
+                      config: dict = CONFIG) -> dict:
+    """Channel occupancy, overlap and congestion of one band, with the best channels to move to. An ESTIMATE.
+
+    Every AP of the twin on `band` (except `exclude_ap`, the AP being re-planned) and every resolved external source on the
+    band counts. For each channel of the band, taken as a `width_mhz` wide victim, each source contributes coupling
+    x duty cycle (interference_coupling for WiFi, spectral overlap for non-WiFi). Congestion is the sum, the level a
+    threshold on it. Distance is ignored.
+    """
+    check_band(band)
+    spec = config["spectrum"]
+    width = width_mhz if width_mhz is not None else spec["width_mhz"][band]
+    if width not in config["bands"][band]["widths_mhz"]:
+        raise ValueError(f"width_mhz must be one of {config['bands'][band]['widths_mhz']} on the {band} GHz band")
+    sources = []
+    for f in twin["floors"]:
+        for ap in f["aps"]:
+            if ap.get("band", DEFAULT_BAND) == band and ap["id"] != exclude_ap:
+                channel, ap_width = _ap_radio(ap, band)
+                sources.append({"id": ap["id"], "kind": "ap", "band": band, "channel": channel, "width_mhz": ap_width,
+                                "duty_cycle": config["interference"]["activity_factor"]})
+    sources += [src for src in resolve_interferers(twin, config) if src["band"] == band]
+    channels = []
+    for channel in config["bands"][band]["channels"]:
+        centre = channel_centre_mhz(band, channel, config)
+        entries, congestion = [], 0.0
+        for src in sources:
+            coupling = external_coupling(src, band, channel, width, config)
+            if coupling <= 0.0:
+                continue
+            lo, hi = source_span_mhz(src, config)
+            entries.append({"id": src["id"], "kind": src["kind"], "coupling": _round(coupling, 4),
+                            "overlap_mhz": _round(max(0.0, min(centre + width / 2.0, hi) - max(centre - width / 2.0, lo)), 1)})
+            congestion += coupling * src["duty_cycle"]
+        channels.append({"channel": channel, "centre_mhz": centre, "sources": entries, "overlapping_sources": len(entries),
+                         "congestion": _round(congestion, 3), "occupancy_pct": _round(100.0 * min(1.0, congestion), 1),
+                         "level": congestion_level(congestion, config), "_raw": congestion})
+    candidates = [c for c in channels if c["channel"] in spec.get("preferred_channels", {}).get(band, [c["channel"] for c in channels])]
+    ranked = sorted(range(len(candidates)), key=lambda i: (candidates[i]["_raw"], i))
+    suggestions = [{"channel": candidates[i]["channel"], "congestion": candidates[i]["congestion"], "level": candidates[i]["level"]}
+                   for i in ranked[:spec["suggestions"]]]
+    for c in channels:
+        del c["_raw"]
+    return {"label": SPECTRUM_LABEL, "band": band, "width_mhz": width, "channels": channels, "suggestions": suggestions}
+
+
+def signal_decay(twin: dict, floor_id: str, ap_id: str, bearing_deg: float, band: Optional[str] = None, mode: str = "basic",
+                 step_m: Optional[float] = None, max_distance_m: Optional[float] = None, config: dict = CONFIG) -> dict:
+    """RSSI against distance along a ray from an AP on one floor (0 deg = +x east, clockwise on the plan), an ESTIMATE.
+
+    Samples every `step_m` from the AP up to `max_distance_m` or the edge of the floor, from the same model as the
+    coverage map. Each sample also gives the level from distance alone (no walls) and the walls crossed so far.
+    """
+    check_mode(mode)
+    floor = floor_by_id(twin, floor_id)
+    found = next(((a, f) for f in twin["floors"] for a in f["aps"] if a["id"] == ap_id), None)
+    if found is None:
+        raise ValueError(f"unknown AP id {ap_id!r}")
+    ap, ap_floor = found
+    used = check_band(band or ap.get("band", DEFAULT_BAND))
+    step = step_m if step_m is not None else config["decay"]["step_m"]
+    limit = max_distance_m if max_distance_m is not None else config["decay"]["max_distance_m"]
+    if step <= 0.0 or limit <= 0.0 or limit / step > config["decay"]["max_samples"]:
+        raise ValueError(f"step_m and max_distance_m must be positive and give at most {config['decay']['max_samples']} samples")
+    materials = material_table(twin)
+    apart = abs(ap_floor["level"] - floor["level"])
+    dx, dy = math.cos(math.radians(bearing_deg)), math.sin(math.radians(bearing_deg))
+    samples = []
+    for k in range(int(limit / step) + 1):
+        d = k * step
+        x, y = ap["x"] + dx * d, ap["y"] + dy * d
+        if not (0.0 <= x <= floor["width_m"] and 0.0 <= y <= floor["depth_m"]):
+            break
+        walls, doors = _obstructions(floor, ap["x"], ap["y"], x, y)
+        samples.append({"distance_m": _round(d, 2), "rssi_dbm": _round(max(NO_SIGNAL_DBM, rssi_from_ap(
+            ap, ap_floor, floor, x, y, apart, used, mode, materials)), 1),
+            "distance_only_dbm": _round(ap["tx_dbm"] + antenna_gain_toward(ap, x, y) - path_loss_db(d, used), 1),
+            "walls_crossed": walls, "openings_crossed": doors})
+    return {"label": DECAY_LABEL, "ap_id": ap_id, "floor": floor_id, "band": used, "mode": mode, "bearing_deg": bearing_deg,
+            "step_m": step, "samples": samples}
