@@ -45,7 +45,7 @@ Gap: validation parity has no shared fixture, so Python and JS validators can dr
 | `docs/rf-planner.md` "Not modelled" line still lists antenna patterns | the "Not modelled" paragraph of the propagation section versus the antenna section lower in the same file | stale, fixed in this change set |
 | Engine grid path about 4x slower than the bench grid kernel, cause unknown | `docs/perf-rf.md` (1675 ms vs 398 ms node) | open, unprofiled |
 | Flooring and roofing materials exist but floors use a fixed `floor_loss_db` | `rf-config.json`, README table | open |
-| Doors and windows are in the engine and twin, not editable in the planner UI | `rf-engine.js` openings, `planner.html` has no opening tool | open |
+| Doors and windows are in the engine and twin, not editable in the planner UI | `planner.html` now has Door (D) and Window (O) tools in `planner-editor.js` | fixed |
 | `tsconfig.json` checks only three files | `tsconfig.json` include | open |
 | `make typecheck` needs network for `npx` | `Makefile` | open |
 | AP panel standard controls not exercised in a browser | README table | PARTIALLY VERIFIED |

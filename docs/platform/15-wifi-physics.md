@@ -22,6 +22,19 @@ Source of truth: `wallhack/rfmodel.py`. The JavaScript port `wallhack/static/rf-
 
 Full derivations and check values: `docs/rf-planner.md`. Tests: `tests/test_rfmodel.py`, `tests/test_wifi_standards.py` (hand-computed cases, VERIFIED). Real-world accuracy: UNVERIFIED, no survey data.
 
+## Propagation methodology (how a cell value is produced)
+
+1. Anchor: `PL0(band)` at 1 m, then `10 n log10(d)` (log-distance slope per band).
+2. Subtract wall and opening losses for every wall the AP to cell segment crosses (uniform grid index finds the candidates, losses are added in ascending wall order so Python and JS agree).
+3. Subtract floor loss per floor apart, reduced at voids.
+4. Mode: `basic` stops here; `enhanced` also computes one image-method reflection and one knife-edge diffraction and keeps the strongest path; `multipath` sums the paths in mW.
+5. Add antenna gain for the AP pattern and azimuth. The strongest AP serves the cell.
+6. SINR, PHY rate, throughput and the reliability estimates follow from the tables below.
+
+**Ray-tracing extensibility.** New modes register through `register_mode` (Python) and `registerMode` (JS) with the same signature, so an image-method or ray-launching mode can be added without touching the editor or exports. What is not built: ray launching, second-order reflections, 3D paths, material thickness. The engine is 2D, so a real ray tracer needs 3D geometry first (see [20-roadmap.md](20-roadmap.md)). Both `rayWallHit` helpers in the code are segment intersection tests, not ray tracing.
+
+**Validation status.** Formulas are checked against hand-computed values and Python/JS parity. Nothing is checked against a measured survey (VERIFIED for internal consistency, UNVERIFIED for accuracy).
+
 ## Inaccuracy report (from reading `rfmodel.py` and `rf-engine.js`)
 
 | # | Simplification | Effect on results | Status |

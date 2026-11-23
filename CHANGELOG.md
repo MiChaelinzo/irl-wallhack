@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### RF lab documentation and status
+- docs: `docs/platform/24-rf-lab-status.md` lists every mandate section as complete, partial or deferred with files and open gaps (room creation tool, true 3D, exact ray tracing, survey calibration and real-hardware validation are not complete).
+- docs: `CONTRIBUTING.md` (setup, checks, parity workflow, adding a material, adding a heat layer, commit style); architecture diagram updated in `03-architecture.md`; propagation methodology in `15-wifi-physics.md` and `rf-planner.md`; optimization guide in `09-rendering-optimization.md`; deployment operations notes in `14-deployment-plan.md`; roadmap and top 100 statuses updated (rows 5, 6, 18, 35 and 49 are Done, rows 30, 53, 66, 68 and 82 are Partial); stale README rows corrected.
+- docs: screenshots regenerated with `tools/screenshot.py` and `tools/planner_smoke.py`, live and demo.
+
 ### Accessibility, production readiness and throttled performance
 - feat: `tools/a11y_check.py` (dev only) runs axe-core, fetched from npm into a temp dir at run time, on the planner and dashboard (live and demo) plus keyboard, focus ring and error boundary checks. Fixed: floor button labels, `#envChips` role, light theme ribbon contrast, banner landmarks. Now 0 violations in dark, light and high contrast.
 - feat: planner Contrast button and `prefers-contrast: more` high contrast mode, 3 px focus rings, `forced-colors` outlines, rem base font size.

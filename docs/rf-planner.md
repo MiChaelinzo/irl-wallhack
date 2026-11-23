@@ -209,8 +209,8 @@ Against the original mission list. "complete" means the code exists and is cover
 | Mission item | Status | Detail and reason |
 | --- | --- | --- |
 | Advanced RF Simulation | complete | Frequency-aware model for 2.4, 5 and 6 GHz, per-band material attenuation, openings, floor loss, basic, enhanced (one reflection, knife-edge diffraction) and multipath (incoherent sum) modes, per-AP band and channel. Not ray tracing; no polarisation, no moving objects. |
-| Interactive Floor Planning | partial | Draw, move, rotate, snap, delete walls, materials, APs, labels, floors, image import with scale calibration, undo/redo, pan and zoom. Deferred: add, edit and remove doors and windows in the UI (the engine honours twin openings, they are shown but not editable). |
-| Visualization Enhancements | partial | WebGL heat map with canvas 2D fallback, quality bands, contours, dead-zone hatch, colour-blind palette, legend, hover and keyboard probe, mini-map, light and dark themes. Deferred: exact roaming-zone cell overlay (bounding boxes are drawn). |
+| Interactive Floor Planning | partial | Draw, move, rotate, snap, delete walls, materials, APs, labels, floors, image import with scale calibration, undo/redo, pan and zoom. Doors, windows, floor openings and interference sources are editable (tools D, O, S, X). Deferred: a room creation tool (rooms are walls plus a label), DXF and IFC import, automatic wall extraction from an image. |
+| Visualization Enhancements | partial | WebGL heat map with canvas 2D fallback, quality bands, contours, dead-zone hatch, colour-blind palette, legend, hover and keyboard probe, mini-map, light and dark themes. Eleven map layers plus a combined layer, side-by-side compare, and exact per-cell roaming, strongest-AP and blend overlays. Deferred: a 3D view of the signal (the engine is 2D). |
 | Analytics Dashboard | complete | Coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming candidates, per-AP throughput, client capacity, channel utilisation, all with table equivalents. Throughput, capacity and utilisation are ESTIMATES from a rate table. |
 | Performance Optimization | complete | Web Worker, 16x16 tiles, coarse then fine pass, per-AP cache, dirty-tile edits, spatial index, main-thread fallback. Measured in `perf-rf.md` (SwiftShader, Xeon). Deferred: cancelling inside one long planner step; real GPU and Pi 4 numbers UNVERIFIED. |
 | Scenario Comparison | complete | Saved scenarios, side by side, delta and slider views, metric diff, explainable optimisation score, ranking. |
@@ -229,3 +229,16 @@ Against the original mission list. "complete" means the code exists and is cover
 ## Extending
 `rfmodel.register_mode(id, fn)` and `RFEngine.registerMode(id, fn)` add a mode;
 `RFEngine.registerMaterials(table)` adds materials. See the ADR in `docs/adr-rf-engine.md`.
+
+## Methodology and limits
+The engine answers one question per cell: what power would a client receive from each AP, and how does that compare with noise and interference. Steps, in the order the code runs them (`wallhack/rfmodel.py`, mirrored in `rf-engine.js`):
+
+1. Free-space anchor and log-distance slope per band.
+2. Wall and opening losses along the straight segment from AP to cell, per material and band.
+3. Floor loss for cells on other floors, reduced near stairwell, atrium or shaft openings.
+4. Optional single reflection and knife-edge diffraction (enhanced), or an incoherent power sum of the paths (multipath).
+5. Antenna gain from the AP pattern and azimuth, then the strongest AP serves the cell.
+6. Noise floor from the channel width, interference from other APs and non-WiFi sources weighted by channel overlap and duty cycle, giving SINR.
+7. PHY rate, throughput, estimated packet error, latency and airtime from tables in `rf-config.json`.
+
+It is not ray tracing: there are no ray launching, second-order reflections, polarisation, fading or moving objects, and the geometry is 2D. It has not been calibrated against a measured survey, so use it to compare options (move this AP, change this wall) rather than to promise a dBm value. Details and the inaccuracy list are in `docs/platform/15-wifi-physics.md`; per-section status is in `docs/platform/24-rf-lab-status.md`.
