@@ -17,6 +17,10 @@ Frequency exponent `n` is derived from the typical values as `ln(L6 / L2.4) / ln
 | Metal (`metal`) | low | 0.21 | 15 / 26 / 40 | 18 / 30 / 45 | 20 / 32 / 48 | 1 | 1 | 1 |
 | Reinforced concrete (`reinforced_concrete`) | low | 0.37 | 15 / 20 / 32 | 19 / 26 / 40 | 21 / 29 / 45 | 4 | 3 | 3 |
 | Stone (`stone`) | low | 0.35 | 8 / 12 / 20 | 10 / 15 / 25 | 11 / 17 / 28 | 7 | 6 | 6 |
+| Plaster (`plaster`) | medium | 0.41 | 2 / 3 / 5 | 3 / 4 / 7 | 3 / 4.5 / 8 | 12 | 11 | 11 |
+| Insulation (`insulation`) | low | 0.41 | 1 / 2 / 4 | 1.5 / 2.5 / 5 | 2 / 3 / 6 | 14 | 13 | 13 |
+| Office partition (`office_partition`) | medium | 0.29 | 2 / 3 / 5 | 2.5 / 3.5 / 6 | 3 / 4 / 7 | 13 | 12 | 12 |
+| Industrial wall (`industrial_wall`) | low | 0.34 | 8 / 15 / 25 | 10 / 19 / 30 | 11 / 21 / 33 | 5 | 4 | 4 |
 | Flooring (`flooring`) | low | 0.41 | 3 / 6 / 12 | 4 / 8 / 15 | 4 / 9 / 17 | 10 | 9 | 9 |
 | Roofing (`roofing`) | low | 0.32 | 4 / 8 / 16 | 5 / 10 / 20 | 6 / 11 / 22 | 9 | 8 | 8 |
 
@@ -81,6 +85,38 @@ Concrete with steel reinforcement. The rebar mesh spacing relative to the wavele
 ### Stone (`stone`)
 
 Natural stone masonry. Thickness and porosity vary widely.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Plaster (`plaster`)
+
+Plaster or render on lath or thin masonry backing. A wire mesh or metal lath backing raises the loss well above the typical value.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Insulation (`insulation`)
+
+Mineral wool or foam insulation panel without a metal facing. Foil-faced insulation behaves like a thin metal sheet and loses much more, so model it with the metal material.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Office partition (`office_partition`)
+
+Modular office partition of fabric or laminate panels on a light frame, typically 1 to 2 m high screens up to full-height glazed partitions. Full-height steel-framed partitions lose more.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Industrial wall (`industrial_wall`)
+
+Thick concrete block, precast panel or corrugated steel cladding of a factory or warehouse. The range is wide because cladding, racking and stored goods change the loss; use the metal material for a solid steel sheet.
 
 - Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
 - Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)

@@ -445,6 +445,158 @@
    ],
    "notes": "Natural stone masonry. Thickness and porosity vary widely."
   },
+  "plaster": {
+   "label": "Plaster",
+   "attenuation_db": {
+    "2.4": 3.0,
+    "5": 4.0,
+    "6": 4.5
+   },
+   "reflection_loss_db": {
+    "2.4": 12.0,
+    "5": 11.0,
+    "6": 11.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 2.0,
+     "typical": 3.0,
+     "max": 5.0
+    },
+    "5": {
+     "min": 3.0,
+     "typical": 4.0,
+     "max": 7.0
+    },
+    "6": {
+     "min": 3.0,
+     "typical": 4.5,
+     "max": 8.0
+    }
+   },
+   "frequency_exponent": 0.41,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Plaster or render on lath or thin masonry backing. A wire mesh or metal lath backing raises the loss well above the typical value."
+  },
+  "insulation": {
+   "label": "Insulation",
+   "attenuation_db": {
+    "2.4": 2.0,
+    "5": 2.5,
+    "6": 3.0
+   },
+   "reflection_loss_db": {
+    "2.4": 14.0,
+    "5": 13.0,
+    "6": 13.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 1.0,
+     "typical": 2.0,
+     "max": 4.0
+    },
+    "5": {
+     "min": 1.5,
+     "typical": 2.5,
+     "max": 5.0
+    },
+    "6": {
+     "min": 2.0,
+     "typical": 3.0,
+     "max": 6.0
+    }
+   },
+   "frequency_exponent": 0.41,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Mineral wool or foam insulation panel without a metal facing. Foil-faced insulation behaves like a thin metal sheet and loses much more, so model it with the metal material."
+  },
+  "office_partition": {
+   "label": "Office partition",
+   "attenuation_db": {
+    "2.4": 3.0,
+    "5": 3.5,
+    "6": 4.0
+   },
+   "reflection_loss_db": {
+    "2.4": 13.0,
+    "5": 12.0,
+    "6": 12.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 2.0,
+     "typical": 3.0,
+     "max": 5.0
+    },
+    "5": {
+     "min": 2.5,
+     "typical": 3.5,
+     "max": 6.0
+    },
+    "6": {
+     "min": 3.0,
+     "typical": 4.0,
+     "max": 7.0
+    }
+   },
+   "frequency_exponent": 0.29,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Modular office partition of fabric or laminate panels on a light frame, typically 1 to 2 m high screens up to full-height glazed partitions. Full-height steel-framed partitions lose more."
+  },
+  "industrial_wall": {
+   "label": "Industrial wall",
+   "attenuation_db": {
+    "2.4": 15.0,
+    "5": 19.0,
+    "6": 21.0
+   },
+   "reflection_loss_db": {
+    "2.4": 5.0,
+    "5": 4.0,
+    "6": 4.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 8.0,
+     "typical": 15.0,
+     "max": 25.0
+    },
+    "5": {
+     "min": 10.0,
+     "typical": 19.0,
+     "max": 30.0
+    },
+    "6": {
+     "min": 11.0,
+     "typical": 21.0,
+     "max": 33.0
+    }
+   },
+   "frequency_exponent": 0.34,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Thick concrete block, precast panel or corrugated steel cladding of a factory or warehouse. The range is wide because cladding, racking and stored goods change the loss; use the metal material for a solid steel sheet."
+  },
   "flooring": {
    "label": "Flooring",
    "attenuation_db": {
@@ -943,6 +1095,115 @@
     "front_to_back_db_range": [0.0, 60.0]
    }
   }
+ },
+ "external_sources": {
+  "label": "MODEL ESTIMATE: non-WiFi and neighbouring interference sources, planning assumptions, not measurements",
+  "source": "Each source is a spectrally flat emitter: its power is spread evenly over width_mhz around centre_mhz and the share that lands inside the victim receive band is overlap / width_mhz, scaled by duty_cycle. Microwave oven: a magnetron oven runs from half-wave rectified mains and radiates during about half of each mains cycle (the commonly cited 50 percent duty cycle), around 2.45 GHz inside the 2.4 to 2.5 GHz ISM band; the 50 MHz width and the 10 dBm effective leakage level are planning assumptions (ovens are limited by leakage rules, FCC 21 CFR 1030.10 and IEC 60335-2-25, not by a radiated spectrum mask). Bluetooth: 79 channels of 1 MHz from 2402 to 2480 MHz (Bluetooth Core Specification, BR/EDR hopping), class 2 maximum 2.5 mW (4 dBm); hopping is modelled as the average spread over the 78 MHz hop set, so a 20 MHz WiFi channel sees about 20/78 of the power; the duty cycle is a planning assumption for a connected audio or data link. Neighbour WiFi: a co-located network is treated like an AP of this project (same channel coupling and rejection table) with its own duty_cycle, a planning assumption for typical residential traffic. Non-WiFi sources have no adjacent-channel skirt.",
+  "kinds": {
+   "microwave": {
+    "label": "Microwave oven",
+    "band": "2.4",
+    "centre_mhz": 2450,
+    "width_mhz": 50,
+    "tx_dbm": 10.0,
+    "duty_cycle": 0.5
+   },
+   "bluetooth": {
+    "label": "Bluetooth (frequency hopping)",
+    "band": "2.4",
+    "centre_mhz": 2441,
+    "width_mhz": 78,
+    "tx_dbm": 4.0,
+    "duty_cycle": 0.3
+   },
+   "neighbour_wifi": {
+    "label": "Neighbour WiFi network",
+    "default_band": "2.4",
+    "tx_dbm": 20.0,
+    "duty_cycle": 0.3
+   }
+  },
+  "tx_dbm_range": [
+   -20.0,
+   30.0
+  ],
+  "duty_cycle_range": [
+   0.0,
+   1.0
+  ],
+  "max_sources": 50
+ },
+ "reliability": {
+  "label": "ESTIMATE: airtime, latency and packet loss follow from SINR through an assumed PER curve. There is no standard formula, treat the numbers as indications, not measurements",
+  "source": "PER(sinr) is a logistic curve 1 / (1 + exp((sinr - min_snr) / per_scale_db + ln((1 - per_at_min_snr) / per_at_min_snr))) around the MCS minimum SNR, so PER equals per_at_min_snr at that SNR. The 10 percent point follows the IEEE 802.11 receiver minimum sensitivity definition (PER 10 percent for a 1000 octet PSDU). per_scale_db sets how fast PER falls, a planning assumption. The MCS is the highest one the SINR supports. Packets are retried up to retry_limit times (IEEE 802.11 dot11ShortRetryLimit default 7), so the loss after retries is PER^(retry_limit + 1) and the mean transmissions are the sum of PER^k for k up to retry_limit. Latency = base_latency_ms + retries x retry_penalty_ms + busy / (1 - busy) x medium_wait_ms, with busy the share of time the serving AP hears non-WiFi or neighbour sources above the carrier sense level. base_latency_ms, retry_penalty_ms and medium_wait_ms are planning assumptions. Airtime is the share of the channel one client at the demand rate needs: demand / (PHY rate x MAC efficiency x (1 - PER) x (1 - busy)).",
+  "per_at_min_snr": 0.1,
+  "per_scale_db": 0.8,
+  "retry_limit": 7,
+  "base_latency_ms": 2.0,
+  "retry_penalty_ms": 1.5,
+  "medium_wait_ms": 2.0,
+  "max_busy_fraction": 0.95
+ },
+ "voids": {
+  "label": "MODEL ESTIMATE: stairwell and atrium openings reduce the floor loss locally, a planning approximation of the 2D plan",
+  "source": "A void is an optional polygon or rectangle on a floor where the slab is open (stairwell, lift shaft, atrium). The 2D model has no slab geometry, so the floor loss between two floors is scaled down by open_end_reduction for every end of the path (the AP, the receiver) that lies inside a void on its own floor. With both ends inside a void the floor loss is removed (reduction capped at 1). open_end_reduction is a planning assumption; real stairwells with doors or balustrades differ.",
+  "kinds": [
+   "stairwell",
+   "atrium",
+   "shaft"
+  ],
+  "open_end_reduction": 0.5,
+  "max_points": 32
+ },
+ "spectrum": {
+  "label": "ESTIMATE: channel congestion from the access points and sources of the project, a planning aid, not a scan of the air",
+  "source": "Congestion of a channel is the sum over every AP and source in the project of coupling x duty cycle, where coupling is the share of the source power that lands in the candidate channel (interference.rejection_table for WiFi, spectral overlap for non-WiFi sources). It ignores distance, so it counts every source as if heard. APs use interference.activity_factor as duty cycle. Levels are thresholds on the congestion value, planning assumptions. On 2.4 GHz only the non-overlapping channels in preferred_channels are suggested.",
+  "width_mhz": {
+   "2.4": 20,
+   "5": 20,
+   "6": 20
+  },
+  "levels": [
+   {
+    "id": "low",
+    "max": 0.5
+   },
+   {
+    "id": "moderate",
+    "max": 1.5
+   },
+   {
+    "id": "high",
+    "max": 3.0
+   },
+   {
+    "id": "severe",
+    "max": null
+   }
+  ],
+  "preferred_channels": {
+   "2.4": [
+    1,
+    6,
+    11
+   ]
+  },
+  "suggestions": 3
+ },
+ "decay": {
+  "label": "ESTIMATE: signal decay along a ray from an AP, from the same propagation model as the coverage map",
+  "step_m": 0.5,
+  "max_distance_m": 60.0,
+  "max_samples": 500
+ },
+ "roaming": {
+  "label": "ESTIMATE: exact per-cell roaming data from the strongest and second strongest AP, the blend is a planning aid, not a client roaming simulation",
+  "source": "Per cell: the strongest AP, the second AP, the margin between them and a zone. Zone handoff: both APs at least analytics.roam_min_dbm and the margin at most analytics.roam_margin_db. Zone overlap: a second AP at least analytics.overlap_min_dbm within analytics.overlap_margin_db of the strongest. Else single. Blend is the share of the cell notionally served by the strongest AP: 50 percent at zero margin rising linearly to 100 percent at analytics.roam_margin_db. Client roaming thresholds and stickiness are not modelled.",
+  "zone_ids": [
+   "single",
+   "overlap",
+   "handoff"
+  ]
  },
  "scoring": {
   "label": "Optimisation score, a weighted sum of estimates, higher is better. Weights are planning preferences, not physics.",
