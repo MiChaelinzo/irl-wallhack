@@ -345,7 +345,7 @@ canvas.spectrum { width:100%; max-width:900px; height:auto; display:block; borde
    with data-contrast="more" on <html> (planner button). It darkens borders, brightens text and thickens focus rings. */
 :root[data-contrast="more"], :root[data-contrast="more"][data-theme="light"] { --line:currentColor; --muted:var(--fg); }
 :root[data-contrast="more"] { --fg:#ffffff; --bg:#000000; --card-solid:#000000; --card:#000000; --accent:#5eead4; --accent2:#c4b5fd; }
-:root[data-contrast="more"][data-theme="light"] { --fg:#000000; --bg:#ffffff; --card-solid:#ffffff; --card:#ffffff; --accent:#004d47; --accent2:#3b0f99; }
+:root[data-contrast="more"][data-theme="light"] { --fg:#000000; --bg:#ffffff; --card-solid:#ffffff; --card:#ffffff; --accent:#004d47; --accent2:#3b0f99; --ok:#0b5c27; --warn:#6b4300; --bad:#8f0d2c; }
 :root[data-contrast="more"] .card, :root[data-contrast="more"] button, :root[data-contrast="more"] select { border-width:2px; backdrop-filter:none; }
 :root[data-contrast="more"] .card::before { display:none; }
 @media (prefers-contrast: more) {

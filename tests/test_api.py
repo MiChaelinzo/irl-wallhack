@@ -163,3 +163,77 @@ def test_sensor_config_from_environment():
     assert cfg.sensor_names() == ("pms5003", "scd4x") and cfg.i2c_bus == 3 and cfg.serial_pms == "/dev/ttyAMA0"
     with pytest.raises(ValueError):
         load_config("/nonexistent.json", env={"WALLHACK_SENSORS": "bogus"})
+
+
+# ---- production readiness: request ids, diagnostics, error handling, JSON logs ----
+import json as _json
+import logging as _logging
+
+from wallhack.logging_setup import ErrorLog, JsonFormatter, new_request_id, request_id_var
+
+
+def test_request_id_is_generated_and_echoed(client):
+    r = client.get("/api/status")
+    assert len(r.headers["x-request-id"]) == 16
+    assert client.get("/api/status", headers={"X-Request-ID": "client-id-12345"}).headers["x-request-id"] == "client-id-12345"
+    assert new_request_id("bad id\nwith newline") != "bad id\nwith newline"     # unsafe ids are replaced, no header injection
+
+
+def test_diagnostics_local_only_and_holds_no_secrets(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret-value-123")
+    cfg = Config(source="simulator", background=False, udp_token="udp-secret-token", llm_provider="openai")
+    app = create_app(cfg)
+    with TestClient(app, base_url="http://localhost", client=("127.0.0.1", 5000)) as c:
+        r = c.get("/api/diagnostics")
+        assert r.status_code == 200
+        j = r.json()
+        for key in ("version", "python", "uptime_s", "limits", "errors"):
+            assert key in j
+        assert j["llm_provider"] == "openai" and j["errors"]["count"] == 0
+        text = r.text.lower()
+        for secret in ("sk-secret-value-123", "udp-secret-token", "token", "api_key", "password"):
+            assert secret not in text
+        assert c.get("/api/diagnostics", headers={"Origin": "http://evil.example"}).status_code == 403
+    with TestClient(app, base_url="http://localhost", client=("10.1.2.3", 5000)) as remote:
+        assert remote.get("/api/diagnostics").status_code == 403
+
+
+def test_unhandled_error_returns_explanatory_json_and_is_counted():
+    app = create_app(Config(source="simulator", background=False))
+
+    @app.get("/api/_boom")
+    def boom():
+        raise RuntimeError("secret internal detail")
+    with TestClient(app, base_url="http://localhost", client=("127.0.0.1", 5000), raise_server_exceptions=False) as c:
+        r = c.get("/api/_boom")
+        assert r.status_code == 500
+        j = r.json()
+        assert j["error"] == "internal_error" and j["request_id"] == r.headers["x-request-id"] and "request_id" in j["detail"]
+        assert "secret internal detail" not in r.text
+        errs = c.get("/api/diagnostics").json()["errors"]
+        assert errs["count"] == 1 and errs["by_kind"] == {"unhandled_exception": 1}
+
+
+def test_json_formatter_one_object_per_line_with_request_id():
+    token = request_id_var.set("abc12345")
+    try:
+        rec = _logging.LogRecord("wallhack", _logging.INFO, __file__, 1, "GET %s", ("/api/status",), None)
+        rec.status = 200
+        out = _json.loads(JsonFormatter().format(rec))
+    finally:
+        request_id_var.reset(token)
+    assert out["message"] == "GET /api/status" and out["request_id"] == "abc12345" and out["status"] == 200 and "\n" not in JsonFormatter().format(rec)
+
+
+def test_log_json_env_option():
+    assert load_config("/nonexistent.json", env={"WALLHACK_LOG_JSON": "1"}).log_json is True
+    assert Config().log_json is False
+
+
+def test_error_log_window_expires_old_events():
+    now = {"t": 0.0}
+    log_ = ErrorLog(window_s=10, clock=lambda: now["t"])
+    log_.record("a")
+    now["t"] = 20.0
+    log_.record("b")
+    assert log_.recent()["by_kind"] == {"b": 1} and log_.recent()["total_since_start"] == 2
