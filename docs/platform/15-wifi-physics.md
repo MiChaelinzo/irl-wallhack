@@ -9,7 +9,7 @@ Source of truth: `wallhack/rfmodel.py`. The JavaScript port `wallhack/static/rf-
 | Path loss | `PL(d) = PL0(band) + 10 n(band) log10(max(d, 1 m))`, PL0 40.0, 47.2, 48.7 dB and n 3.0, 3.1, 3.2 for 2.4, 5, 6 GHz | log-distance model, indoor site-general form of ITU-R P.1238; PL0 is free space at 1 m |
 | Free-space anchor | `PL0 = 40 + 20 log10(f / 2.4 GHz)` per the planner doc | Friis, ITU-R P.525 and P.526 family |
 | Wall loss | sum over walls crossed of `attenuation_db[band]` for the wall material, openings replace the wall loss where crossed | ITU-R P.2040 for the material ranges |
-| Floor loss | `floors_apart x floor_loss_db[band]` (13, 16, 18 dB) | fixed typical values, see gaps |
+| Floor loss | `floors_apart x floor_loss_db[band]` (13, 16, 18 dB), reduced by `voids.open_end_reduction` (0.5) for each path end inside a stairwell, atrium or shaft void, capped at all of it | fixed typical values, planning assumption for voids, see gaps |
 | Reflection (first order) | image method, loss `PL(total path) + reflection_loss_db(material)` plus walls crossed on both legs | geometrical optics |
 | Diffraction | knife edge, `v = sqrt(4 delta / lambda)`, `J(v) = 6.9 + 20 log10(sqrt((v - 0.1)^2 + 1) + v - 0.1)` | ITU-R P.526 knife-edge approximation |
 | Multipath | incoherent power sum (mW) of direct, reflected and diffracted paths | simplification |
@@ -28,7 +28,7 @@ Full derivations and check values: `docs/rf-planner.md`. Tests: `tests/test_rfmo
 |---|---|---|---|
 | 1 | No Fresnel zone clearance: a path is blocked or not by wall crossings only | Optimistic or pessimistic near obstacles within the first Fresnel zone, matters for long open rooms | Not modelled |
 | 2 | Single-slope exponent per band, no breakpoint | Over-estimates loss in large open areas, under-estimates in cluttered ones | Not modelled |
-| 3 | Fixed per-floor loss per band, independent of slab material, stairwells, atria | Wrong between floors by several dB either way | Open (flooring and roofing materials exist but are not wired in) |
+| 3 | Fixed per-floor loss per band, independent of slab material | Wrong between floors by several dB either way | Open (flooring and roofing materials exist but are not wired in). Stairwells and atria: optional `voids` reduce it locally (a 2D approximation, UNVERIFIED against real buildings) |
 | 4 | 2D geometry: floors are stacked with a fixed loss, no ceiling height or vertical angle | No elevation patterns, no 3D reflection | Not modelled |
 | 5 | No polarisation | Cross-polar loss ignored | Not modelled |
 | 6 | No small-scale fading or shadowing statistics | Single value per cell, no margin | Not modelled |
@@ -55,3 +55,22 @@ Full derivations and check values: `docs/rf-planner.md`. Tests: `tests/test_rfmo
 | Knife-edge `v = sqrt(2 delta / lambda)` (earlier fix in this branch history) | `v = sqrt(4 delta / lambda)` per the Fresnel-Kirchhoff small-angle form |
 
 Items 1 to 9, 11 and 16 are still open. The most valuable fix is calibration against a measured survey, which would bound the combined error of items 2, 3, 11 and 12 with one number (NOT BUILT).
+
+## RF lab estimates (non-WiFi interference, reliability, voids, spectrum, roaming)
+
+Every number in this section is a MODEL ESTIMATE. Constants live in `rf-config.json` (`external_sources`, `reliability`, `voids`, `spectrum`, `decay`, `roaming`) with their sources and assumptions next to them. Python (`wallhack/rfmodel.py`) is the reference, `rf-engine.js` mirrors it, and `tests/test_rf_lab.py` compares them. All of it is VERIFIED by automated tests against hand-computed cases and Python/JS parity, and UNVERIFIED against real radios or buildings.
+
+| Quantity | Formula as coded | Basis |
+|---|---|---|
+| Source coupling (microwave, Bluetooth) | `overlap(victim band, source span) / source width`, no skirt. Microwave: 2450 MHz, 50 MHz wide, 10 dBm, duty 0.5. Bluetooth: 2441 MHz, 78 MHz hop set (2402 to 2480), 4 dBm, duty 0.3 | magnetron on half-wave rectified mains radiates about half of each mains cycle; Bluetooth BR/EDR 79 hop channels of 1 MHz, class 2 limit 2.5 mW. Width, level and the Bluetooth duty are planning assumptions |
+| Neighbour WiFi | same coupling and rejection table as an AP, own `duty_cycle` (default 0.3), channel, width, power and position | planning assumption |
+| Interference power | `coupling x duty_cycle x 10^(level/10)` added to the SINR denominator, the level coming from the same propagation grid as an AP at the source position | standard SINR |
+| PER | logistic around the MCS minimum SNR, equal to 10 percent there: `1 / (1 + exp((sinr - min_snr) / 0.8 + ln 9))` | 10 percent PER at minimum sensitivity per IEEE 802.11; the slope is an assumption. **There is no standard SINR to PER formula.** |
+| Loss after retries | `PER^(retry_limit + 1)`, `retry_limit` 7 | dot11ShortRetryLimit default |
+| Latency | `2 ms + retries x 1.5 ms + busy / (1 - busy) x 2 ms`, retries are the mean transmissions minus one | all three terms are assumptions, an indication only |
+| Airtime for one client | `demand / (PHY x MAC efficiency x (1 - PER) x (1 - busy))`, demand 5 Mbps, capped at 100 percent | estimate. `busy` is the summed duty cycle of external sources heard above the carrier sense level at the serving AP, capped at 0.95 |
+| Voids | rectangle `x, y, w, d` or polygon `points` (even-odd rule) per floor, kinds stairwell, atrium, shaft | see `voids.source` |
+| Spectrum congestion | per candidate channel, `sum(coupling x duty)` over every AP and source of the band, ignoring distance. Levels low, moderate, high, severe at 0.5, 1.5, 3.0. On 2.4 GHz only channels 1, 6 and 11 are suggested | estimate |
+| Roaming map | per cell strongest AP, second AP, margin, zone (single, overlap, handoff) and blend (50 percent at zero margin to 100 percent at the roam margin) | uses `analytics.overlap_*` and `analytics.roam_*` thresholds. Client stickiness is not modelled |
+
+Limits: sources are point emitters with no antenna pattern; the SINR section (and so interference, reliability) exists only when an AP sets a `standard`; the spectrum analysis ignores distance; the void model has no slab geometry.

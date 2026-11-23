@@ -8,6 +8,8 @@
 - docs: `docs/rf-planner.md` no longer lists antenna patterns as not modelled (they are, since the WiFi standards work).
 
 ### RF planner engine
+- feat: RF lab engine upgrade, Python reference with JS mirror and parity tests (`tests/test_rf_lab.py`): materials plaster, insulation, office partition and industrial wall (with sources and ranges, material doc regenerated); configurable `interferers` (microwave oven, Bluetooth hopping, neighbour WiFi) folded into SINR; estimated PER, loss, latency and airtime per cell (`sinr.reliability`, config-driven, documented as estimates); optional floor `voids` (stairwell, atrium, shaft) that reduce floor loss locally; `probe_at(..., explain=True)` and `probeAt(..., {explain: true})` with each wall, floor loss, indirect path and SINR term as numbers and text; `spectrum_analysis`; `signal_decay`; exact per-cell roaming data `roaming.map`. `twin.py` and `planner-state.js` validate the new fields. Legacy projects give identical output.
+- change: `analytics.roaming.zones` no longer has a `bbox`; the planner roaming overlay draws exact cells from `roaming.map`. `PUT /api/twin` size limit now counts the void and interferer lists.
 - perf: the engine grid path on the 100,489 point floor went from 1675.1 ms to 684.6 ms (node, median, 4 APs, 1000 walls). Profile and numbers in `docs/perf-rf.md`. Results are identical (parity tests unchanged).
 - fix: `planner-state.js` accepted inherited object keys such as `constructor` in `mlo_bands`; it now checks own keys only. Both validators have tests for malformed `mlo_bands`.
 - feat: `PUT /api/twin` allows at most `limits.max_concurrent_twin_puts` (2) uploads at once and answers 429 with `Retry-After: 1` beyond that.

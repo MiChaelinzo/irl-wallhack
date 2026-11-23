@@ -99,6 +99,23 @@ The gain is added to `tx_dbm` per path, towards the first segment of the path (t
 ### MLO (Wi-Fi 7)
 `mlo_bands` lists up to two more bands the AP also transmits on, at the same position and power, on the default channel width of the band (`default_width_mhz`, capped by the standard). The capacity is `sum of the fastest max_links (3) link rates x mac_efficiency`, each extra link is noise limited (no interference). It is a CAPACITY MODEL, labelled as such in the output, not a measurement: real MLO gains depend on the client, the MLO mode (STR, eMLSR) and the traffic.
 
+### RF lab additions
+
+Optional twin fields (validated by `twin.py` and `planner-state.js`, absent in legacy projects, which give identical results):
+
+- `interferers`: list of `{id, kind, floor, x, y, tx_dbm?, duty_cycle?}` with kind `microwave`, `bluetooth` or `neighbour_wifi` (which also takes `band`, `channel`, `width_mhz`). At most 50. Defaults and sources: `rf-config.json` `external_sources`. They enter the `sinr` analytics section (`sinr.external`, per-AP `external_sources`).
+- floor `voids`: list of `{id, kind, x, y, w, d}` or `{id, kind, points: [[x, y], ...]}` (stairwell, atrium, shaft). Named `voids` because a floor's `openings` already means doors and windows. They reduce the floor loss locally.
+
+New analytics output (all ESTIMATES): `sinr.reliability` (per-cell `per_pct`, `loss_pct`, `latency_ms`, `airtime_pct` and means, also per AP), and `roaming.map` (`second_ap`, `margin_db`, `zone`, `blend_pct` per cell, replacing the bounding boxes: `roaming.zones` keeps `cells`, `area_m2` and `centroid` only; the plan overlay draws the exact cells).
+
+Python functions (mirrored in `rf-engine.js` as `probeAt(..., {explain: true})`, `spectrumAnalysis`, `signalDecay`):
+
+- `probe_at(twin, floor, x, y, band, mode, explain=True)` adds `explain`: EIRP, path loss, every wall crossed with material and dB, floor loss, reflected and diffracted paths, the SINR terms and `text`, a list of plain sentences. `total_loss_db` is the sum of the path, wall and floor terms, and `direct_dbm = eirp_dbm - total_loss_db`.
+- `spectrum_analysis(twin, band, width_mhz=None, exclude_ap=None)`: per channel overlapping sources, congestion, occupancy, level, plus up to three suggested channels.
+- `signal_decay(twin, floor, ap_id, bearing_deg, band, mode, step_m, max_distance_m)`: RSSI, distance-only level and walls crossed along a ray (0 degrees is +x, clockwise).
+
+The assumptions behind each number are in [platform/15-wifi-physics.md](platform/15-wifi-physics.md).
+
 ### Not modelled
 Refraction is not modelled (negligible indoors at these frequencies, and the plan is 2D), and no real-world fading, beamforming, MU-MIMO, OFDMA scheduling or client mix is modelled. A `standard` AP uses the legacy `mcs_tables` entry of the nearest narrower width for the old `throughput_mbps` field (the tables have no 40 MHz entry at 5 GHz, for example), so that field stays defined.
 
