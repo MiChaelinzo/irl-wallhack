@@ -911,7 +911,10 @@
   }
 
   /** coverageGrid, apGrids and analytics for one floor in one call (like rfmodel.analyze_floor). */
-  function analyzeFloor(project, floorId, opts) {
+  function analyzeFloor(project, floorId, opts) { return analyzeFloorWithGrid(project, floorId, opts).analytics; }
+
+  /** Same as analyzeFloor, but also returns the best-signal coverageGrid it computed, so callers need not compute it again. */
+  function analyzeFloorWithGrid(project, floorId, opts) {
     var o = optionsOf({ env: opts.env, config: opts.config, project: project, cellM: opts.cellM, band: opts.band,
                         mode: opts.mode });
     var shared = { env: o.env, cellM: o.cellM, band: opts.band, mode: o.mode };
@@ -930,7 +933,8 @@
       var grid = apGrids(project, floorId, { env: o.env, cellM: o.cellM, band: src.band, mode: o.mode, aps: [{ ap: pseudo, floor: findFloor(project, src.floor) }] })[0].grid;
       return Object.assign({}, src, { grid: [].concat.apply([], grid) });
     });
-    return analytics(coverageGrid(project, floorId, shared), apGrids(project, floorId, shared), o.env.config, mloGrids, external);
+    var grid = coverageGrid(project, floorId, shared);
+    return { analytics: analytics(grid, apGrids(project, floorId, shared), o.env.config, mloGrids, external), grid: grid };
   }
 
   /** (walls, openings) crossed by the straight path p->q; a crossing through an opening counts as an opening. */
@@ -1233,7 +1237,7 @@
   var api = { makeEnv: makeEnv, registerMode: registerMode, registerMaterials: registerMaterials, modeIds: modeIds,
               prepareFloor: prepareFloor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid, computeApRegion: computeApRegion,
               mergeBest: mergeBest, coverageGrid: coverageGrid, apGrids: apGrids, analytics: analytics,
-              analyzeFloor: analyzeFloor, probeAt: probeAt, scoreAnalytics: scoreAnalytics,
+              analyzeFloor: analyzeFloor, analyzeFloorWithGrid: analyzeFloorWithGrid, probeAt: probeAt, scoreAnalytics: scoreAnalytics,
               compareScenarios: compareScenarios, phyRateMbps: phyRateMbps, throughputMbps: throughputMbps,
               qualityBand: qualityBand, antennaGainDb: antennaGainDb, noiseFloorDbm: noiseFloorDbm,
               standardPhyRateMbps: standardPhyRateMbps, sinrPhyRateMbps: sinrPhyRateMbps, interferenceCoupling: interferenceCoupling,

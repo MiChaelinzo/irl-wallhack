@@ -200,3 +200,13 @@ def test_detect_issues_reports_dead_zone_and_cochannel():
     assert "dead_zone" in kinds and "cochannel" in kinds
     assert r["issues"][0]["severity"] == "high"
     assert all(set(BANDS) >= {"2.4"} and i["text"] for i in r["issues"])
+
+
+def test_analyze_floor_with_grid_matches_separate_calls():
+    """The worker reuses the analysis's coverage grid for map layers (perf, FEAT-005); it must equal a separate coverageGrid."""
+    proj = random_project(11, 40)
+    fid = proj["floors"][0]["id"]
+    got = run_js("""const s = {env, cellM: 1}, w = E.analyzeFloorWithGrid(P.p, P.f, s);
+out({same_analytics: JSON.stringify(w.analytics) === JSON.stringify(E.analyzeFloor(P.p, P.f, s)),
+     same_grid: JSON.stringify(w.grid) === JSON.stringify(E.coverageGrid(P.p, P.f, s))});""", {"p": proj, "f": fid})
+    assert got == {"same_analytics": True, "same_grid": True}

@@ -285,15 +285,16 @@
     }
 
     /** Per-cell values of the requested map layers (planner-heat.js layerValues) for one analysis. Float32Arrays, transferred. */
-    function layerResults(msg, an, s) {
+    function layerResults(msg, an, s, bestGrid) {
       if (!Heat) { throw new Error("map layers need planner-heat.js"); }
       var floor = State.findFloor(project, msg.floor), shared = { env: env, cellM: s.cellM, band: s.band, mode: s.mode };
-      function flatBest(proj) {
-        var g = RF.coverageGrid(proj, msg.floor, shared), out = new Float32Array(g.rows * g.cols);
+      function flatten(g) {
+        var out = new Float32Array(g.rows * g.cols);
         g.rssi.forEach(function (row, r) { out.set(row, r * g.cols); });
         return out;
       }
-      var rssi = flatBest(project), nowall = null;
+      function flatBest(proj) { return flatten(RF.coverageGrid(proj, msg.floor, shared)); }
+      var rssi = bestGrid ? flatten(bestGrid) : flatBest(project), nowall = null;   // bestGrid: the analysis already computed it
       if (msg.layers.indexOf("wall_loss") >= 0) {
         var bare = State.clone(project), bf = State.findFloor(bare, msg.floor);
         bf.walls = []; bf.openings = [];
@@ -314,9 +315,9 @@
       var steps = [], result = {}, o;
       if (msg.type === "analyze") {
         steps.push({ text: "analysing", run: function () {
-          var s = settings(msg), an = RF.analyzeFloor(project, msg.floor, s);
+          var s = settings(msg), full = RF.analyzeFloorWithGrid(project, msg.floor, s), an = full.analytics;
           result = { type: "analysis", floor: msg.floor, analytics: slim(an) };
-          if (msg.layers && msg.layers.length) { result.layers = layerResults(msg, an, s); }
+          if (msg.layers && msg.layers.length) { result.layers = layerResults(msg, an, s, full.grid); }
         } });
       } else if (msg.type === "compare") {
         steps.push({ text: "comparing", run: function () {
