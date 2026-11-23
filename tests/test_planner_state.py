@@ -452,3 +452,22 @@ def test_blank_project_name_loads_as_default_in_js_and_python(name):
     d = twin.sample_twin()
     d["name"] = name.encode().decode("unicode_escape")
     assert twin.validate_twin(d)["name"] == "Untitled"
+
+
+# ---------------------------------------------------------------- malformed mlo_bands (same cases as test_twin_api.py)
+MALFORMED_MLO_BANDS = [
+    ("'6'", "string instead of list"), ("null", "null"), ("{'6': 1}", "object"), ("[1]", "number entry"), ("[null]", "null entry"),
+    ("[['6']]", "nested list"), ("['6', '6']", "duplicate"), ("['5']", "own band"),
+    ("['6', '2.4', '1']", "more links than max_links allows"), ("['constructor']", "inherited object key"), ("['__proto__']", "prototype key"),
+]
+
+
+@pytest.mark.parametrize("bands,why", MALFORMED_MLO_BANDS)
+def test_malformed_mlo_bands_are_rejected_like_twin_py(bands, why):
+    body = """
+      const d = JSON.parse(JSON.stringify(input.twin));
+      Object.assign(d.floors[0].aps[0], {band: '5', channel: 36, standard: 'wifi7', width_mhz: 80, mlo_bands: %s});
+      try { S.validateProject(d); out('accepted'); } catch (e) { out(e.name + ': ' + e.message); }
+    """ % bands
+    r = run_js(body)
+    assert r.startswith("ProjectError") and "mlo_bands" in r, (why, r)

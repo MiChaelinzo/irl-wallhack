@@ -286,7 +286,7 @@
     if (a.mlo_bands !== undefined) {
       var mlo = cfg.wifi_standards.mlo, list = a.mlo_bands;
       if (!spec || mlo.standards.indexOf(a.standard) < 0) { throw ProjectError(q + ".mlo_bands: needs one of the standards " + mlo.standards.join(", ")); }
-      if (!Array.isArray(list) || list.some(function (b) { return typeof b !== "string"; }) || list.length > mlo.max_links - 1 || list.some(function (b, i) { return b === band || !spec.widths_mhz_by_band[b] || list.indexOf(b) !== i; })) {
+      if (!Array.isArray(list) || list.some(function (b) { return typeof b !== "string"; }) || list.length > mlo.max_links - 1 || list.some(function (b, i) { return b === band || !Object.prototype.hasOwnProperty.call(spec.widths_mhz_by_band, b) || list.indexOf(b) !== i; })) {
         throw ProjectError(q + ".mlo_bands: must be up to " + (mlo.max_links - 1) + " different other bands the standard allows");
       }
       ap.mlo_bands = list.slice();
