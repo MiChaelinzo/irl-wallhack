@@ -628,6 +628,7 @@
     if (window.PlannerPanels) { window.PlannerPanels.mount(app); }
     if (window.PlannerExport) { window.PlannerExport.mount(app); }
     if (window.PlannerModes) { window.PlannerModes.mount(app); }
+    if (window.PlannerLearn) { window.PlannerLearn.mount(app); }
     app.applyLayer();
     requestCompute();
     $("saveState").textContent = "Not saved yet";

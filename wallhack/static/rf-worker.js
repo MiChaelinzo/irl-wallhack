@@ -358,7 +358,10 @@
          ["suggesting AP positions", function () { result.placements = Opt.suggestPlacements(project, msg.floor, Object.assign({ targetPct: target }, po)); }],
          ["estimating the AP count", function () { result.count = Opt.recommendApCount(project, msg.floor, target, maxAps, po); }],
          ["checking transmit power", function () { result.power = Opt.detectPowerIssues(project, msg.floor, po); }],
-         ["planning channels", function () { result.channels = Opt.planChannels(project, msg.floor, po); }]
+         ["planning channels", function () { result.channels = Opt.planChannels(project, msg.floor, po); }],
+         ["choosing channels from SINR", function () { result.channels_sinr = Opt.planChannelsSinr(project, msg.floor, po); }],
+         ["looking for mesh node positions", function () { result.mesh = Opt.suggestMeshNodes(project, msg.floor, po); }],
+         ["planning dead-zone fixes", function () { result.dead_zone_fixes = Opt.suggestDeadZoneFixes(project, msg.floor, po); }]
         ].forEach(function (s) { steps.push({ text: s[0], run: s[1] }); });
       } else { throw new Error("unknown job type " + msg.type); }
       return { steps: steps, result: function () { return result; } };

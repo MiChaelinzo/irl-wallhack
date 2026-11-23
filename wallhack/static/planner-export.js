@@ -6,7 +6,7 @@
 (function (root) {
   var ESTIMATE_LINE = "MODEL ESTIMATE, not a measurement";
   var PAGE_W = 595, PAGE_H = 842, MARGIN = 40, LINE_GAP = 1.35;
-  var JPEG_QUALITY = 0.85, LEGEND_W = 190;
+  var JPEG_QUALITY = 0.85, LEGEND_W = 190, MODE_MAP_PX = 240;
   var FORMULA_START = /^[=+\-@\t\r]/;
 
   var registry = {}, order = [];
@@ -113,7 +113,8 @@
 
   /**
    * Coverage report. data: {title, project, floor, date, summary: [[label, value]], aps: [header + rows],
-   * issues: [text], recommendations: [text], image: {bytes, w, h} or null}.
+   * issues: [text], recommendations: [text], image: {bytes, w, h} or null}. Optional sections, each skipped when absent:
+   * floors, ap_locations, spectrum, performance (header + rows), mode_maps [{label, coverage_pct, image}], accessible_text (text).
    */
   function buildReport(data) {
     var pdf = createPdf(), y = 0, width = PAGE_W - 2 * MARGIN;
@@ -140,19 +141,32 @@
     pdf.rect(MARGIN, y + 4, width, 22, 0.9); pdf.text(MARGIN + 8, y + 19, 11, ESTIMATE_LINE + ". Not a site survey.", true); y += 34;
     heading("Summary");
     tableOut(data.summary, [0, 230]);
+    if (data.floors && data.floors.length) { heading("Floor overview (" + ESTIMATE_LINE + ")"); tableOut(data.floors, [0, 150, 200, 260, 360, 450]); }
     if (data.image) {
       var h = Math.min(300, width * data.image.h / data.image.w), w = h * data.image.w / data.image.h;
       ensure(h + 30); heading("Heat map (" + ESTIMATE_LINE + ")");
       pdf.image(data.image.bytes, data.image.w, data.image.h, MARGIN, y, w, h); y += h + 6;
     }
+    if (data.mode_maps && data.mode_maps.length) {
+      heading("Coverage maps per propagation mode (" + ESTIMATE_LINE + ")");
+      data.mode_maps.forEach(function (m) {
+        var mh = Math.min(150, width * m.image.h / m.image.w), mw = mh * m.image.w / m.image.h;
+        ensure(mh + 24); pdf.text(MARGIN, y + 10, 10, m.label + ": coverage " + m.coverage_pct + " % (estimate)", true); y += 16;
+        pdf.image(m.image.bytes, m.image.w, m.image.h, MARGIN, y, mw, mh); y += mh + 6;
+      });
+    }
     heading("Access points");
     tableOut(data.aps, [0, 60, 130, 200, 270, 350, 430]);
+    if (data.ap_locations && data.ap_locations.length > 1) { heading("Access point locations"); tableOut(data.ap_locations, [0, 90, 190, 260, 330, 400]); }
+    if (data.spectrum && data.spectrum.length > 1) { heading("Spectrum summary (" + ESTIMATE_LINE + ")"); tableOut(data.spectrum, [0, 80, 130, 200, 280]); }
+    if (data.performance && data.performance.length) { heading("Performance of this analysis"); tableOut(data.performance, [0, 230]); }
     heading("Issues");
     if (!data.issues.length) { para("No issues recorded. Run the Smart planner before exporting to include them.", 10); }
     data.issues.forEach(function (t) { para("- " + t, 9); });
     heading("Recommendations");
     if (!data.recommendations.length) { para("No recommendations recorded. Run the Smart planner before exporting to include them.", 10); }
     data.recommendations.forEach(function (t) { para("- " + t, 9); });
+    if (data.accessible_text) { heading("Text summary (for screen readers)"); para(data.accessible_text, 9); }
     heading("Disclaimer");
     para("All figures in this report are " + ESTIMATE_LINE.toLowerCase() + ". The model uses log-distance path loss with typical wall losses, and recommendations carry a confidence that expresses model sensitivity, not real-world accuracy. Floor plans and images were processed in the browser and are not uploaded.", 9);
     return pdf.build();
@@ -211,6 +225,38 @@
     return out;
   }
 
+  /** Small JPEG of the quality map of one propagation mode, drawn from the engine grid (one square per analysis cell). */
+  function modeMap(app, mode) {
+    var E = root.RFEngine, floor = app.currentFloor(), cell = root.PlannerPanels.analysisCell(floor);
+    var g = E.coverageGrid(app.store.project, floor.id, { env: app.env, cellM: cell, mode: mode, band: app.settings.band || undefined });
+    var scale = Math.max(1, Math.floor(MODE_MAP_PX / Math.max(g.cols, g.rows))), cv = root.document.createElement("canvas"), c = cv.getContext("2d");
+    cv.width = g.cols * scale; cv.height = g.rows * scale;
+    for (var r = 0; r < g.rows; r++) {
+      for (var k = 0; k < g.cols; k++) {
+        var col = root.PlannerHeat.bandColor(app.paletteId || "classic", E.qualityBand(app.config, g.rssi[r][k]));
+        c.fillStyle = "rgb(" + col.join(",") + ")"; c.fillRect(k * scale, r * scale, scale, scale);
+      }
+    }
+    return { label: mode.charAt(0).toUpperCase() + mode.slice(1), coverage_pct: g.coverage_pct, image: { bytes: bytesOfDataUrl(cv.toDataURL("image/jpeg", JPEG_QUALITY)), w: cv.width, h: cv.height } };
+  }
+
+  /** Optional report sections computed from the live project and last analysis. */
+  function reportExtras(app, an) {
+    var project = app.store.project, fl = app.currentFloor(), res = app.lastResult;
+    var floors = [["Floor", "Level", "APs", "Walls", "Size (m)", "Status"]].concat(project.floors.map(function (f) {
+      return [f.name, f.level, f.aps.length, f.walls.length, f.width_m + " x " + f.depth_m, f.id === fl.id ? "shown" : ""]; }));
+    var locations = [["AP", "Floor", "x (m)", "y (m)", "TX dBm", "Band"]];
+    project.floors.forEach(function (f) { f.aps.forEach(function (a) { locations.push([a.id, f.name, a.x, a.y, a.tx_dbm, (a.band || app.settings.band || "2.4") + " GHz"]); }); });
+    var spectrum = [["AP", "Band", "Channel", "Width MHz", "Co-channel"]].concat(an.aps.map(function (a) { return [a.id, a.band + " GHz", a.channel, a.width_mhz, a.cochannel_neighbours.join(" ") || "none"]; }));
+    (project.interferers || []).forEach(function (x) { spectrum.push([x.id, x.kind, x.channel || "-", "-", "source on " + x.floor]); });
+    var performance = [["Metric", "Value"], ["Heat map compute time", res && res.stats ? Math.round(res.stats.ms) + " ms" : "n/a"], ["Analysis grid", an.cols + " x " + an.rows + " cells of " + an.cell_m + " m"],
+      ["Walls on this floor", fl.walls.length], ["Renderer", app.rendererInfo || "n/a"]];
+    var modes = root.RFEngine.modeIds().map(function (m) { return modeMap(app, m); });
+    var text = "Floor " + fl.name + " of " + project.name + ": coverage " + an.coverage_pct + " percent at " + app.config.analytics.coverage_dbm + " dBm, " + an.dead_zones.length +
+      " dead zones, " + an.aps.length + " access points. All values are model estimates, not measurements.";
+    return { floors: floors, ap_locations: locations, spectrum: spectrum, performance: performance, mode_maps: modes, accessible_text: text };
+  }
+
   function pngBytes(app) { return bytesOfDataUrl(composeView(app).toDataURL("image/png")); }
   function safeName(s) { return String(s || "project").replace(/[^\w.-]+/g, "_"); }
 
@@ -231,10 +277,11 @@
       var aps = [["AP", "Band", "Channel", "Served m2", "Usable Mbps*", "Capacity*", "Utilisation*"]].concat(an.aps.map(function (a) {
         return [a.id, a.band + " GHz", a.channel, a.served_area_m2, a.usable_mbps, a.client_capacity, a.channel_utilisation_pct + " %"]; }));
       aps.push(["* ESTIMATE"]);
-      return { name: safeName(app.store.project.name) + "-coverage-report.pdf", mime: "application/pdf", data: buildReport({
+      var extras = reportExtras(app, an);
+      return { name: safeName(app.store.project.name) + "-coverage-report.pdf", mime: "application/pdf", data: buildReport(Object.assign(extras, {
         title: "Wallhack RF coverage report", project: app.store.project.name, floor: fl.name, date: new Date().toISOString().slice(0, 10), summary: summary, aps: aps,
-        issues: plan ? plan.issues.map(function (i) { return i.severity + ": " + i.text; }) : [], recommendations: plan ? ctx.recommendations().map(function (r) { return r.text + " (confidence " + (r.confidence === null ? "n/a" : Math.round(r.confidence * 100) + "%") + ")"; }) : [],
-        image: { bytes: jpeg, w: cv.width, h: cv.height } }) };
+        issues: plan ? plan.issues.map(function (i) { return i.severity + ": " + i.text; }) : [], recommendations: plan ? ctx.recommendations().map(function (r) { return r.text + " (confidence " + (r.confidence === null ? "n/a" : Math.round(r.confidence * 100) + "%") + ". Why: " + r.reason + ")"; }) : [],
+        image: { bytes: jpeg, w: cv.width, h: cv.height } })) };
     } });
     register("print", { label: "Print or save as PDF (browser)", run: function () { root.print(); return null; } });
   }

@@ -12,6 +12,7 @@
       "aps": [
        {
         "id": "router",
+        "standard": "wifi6",
         "tx_dbm": 18.0,
         "x": 0.8,
         "y": 5.2
@@ -164,6 +165,7 @@
       "aps": [
        {
         "id": "router",
+        "standard": "wifi6",
         "tx_dbm": 20.0,
         "x": 2.0,
         "y": 2.0
@@ -473,6 +475,7 @@
         "band": "2.4",
         "channel": 1,
         "id": "ap-west",
+        "standard": "wifi6",
         "tx_dbm": 18.0,
         "x": 5.0,
         "y": 9.0
@@ -481,6 +484,7 @@
         "band": "2.4",
         "channel": 1,
         "id": "ap-mid",
+        "standard": "wifi6",
         "tx_dbm": 18.0,
         "x": 15.0,
         "y": 9.0
@@ -489,6 +493,7 @@
         "band": "2.4",
         "channel": 1,
         "id": "ap-east",
+        "standard": "wifi6",
         "tx_dbm": 18.0,
         "x": 25.0,
         "y": 9.0
@@ -702,6 +707,7 @@
        {
         "band": "5",
         "id": "ap-1",
+        "standard": "wifi6",
         "tx_dbm": 20.0,
         "x": 5.0,
         "y": 10.0
@@ -709,6 +715,7 @@
        {
         "band": "5",
         "id": "ap-2",
+        "standard": "wifi6",
         "tx_dbm": 20.0,
         "x": 20.0,
         "y": 10.0
@@ -716,6 +723,7 @@
        {
         "band": "5",
         "id": "ap-3",
+        "standard": "wifi6",
         "tx_dbm": 20.0,
         "x": 35.0,
         "y": 10.0
@@ -990,6 +998,7 @@
        {
         "band": "2.4",
         "id": "ap-dock",
+        "standard": "wifi6",
         "tx_dbm": 20.0,
         "x": 3.0,
         "y": 2.0
@@ -997,6 +1006,7 @@
        {
         "band": "2.4",
         "id": "ap-hall",
+        "standard": "wifi6",
         "tx_dbm": 20.0,
         "x": 38.0,
         "y": 12.0
@@ -1138,6 +1148,7 @@
        {
         "band": "5",
         "id": "ap-west",
+        "standard": "wifi6",
         "tx_dbm": 17.0,
         "x": 6.0,
         "y": 7.0
@@ -1145,6 +1156,7 @@
        {
         "band": "5",
         "id": "ap-east",
+        "standard": "wifi6",
         "tx_dbm": 17.0,
         "x": 30.0,
         "y": 7.0
@@ -1500,6 +1512,7 @@
       "aps": [
        {
         "id": "ap-shop",
+        "standard": "wifi6",
         "tx_dbm": 18.0,
         "x": 10.0,
         "y": 4.0

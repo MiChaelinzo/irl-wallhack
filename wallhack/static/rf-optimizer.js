@@ -473,56 +473,14 @@
     return found.slice(0, ctx.pc.max_dead_zone_fixes).map(function (z) {
       var x = clampToFloor(ctx, z.centroid.x, ctx.floor.width_m), y = clampToFloor(ctx, z.centroid.y, ctx.floor.depth_m);
       var ev = evaluateIn(ctx, x, y, []);
-      return Object.assign({ kind: "dead_zone_fix", zone_area_m2: z.area_m2,
+      return Object.assign({ kind: "dead_zone_fix", zone_area_m2: z.area_m2, tx_dbm: ctx.pc.default_tx_dbm, band: ctx.band || ctx.pc.default_band,
         text: "Cover the " + z.area_m2 + " m2 dead zone near (" + ev.x + " m, " + ev.y + " m) with an AP: coverage " + ev.coverage_before_pct + "% to " + ev.coverage_after_pct + "% (estimate)." }, ev);
     });
   }
 
-  // ---------------------------------------------------------------- recommendation panel data
-  function confidenceWord(c) { return c >= 0.75 ? "high" : c >= 0.4 ? "moderate" : "low"; }
-
-  /**
-   * Everything the recommendation panel shows for one floor: each entry has a kind, text, confidence
-   * (0 to 1), a plain-word confidence and a rationale. Deterministic. opts as makeContext.
-   */
-  function recommendationsFor(project, floorId, opts) {
-    var o = opts || {}, ctx = makeContext(project, floorId, o);
-    var shared = Object.assign({}, o, { env: ctx.env, config: ctx.config });
-    var det = detectIssues(project, floorId, shared), out = [];
-    function add(kind, title, r) {
-      out.push({ kind: kind, title: title, text: r.text, confidence: r.confidence, confidence_word: confidenceWord(r.confidence),
-                 rationale: r.reason || r.rationale, x: r.x, y: r.y });
-    }
-    suggestPlacements(project, floorId, shared).recommendations.forEach(function (r) { add("ap_placement", "AP placement", r); });
-    var ch = planChannelsSinr(project, floorId, shared);
-    if (ch.changed) {
-      add("channel", "Channel plan", { text: "Change channels: " + ch.assignments.filter(function (a) { return a.changed; }).map(function (a) {
-        return a.ap_id + " " + a.from_channel + " to " + a.to_channel; }).join(", ") + ". Mean SINR " + ch.sinr_before_db + " dB to " + ch.sinr_after_db + " dB (estimate).",
-        confidence: ch.confidence, rationale: ch.rationale });
-    }
-    suggestMeshNodes(project, floorId, shared).nodes.forEach(function (r) { add("mesh", "Mesh node", r); });
-    suggestDeadZoneFixes(project, floorId, shared).forEach(function (r) { add("dead_zone", "Dead-zone fix", r); });
-    var power = detectPowerIssues(project, floorId, shared);
-    power.underpowered.concat(power.overpowered).forEach(function (r) { add("power", "Transmit power", r); });
-    return { label: LABEL, floor: floorId, coverage_pct: det.analytics.coverage_pct, dead_zone_pct: det.analytics.dead_zone_pct,
-             issues: det.issues, recommendations: out };
-  }
-
-  /** The body of POST /api/planner/explain: engine numbers only, in the shape wallhack/llm.py validates. */
-  function explainPayload(result, title) {
-    var metrics = [{ label: "Coverage", value: result.coverage_pct, unit: "%" }, { label: "Dead zone", value: result.dead_zone_pct, unit: "%" }];
-    return { title: title || "Planner result for floor " + result.floor,
-             metrics: metrics,
-             issues: result.issues.slice(0, 10).map(function (i) { return i.text; }),
-             recommendations: result.recommendations.slice(0, 10).map(function (r) {
-               return { text: r.text, confidence: r.confidence, rationale: r.rationale };
-             }) };
-  }
-
   var api = { detectIssues: detectIssues, suggestPlacements: suggestPlacements, evaluatePlacement: evaluatePlacement,
               recommendApCount: recommendApCount, detectPowerIssues: detectPowerIssues, planChannels: planChannels,
-              planChannelsSinr: planChannelsSinr, suggestMeshNodes: suggestMeshNodes, suggestDeadZoneFixes: suggestDeadZoneFixes,
-              recommendationsFor: recommendationsFor, explainPayload: explainPayload, confidenceWord: confidenceWord };
+              planChannelsSinr: planChannelsSinr, suggestMeshNodes: suggestMeshNodes, suggestDeadZoneFixes: suggestDeadZoneFixes };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFOptimizer = api;
 })(typeof self !== "undefined" ? self : this);

@@ -67,18 +67,18 @@ def test_analysis_is_deterministic_and_python_matches():
             assert abs(py - r["coverage"]) <= 0.11, r
 
 
-def test_recommendations_are_deterministic_and_carry_confidence_and_rationale():
+def test_new_planner_advice_is_deterministic_with_confidence_and_rationale():
     res = run_js("""out(lib.map(s => {
-        const f = s.project.floors[0].id, a = O.recommendationsFor(s.project, f, {env, config}), b = O.recommendationsFor(s.project, f, {env, config});
-        return {id: s.id, same: JSON.stringify(a) === JSON.stringify(b), recs: a.recommendations.map(r => [r.kind, r.confidence, !!r.rationale, !!r.text, r.confidence_word])};
+        const f = s.project.floors[0].id, po = {env, config};
+        const run = () => ({ch: O.planChannelsSinr(s.project, f, po), mesh: O.suggestMeshNodes(s.project, f, po), dz: O.suggestDeadZoneFixes(s.project, f, po)});
+        const a = run(), b = run();
+        return {id: s.id, same: JSON.stringify(a) === JSON.stringify(b), ch: [a.ch.confidence, a.ch.rationale], dz: a.dz.map(r => [r.confidence, r.reason]), mesh: a.mesh.nodes.map(r => [r.confidence, r.reason])};
       }))""")
-    kinds = set()
     for r in res:
         assert r["same"], r["id"]
-        for kind, conf, rationale, text, word in r["recs"]:
-            kinds.add(kind)
-            assert 0 <= conf <= 1 and rationale and text and word in ("high", "moderate", "low")
-    assert {"ap_placement", "channel", "dead_zone"} <= kinds
+        assert 0 <= r["ch"][0] <= 1 and r["ch"][1]
+        for conf, why in r["dz"] + r["mesh"]:
+            assert 0 <= conf <= 1 and why
 
 
 def test_sinr_channel_plan_fixes_cochannel_office():
@@ -87,11 +87,8 @@ def test_sinr_channel_plan_fixes_cochannel_office():
     assert len({a["to_channel"] for a in r["assignments"]}) >= 2
 
 
-def test_mesh_and_explain_payload():
+def test_mesh_nodes_keep_a_usable_backhaul():
     r = run_js("""const s = lib.find(x => x.id === 'large_home'), p = JSON.parse(JSON.stringify(s.project));
-      const mesh = O.suggestMeshNodes(p, 'upper', {env, config}), rec = O.recommendationsFor(p, 'ground', {env, config});
-      out({mesh, payload: O.explainPayload(rec)})""")
+      out({mesh: O.suggestMeshNodes(p, 'upper', {env, config})})""")
     assert r["mesh"]["nodes"], "the upper floor of the large home should get a mesh node"
     assert all(n["backhaul_dbm"] >= r["mesh"]["weak_backhaul_dbm"] and n["parent_ap_id"] for n in r["mesh"]["nodes"])
-    from wallhack import llm
-    llm.validate_planner_payload(r["payload"])

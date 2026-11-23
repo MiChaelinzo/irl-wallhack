@@ -42,7 +42,8 @@ class Floor:
         return self
 
     def ap(self, aid, x, y, tx=20.0, **extra):
-        self.f["aps"].append(dict({"id": aid, "x": x, "y": y, "tx_dbm": tx}, **extra))
+        """An AP with a WiFi standard, so SINR and throughput estimates exist for every preset."""
+        self.f["aps"].append(dict({"id": aid, "x": x, "y": y, "tx_dbm": tx, "standard": "wifi6"}, **extra))
         return self
 
 

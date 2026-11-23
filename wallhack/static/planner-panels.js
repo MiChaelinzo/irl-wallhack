@@ -55,14 +55,25 @@
     power.overpowered.concat(power.underpowered).forEach(function (r) {
       add(r.kind, r.text, r.reason, r.confidence, null, { type: "set_tx", ap_id: r.ap_id, tx_dbm: r.to_tx_dbm });
     });
-    var ch = plan.channels;
-    if (ch) {
+    var sc = plan.channels_sinr, ch = plan.channels;
+    if (sc && sc.sinr_before_db !== null) {
+      sc.assignments.filter(function (a) { return a.changed; }).forEach(function (a) {
+        add("channel", a.ap_id + ": move from channel " + a.from_channel + " to " + a.to_channel + " (" + a.band + " GHz). Mean SINR " + sc.sinr_before_db + " dB to " + sc.sinr_after_db + " dB for the whole plan (estimate).",
+            sc.rationale, sc.confidence, null, { type: "set_channel", ap_id: a.ap_id, channel: a.to_channel });
+      });
+    } else if (ch) {
       ch.assignments.filter(function (a) { return a.changed; }).forEach(function (a) {
         add("channel", a.ap_id + ": move from channel " + a.from_channel + " to " + a.to_channel + " (" + a.band + " GHz). Co-channel conflicts " + ch.conflicts_before + " to " + ch.conflicts_after + " (estimate).",
             "Greedy channel colouring from the modelled signal between APs. No confidence is computed for channel changes.", null, null,
             { type: "set_channel", ap_id: a.ap_id, channel: a.to_channel });
       });
     }
+    ((plan.mesh && plan.mesh.nodes) || []).forEach(function (r) {
+      add("mesh_node", r.text, r.reason, r.confidence, { x: r.x, y: r.y }, { type: "add_ap", x: r.x, y: r.y, tx_dbm: r.tx_dbm, band: r.band, mesh_parent: r.parent_ap_id });
+    });
+    (plan.dead_zone_fixes || []).forEach(function (r) {
+      add("dead_zone_fix", r.text, r.reason, r.confidence, { x: r.x, y: r.y }, { type: "add_ap", x: r.x, y: r.y, tx_dbm: r.tx_dbm, band: r.band });
+    });
     return out;
   }
 
@@ -77,6 +88,7 @@
       project.floors.forEach(function (f) { all = all.concat(f.aps); });
       var id = S.nextId(all.concat(added), "ap"), item = { id: id, x: a.x, y: a.y, tx_dbm: a.tx_dbm };
       if (a.band) { item.band = a.band; }
+      if (a.mesh_parent) { item.mesh_parent = a.mesh_parent; }
       added.push(item);
       var op = S.addOp("ap", project, floorId, item);
       op.index = floor.aps.length + added.length - 1;   // keep batch order: later APs go after earlier ones
@@ -663,6 +675,7 @@
       if (!state.recs.length) { list.appendChild(el("li", { text: "No changes recommended." })); }
       out.appendChild(list);
       out.appendChild(el("p", { class: "muted hint", text: PLAN_NOTE }));
+      if (app.planExtras) { app.planExtras(out, p, state.recs); }
     }
     app.store.subscribe(function (ev) {
       if (ev.source === "load") { state.plan = null; state.recs = []; state.ghost = null; renderSmart(); }

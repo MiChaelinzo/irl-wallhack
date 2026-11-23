@@ -11,6 +11,7 @@
   <h1><span class="logo" aria-hidden="true"></span>Wallhack <span class="sub">RF planner</span></h1>
   <div class="hdr-right">
     <nav class="nav" aria-label="Pages"><a href="/" data-page="/">Dashboard</a><a href="/mobile" data-page="/mobile">Mobile</a><a href="/judge" data-page="/judge">Judge mode</a><a href="/planner" data-page="/planner" aria-current="page">Planner</a></nav>
+    <button id="learnBtn" type="button" aria-pressed="false" title="Educational mode: contextual learning panels and lessons">Learn: off</button>
     <span id="rendererChip" class="chip" title="How the heat map is drawn">renderer: ?</span>
     <span id="computeChip" class="chip" role="status">idle</span>
     <button id="themeBtn" type="button" aria-pressed="false">Light</button>
@@ -56,6 +57,10 @@
     <p class="muted hint">Click to draw with a material, or drag one onto the plan.</p>
     <div id="palette" class="palette"></div>
     <h3>Project</h3>
+    <div class="tool-row">
+      <label class="inline">Preset <select id="presetSel" aria-label="Scenario preset"></select></label>
+      <button id="presetLoad" type="button" title="Load the chosen illustrative scenario">Load preset</button>
+    </div>
     <div class="tool-row">
       <button id="exportBtn" type="button">Export JSON</button>
       <button id="importBtn" type="button">Import JSON</button>
@@ -173,6 +178,7 @@
 <script src="/static/planner-panels.js"></script>
 <script src="/static/planner-export.js"></script>
 <script src="/static/planner-modes.js"></script>
+<script src="/static/planner-learn.js"></script>
 <script src="/static/planner.js"></script>
 </body>
 </html>
