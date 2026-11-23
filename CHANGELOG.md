@@ -8,6 +8,10 @@
 - docs: `docs/rf-planner.md` no longer lists antenna patterns as not modelled (they are, since the WiFi standards work).
 
 ### RF planner engine
+- perf: the engine grid path on the 100,489 point floor went from 1675.1 ms to 684.6 ms (node, median, 4 APs, 1000 walls). Profile and numbers in `docs/perf-rf.md`. Results are identical (parity tests unchanged).
+- fix: `planner-state.js` accepted inherited object keys such as `constructor` in `mlo_bands`; it now checks own keys only. Both validators have tests for malformed `mlo_bands`.
+- feat: `PUT /api/twin` allows at most `limits.max_concurrent_twin_puts` (2) uploads at once and answers 429 with `Retry-After: 1` beyond that.
+- test: the explicit-width test read a key that does not exist, so it never checked the width; it now reads `sinr.aps[0].width_mhz`.
 - fix: a Wi-Fi 4 AP on 5 GHz without `width_mhz` made `analyze_floor` raise (the band default of 80 MHz is not a Wi-Fi 4 width). `_ap_radio` and `apRadio` now use `default_width_mhz(standard, band)` when the AP has a `standard`, so the reported `width_mhz` for such APs is 40. Tests cover every standard and band in Python and against JS.
 - fix: `mlo_bands` with a non-string entry (for example `[[1]]`) caused an uncaught TypeError (HTTP 500) in `twin.py`; both validators now reject it with a normal validation error, with parity tests.
 - docs: top-100 rows 5, 6 and 35 are Partial: the engine and API compute PHY rate, SINR and MLO, but no planner UI shows them. The band validation test was reworded from "unknown band" to a path prefix check.

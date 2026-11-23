@@ -33,6 +33,7 @@ def _twin_body_limit() -> int:
 
 
 MAX_TWIN_BODY_BYTES = _twin_body_limit()
+MAX_CONCURRENT_TWIN_PUTS = rfmodel.LIMITS["max_concurrent_twin_puts"]
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("wallhack")
@@ -153,6 +154,8 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
             raise HTTPException(status_code=415, detail="Content-Type must be application/json")
 
+    twin_puts_running = {"n": 0}
+
     @app.get("/api/twin")
     def get_twin():
         return runtime.get_twin()
@@ -161,11 +164,17 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     async def put_twin(request: Request):
         require_same_origin(request)
         require_json(request)
-        body = await read_json(request, MAX_TWIN_BODY_BYTES)
+        if twin_puts_running["n"] >= MAX_CONCURRENT_TWIN_PUTS:
+            raise HTTPException(status_code=429, headers={"Retry-After": "1"},
+                                detail=f"Too many twin uploads at once (limit {MAX_CONCURRENT_TWIN_PUTS}); retry shortly")
+        twin_puts_running["n"] += 1      # no await between check and increment, so the event loop cannot interleave
         try:
+            body = await read_json(request, MAX_TWIN_BODY_BYTES)
             return await run_in_threadpool(runtime.set_twin, body)
         except TwinError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        finally:
+            twin_puts_running["n"] -= 1
 
     @app.get("/api/rf/coverage")
     def rf_coverage(floor: Optional[str] = None, cell_m: float = Query(rfmodel.DEFAULT_CELL_M, ge=0.1, le=5.0),

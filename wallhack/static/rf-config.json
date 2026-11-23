@@ -12,6 +12,7 @@
   "max_background_chars": 600000,
   "twin_json_bytes_per_item": 300,
   "twin_body_overhead_bytes": 65536,
+  "max_concurrent_twin_puts": 2,
   "max_text_chars": 64,
   "furniture_kinds": ["sofa", "bed", "table", "desk", "wardrobe", "counter", "other"],
   "sensor_kinds": ["air", "presence", "rssi"]
