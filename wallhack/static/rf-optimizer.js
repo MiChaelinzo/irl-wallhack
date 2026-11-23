@@ -372,8 +372,157 @@
     return { label: LABEL, issues: issues, analytics: an };
   }
 
+  // ---------------------------------------------------------------- channel plan from SINR
+  function cloneProject(project) { return JSON.parse(JSON.stringify(project)); }
+
+  /** Copy of the project where every AP has a WiFi standard (needed for SINR) and the given channels. */
+  function withChannels(project, ctx, channels) {
+    var copy = cloneProject(project), pc = ctx.pc;
+    copy.floors.forEach(function (f) {
+      f.aps.forEach(function (ap) {
+        var band = ctx.band || ap.band || pc.default_band;
+        if (ap.standard === undefined) { ap.standard = band === "6" ? pc.sinr_default_standard_6ghz : pc.sinr_default_standard; }
+        if (channels && channels[ap.id] !== undefined) { ap.channel = channels[ap.id]; }
+      });
+    });
+    return copy;
+  }
+
+  function meanSinr(copy, floorId, env, ctx) {
+    var an = E.analyzeFloor(copy, floorId, { env: env, cellM: ctx.cellM, band: ctx.band || undefined, mode: ctx.mode });
+    return an.sinr && an.sinr.mean_sinr_db !== null ? an.sinr.mean_sinr_db : null;
+  }
+
+  /**
+   * Channel plan that maximises the mean SINR over the floor (co-channel, adjacent-channel and non-WiFi
+   * sources included, as computed by rf-engine.js). Coordinate descent: APs in id order, each tries every
+   * channel of its band, two passes. Ties keep the current channel. Confidence = share of the wall
+   * perturbations (+-dB, +-scale) under which the new plan is at least as good as the old one.
+   * APs on other floors are fixed; only APs on this floor change.
+   */
+  function planChannelsSinr(project, floorId, opts) {
+    var ctx = makeContext(project, floorId, opts || {}), pc = ctx.pc;
+    var floor = ctx.floor, current = {};
+    var base = withChannels(project, ctx, null);
+    var aps = E.findFloor(base, floorId).aps;
+    aps.forEach(function (ap) {
+      var band = ctx.band || ap.band || pc.default_band;
+      current[ap.id] = ap.channel !== undefined ? ap.channel : ctx.config.bands[band].default_channel;
+    });
+    var before = Object.assign({}, current), plan = Object.assign({}, current);
+    var best = meanSinr(withChannels(project, ctx, plan), floorId, ctx.env, ctx), startSinr = best;
+    for (var pass = 0; pass < pc.channel_sinr_passes && best !== null; pass++) {
+      var moved = false;
+      aps.slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; }).forEach(function (ap) {
+        var band = ctx.band || ap.band || pc.default_band, keep = plan[ap.id], pick = keep, pickVal = best;
+        pc.channel_sets[band].forEach(function (ch) {
+          if (ch === keep) { return; }
+          var trial = Object.assign({}, plan); trial[ap.id] = ch;
+          var v = meanSinr(withChannels(project, ctx, trial), floorId, ctx.env, ctx);
+          if (v !== null && v > pickVal) { pick = ch; pickVal = v; }
+        });
+        if (pick !== keep) { plan[ap.id] = pick; best = pickVal; moved = true; }
+      });
+      if (!moved) { break; }
+    }
+    var checks = wallEnvs(ctx).map(function (w) {
+      var a = meanSinr(withChannels(project, ctx, before), floorId, w.env, ctx), b = meanSinr(withChannels(project, ctx, plan), floorId, w.env, ctx);
+      return a !== null && b !== null && b >= a;
+    });
+    var stable = checks.filter(Boolean).length, changed = aps.filter(function (ap) { return plan[ap.id] !== before[ap.id]; }).length;
+    var conf = changed ? round(Math.min(1, pc.confidence.weight_stability * (stable / checks.length) + pc.confidence.weight_magnitude *
+      Math.min(1, ((best || 0) - (startSinr || 0)) / pc.confidence.full_gain_db)), 3) : 1;
+    return { label: LABEL, floor: floor.id, objective: "mean SINR over the floor (dB)", sinr_before_db: startSinr === null ? null : round(startSinr, 1),
+             sinr_after_db: best === null ? null : round(best, 1), changed: changed, confidence: conf, perturbations: checks.length,
+             stable_perturbations: stable,
+             assignments: aps.map(function (ap) {
+               return { ap_id: ap.id, band: ctx.band || ap.band || pc.default_band, from_channel: before[ap.id], to_channel: plan[ap.id], changed: plan[ap.id] !== before[ap.id] };
+             }),
+             rationale: startSinr === null ? "SINR is not available for this floor, so no SINR plan was made."
+               : changed ? stable + " of " + checks.length + " model perturbations keep the new plan at least as good as the current one. Mean SINR " + round(startSinr, 1) + " dB to " + round(best, 1) + " dB (estimate)."
+               : "No channel change improves the mean SINR of " + round(startSinr, 1) + " dB (estimate)." };
+  }
+
+  // ---------------------------------------------------------------- mesh node placement
+  /**
+   * Mesh node candidates: the best placements that still hear an existing AP above the weak backhaul level.
+   * Backhaul RSSI comes from the engine probe at the candidate point (walls and floors included).
+   */
+  function suggestMeshNodes(project, floorId, opts) {
+    var o = opts || {}, ctx = makeContext(project, floorId, o), mc = ctx.config.planner_modes.mesh;
+    var res = suggestPlacements(project, floorId, Object.assign({}, o, { count: ctx.pc.max_suggestions }));
+    var nodes = [], rejected = 0;
+    res.recommendations.forEach(function (r) {
+      var probe = E.probeAt(project, floorId, r.x, r.y, { env: ctx.env, band: ctx.band || undefined, mode: ctx.mode });
+      if (probe.ap_id && probe.rssi_dbm >= mc.weak_backhaul_dbm) {
+        nodes.push(Object.assign({}, r, { kind: "mesh_node", parent_ap_id: probe.ap_id, backhaul_dbm: probe.rssi_dbm,
+          text: "Add a mesh node at (" + r.x + " m, " + r.y + " m) with " + probe.ap_id + " as uplink: backhaul " + probe.rssi_dbm + " dBm, coverage " +
+            r.coverage_before_pct + "% to " + r.coverage_after_pct + "% (estimate)." }));
+      } else { rejected++; }
+    });
+    return { label: LABEL, floor: floorId, weak_backhaul_dbm: mc.weak_backhaul_dbm, nodes: nodes, rejected: rejected,
+             note: nodes.length ? "" : !rejected ? "No extra node is needed on this floor." : "No suggested position hears an existing AP above " + mc.weak_backhaul_dbm + " dBm, so a wireless node would have a weak backhaul. Use a cable." };
+  }
+
+  // ---------------------------------------------------------------- dead-zone fixes
+  /** For each dead zone (largest first): an AP at its centre, with the evaluated gain and confidence. */
+  function suggestDeadZoneFixes(project, floorId, opts) {
+    var o = opts || {}, ctx = makeContext(project, floorId, o);
+    var found = detectIssues(project, floorId, Object.assign({}, o, { env: ctx.env, config: ctx.config })).issues.filter(function (i) { return i.kind === "dead_zone"; });
+    found.sort(function (a, b) { return b.area_m2 - a.area_m2; });
+    return found.slice(0, ctx.pc.max_dead_zone_fixes).map(function (z) {
+      var x = clampToFloor(ctx, z.centroid.x, ctx.floor.width_m), y = clampToFloor(ctx, z.centroid.y, ctx.floor.depth_m);
+      var ev = evaluateIn(ctx, x, y, []);
+      return Object.assign({ kind: "dead_zone_fix", zone_area_m2: z.area_m2,
+        text: "Cover the " + z.area_m2 + " m2 dead zone near (" + ev.x + " m, " + ev.y + " m) with an AP: coverage " + ev.coverage_before_pct + "% to " + ev.coverage_after_pct + "% (estimate)." }, ev);
+    });
+  }
+
+  // ---------------------------------------------------------------- recommendation panel data
+  function confidenceWord(c) { return c >= 0.75 ? "high" : c >= 0.4 ? "moderate" : "low"; }
+
+  /**
+   * Everything the recommendation panel shows for one floor: each entry has a kind, text, confidence
+   * (0 to 1), a plain-word confidence and a rationale. Deterministic. opts as makeContext.
+   */
+  function recommendationsFor(project, floorId, opts) {
+    var o = opts || {}, ctx = makeContext(project, floorId, o);
+    var shared = Object.assign({}, o, { env: ctx.env, config: ctx.config });
+    var det = detectIssues(project, floorId, shared), out = [];
+    function add(kind, title, r) {
+      out.push({ kind: kind, title: title, text: r.text, confidence: r.confidence, confidence_word: confidenceWord(r.confidence),
+                 rationale: r.reason || r.rationale, x: r.x, y: r.y });
+    }
+    suggestPlacements(project, floorId, shared).recommendations.forEach(function (r) { add("ap_placement", "AP placement", r); });
+    var ch = planChannelsSinr(project, floorId, shared);
+    if (ch.changed) {
+      add("channel", "Channel plan", { text: "Change channels: " + ch.assignments.filter(function (a) { return a.changed; }).map(function (a) {
+        return a.ap_id + " " + a.from_channel + " to " + a.to_channel; }).join(", ") + ". Mean SINR " + ch.sinr_before_db + " dB to " + ch.sinr_after_db + " dB (estimate).",
+        confidence: ch.confidence, rationale: ch.rationale });
+    }
+    suggestMeshNodes(project, floorId, shared).nodes.forEach(function (r) { add("mesh", "Mesh node", r); });
+    suggestDeadZoneFixes(project, floorId, shared).forEach(function (r) { add("dead_zone", "Dead-zone fix", r); });
+    var power = detectPowerIssues(project, floorId, shared);
+    power.underpowered.concat(power.overpowered).forEach(function (r) { add("power", "Transmit power", r); });
+    return { label: LABEL, floor: floorId, coverage_pct: det.analytics.coverage_pct, dead_zone_pct: det.analytics.dead_zone_pct,
+             issues: det.issues, recommendations: out };
+  }
+
+  /** The body of POST /api/planner/explain: engine numbers only, in the shape wallhack/llm.py validates. */
+  function explainPayload(result, title) {
+    var metrics = [{ label: "Coverage", value: result.coverage_pct, unit: "%" }, { label: "Dead zone", value: result.dead_zone_pct, unit: "%" }];
+    return { title: title || "Planner result for floor " + result.floor,
+             metrics: metrics,
+             issues: result.issues.slice(0, 10).map(function (i) { return i.text; }),
+             recommendations: result.recommendations.slice(0, 10).map(function (r) {
+               return { text: r.text, confidence: r.confidence, rationale: r.rationale };
+             }) };
+  }
+
   var api = { detectIssues: detectIssues, suggestPlacements: suggestPlacements, evaluatePlacement: evaluatePlacement,
-              recommendApCount: recommendApCount, detectPowerIssues: detectPowerIssues, planChannels: planChannels };
+              recommendApCount: recommendApCount, detectPowerIssues: detectPowerIssues, planChannels: planChannels,
+              planChannelsSinr: planChannelsSinr, suggestMeshNodes: suggestMeshNodes, suggestDeadZoneFixes: suggestDeadZoneFixes,
+              recommendationsFor: recommendationsFor, explainPayload: explainPayload, confidenceWord: confidenceWord };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFOptimizer = api;
 })(typeof self !== "undefined" ? self : this);

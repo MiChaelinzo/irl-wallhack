@@ -1238,6 +1238,10 @@
   "low_capacity_clients": 5,
   "high_utilisation_pct": 70.0,
   "weak_area_issue_pct": 5.0,
+  "sinr_default_standard": "wifi6",
+  "sinr_default_standard_6ghz": "wifi6e",
+  "channel_sinr_passes": 2,
+  "max_dead_zone_fixes": 3,
   "channel_sets": {
    "2.4": [
     1,
@@ -1270,7 +1274,8 @@
    "stability_fraction_of_gain": 0.5,
    "weight_stability": 0.7,
    "weight_magnitude": 0.3,
-   "full_gain_pct": 10.0
+   "full_gain_pct": 10.0,
+   "full_gain_db": 3.0
   }
  },
  "planner_modes": {

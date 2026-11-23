@@ -756,7 +756,33 @@
     return normalizeView(Object.assign({}, stored && typeof stored === "object" ? stored : {}, fromUrl.raw), cfg, palettes);
   }
 
-  var api = { textLimit: textLimit, clipText: clipText, SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY,
+  // ------------------------------------------------------------------ scenario library (wallhack/static/scenarios.json)
+  /**
+   * Validate the preset library. Every project goes through validateProject, so a preset can never be
+   * something the planner would refuse to import. Returns [{id, name, description, learn, project}].
+   * @param {any} data parsed scenarios.json
+   * @param {any} [opts] validateProject options
+   */
+  function validateScenarioLibrary(data, opts) {
+    var cfg = configOf(opts || {}), maxText = cfg.limits.max_text_chars;
+    if (!data || typeof data !== "object" || data.schema_version !== 1 || !Array.isArray(data.scenarios) || !data.scenarios.length) {
+      throw ProjectError("scenario library: expected schema_version 1 and a non-empty scenarios list");
+    }
+    var seen = {};
+    return data.scenarios.map(function (s, i) {
+      var q = "scenarios[" + i + "]";
+      object(s, q);
+      var id = text(s, "id", q, maxText);
+      if (seen[id]) { throw ProjectError(q + ".id: duplicate scenario id '" + id + "'"); }
+      seen[id] = true;
+      var project;
+      try { project = validateProject(s.project, opts); } catch (e) { throw ProjectError(q + " (" + id + "): " + e.message); }
+      return { id: id, name: nameText(s, "name", q, maxText), description: typeof s.description === "string" ? s.description : "",
+               learn: typeof s.learn === "string" ? s.learn : "", project: project };
+    });
+  }
+
+  var api = { validateScenarioLibrary: validateScenarioLibrary, textLimit: textLimit, clipText: clipText, SCHEMA_VERSION: SCHEMA_VERSION, HISTORY_CAP: HISTORY_CAP, STORAGE_KEY: STORAGE_KEY,
               DEFAULT_BG_OPACITY: DEFAULT_BG_OPACITY, validateProject: validateProject, parseProjectJson: parseProjectJson,
               exportProjectJson: exportProjectJson, findFloor: findFloor, nextId: nextId, wallLength: wallLength, wallBox: wallBox,
               applyOp: applyOp, invertOp: invertOp, addOp: addOp, removeOp: removeOp, setOp: setOp, createStore: createStore,
