@@ -48,6 +48,7 @@ class Config:
     llm_endpoint: str = ""        # optional base URL override; never a secret
     llm_timeout_s: float = 30.0
     lan: bool = False             # opt-in: bind all interfaces for the mobile companion; needs the pairing token
+    log_json: bool = False        # one JSON object per log line (also WALLHACK_LOG_JSON=1)
     background: bool = True       # tests set False and step manually
 
     def sensor_names(self) -> tuple:

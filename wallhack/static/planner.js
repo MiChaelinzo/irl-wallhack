@@ -9,7 +9,7 @@
   var CELL_CHOICES = [0.25, 0.5, 1, 2], MAX_AUTO_CELLS = 90000;
   var AUTOSAVE_MS = 600, PROBE_STEP_M = 0.5, PROBE_BIG_STEP_M = 2.5, MAX_IMPORT_BYTES = 12 * 1024 * 1024;
   var DEFAULT_FLOOR = { w: 20, d: 12 };
-  var THEME_KEY = "wallhack.theme";
+  var THEME_KEY = "wallhack.theme", CONTRAST_KEY = "wallhack.contrast";
   var BAND_CHOICES = ["2.4", "5", "6"];
 
   function $(id) { return document.getElementById(id); }
@@ -568,6 +568,21 @@
     $("themeBtn").textContent = theme === "light" ? "Dark" : "Light"; $("themeBtn").setAttribute("aria-pressed", String(theme === "light"));
     if (app.editor) { app.editor.invalidate(); }
   }
+  function applyContrast(on) {
+    if (on) { document.documentElement.setAttribute("data-contrast", "more"); } else { document.documentElement.removeAttribute("data-contrast"); }
+    $("contrastBtn").textContent = on ? "Contrast: on" : "Contrast: off"; $("contrastBtn").setAttribute("aria-pressed", String(on));
+    if (app.editor) { app.editor.invalidate(); }
+  }
+  function wireContrast() {
+    var saved = null, prefers = !!(window.matchMedia && window.matchMedia("(prefers-contrast: more)").matches);
+    try { saved = window.localStorage.getItem(CONTRAST_KEY); } catch (e) { /* storage unavailable */ }
+    applyContrast(saved === null ? prefers : saved === "more");
+    $("contrastBtn").addEventListener("click", function () {
+      var next = document.documentElement.getAttribute("data-contrast") !== "more";
+      try { window.localStorage.setItem(CONTRAST_KEY, next ? "more" : "off"); } catch (e) { /* storage unavailable */ }
+      applyContrast(next);
+    });
+  }
   function wireTheme() {
     var saved = null;
     try { saved = window.localStorage.getItem(THEME_KEY); } catch (e) { /* storage unavailable */ }
@@ -637,7 +652,7 @@
 
   function fail(msg) { notice("The planner could not start: " + msg, "error"); }
   document.addEventListener("DOMContentLoaded", function () {
-    wireTheme();
+    wireTheme(); wireContrast();
     window.fetch(BASE + "rf-config.json").then(function (r) { if (!r.ok) { throw new Error("rf-config.json returned " + r.status); } return r.json(); })
       .then(function (config) { app.config = config; return initialProject().then(function (p) { start(config, p); }); })
       .catch(function (e) { fail(e.message + (location.protocol === "file:" ? ". Serve the page over http (python -m wallhack) instead of opening the file." : "")); });

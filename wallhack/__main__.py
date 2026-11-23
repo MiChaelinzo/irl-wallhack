@@ -12,6 +12,7 @@ from .app import create_app
 from .runtime import SourceUnavailableError
 from .collectors.nexmon import NexmonCollector
 from .config import CSI_SOURCES, LOCAL_HOSTS, SENSORS, load_config
+from .logging_setup import configure_logging
 from .nexmon import summarize
 
 DEFAULT_CHECK_SECONDS = 10.0
@@ -61,6 +62,7 @@ def main(argv=None) -> None:
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config(a.config)
+    configure_logging(cfg.log_json)
     for name in ("source", "scenario", "host", "port", "seed", "sensitivity", "interface", "ping_target", "udp_port", "udp_host", "udp_token", "csi_source", "csi_port",
                  "sensors", "i2c_bus", "lan"):
         v = getattr(a, name)

@@ -14,11 +14,12 @@
     <button id="learnBtn" type="button" aria-pressed="false" title="Educational mode: contextual learning panels and lessons">Learn: off</button>
     <span id="rendererChip" class="chip" title="How the heat map is drawn">renderer: ?</span>
     <span id="computeChip" class="chip" role="status">idle</span>
+    <button id="contrastBtn" type="button" aria-pressed="false" title="High contrast: stronger borders and text colours">Contrast: off</button>
     <button id="themeBtn" type="button" aria-pressed="false">Light</button>
     <button id="helpBtn" type="button" aria-controls="help" aria-expanded="false">Shortcuts (?)</button>
   </div>
 </header>
-<div id="plannerNote" class="banner note" role="note">
+<div id="plannerNote" class="banner note" role="region" aria-label="Model estimate notice">
   <p><strong>MODEL ESTIMATE, not a measurement.</strong> Heat maps come from a log-distance model with wall losses (see the model notes in docs/rf-planner.md). Floor plans and images stay in this browser and are never uploaded.</p>
 </div>
 <div id="plannerNotice" class="banner" role="status" hidden></div>
@@ -80,8 +81,8 @@
     <h2 id="pStage">Floor plan and signal map</h2>
     <div class="stage-bar">
       <label class="inline">Floor <select id="floorSel" aria-label="Floor"></select></label>
-      <button id="floorDown" type="button" title="Floor below (Page Down)" aria-label="Floor below">Down</button>
-      <button id="floorUp" type="button" title="Floor above (Page Up)" aria-label="Floor above">Up</button>
+      <button id="floorDown" type="button" title="Floor below (Page Down)" aria-label="Down, floor below">Down</button>
+      <button id="floorUp" type="button" title="Floor above (Page Up)" aria-label="Up, floor above">Up</button>
       <span id="estimateLabel" class="chip sim">MODEL ESTIMATE, not a measurement</span>
       <span id="coverageChip" class="chip">coverage: -</span>
       <span id="deadChip" class="chip">dead zone: -</span>
