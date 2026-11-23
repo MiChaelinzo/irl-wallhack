@@ -309,6 +309,12 @@ class Runtime:
         return llm.explain(findings, c.llm_provider, c.llm_model, c.llm_endpoint,
                            timeout_s=c.llm_timeout_s, confirm_off_device=confirm_off_device)
 
+    def explain_planner(self, body, confirm_off_device: bool = False) -> dict:
+        """Explain planner advice from engine numbers. Falls back to deterministic rules when the LLM is off."""
+        c = self.config
+        return llm.explain_planner(body, c.llm_provider, c.llm_model, c.llm_endpoint,
+                                   timeout_s=c.llm_timeout_s, confirm_off_device=confirm_off_device)
+
     def _twin_coverage_pct(self) -> Optional[float]:
         twin = self.twin
         if self._coverage_cache is None or self._coverage_cache[0] is not twin:

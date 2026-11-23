@@ -240,6 +240,20 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         except llm.LlmError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
 
+    @app.post("/api/planner/explain")
+    async def explain_planner(request: Request):
+        """Plain-language explanation of planner advice, grounded on the engine numbers in the body.
+        Works with the LLM off (deterministic rules). Cloud providers need confirm_off_device=true."""
+        require_same_origin(request)
+        require_json(request)
+        body = await read_json(request)
+        confirm = isinstance(body, dict) and body.get("confirm_off_device") is True
+        try:
+            return await run_in_threadpool(runtime.explain_planner, body, confirm)
+        except llm.LlmError as exc:
+            status = 409 if "off-device" in str(exc) else 422
+            raise HTTPException(status_code=status, detail=str(exc))
+
     @app.get("/api/scores")
     def scores():
         return {"scores": runtime.scores(), "label": "Coverage is a model estimate; the rest are live readings."}
