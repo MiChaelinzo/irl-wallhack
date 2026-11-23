@@ -206,8 +206,8 @@ def test_every_standard_and_band_analyzes_without_an_explicit_width(standard, ba
     project = open_project(10, 8, [])
     project["floors"][0]["aps"] = [ap("ap0", 3.0, 3.0, band=band, standard=standard)]
     out = rfmodel.analyze_floor(project, "g", 2.0, None, "basic")
-    width = out["ap_grids"][0]["width_mhz"] if "ap_grids" in out else None
-    assert out["sinr"] and (width is None or width in rfmodel.standard_widths(standard, band))
+    width = out["sinr"]["aps"][0]["width_mhz"]
+    assert out["sinr"] and width in rfmodel.standard_widths(standard, band)
 
 
 @needs_node
