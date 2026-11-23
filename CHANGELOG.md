@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Accessibility, production readiness and throttled performance
+- feat: `tools/a11y_check.py` (dev only) runs axe-core, fetched from npm into a temp dir at run time, on the planner and dashboard (live and demo) plus keyboard, focus ring and error boundary checks. Fixed: floor button labels, `#envChips` role, light theme ribbon contrast, banner landmarks. Now 0 violations in dark, light and high contrast.
+- feat: planner Contrast button and `prefers-contrast: more` high contrast mode, 3 px focus rings, `forced-colors` outlines, rem base font size.
+- feat: front-end error boundary in `common.js`: uncaught errors and promise rejections appear in the page notice with `role="alert"`.
+- feat: `X-Request-ID` on every response, one log line per API request, optional JSON logs (`log_json`, `WALLHACK_LOG_JSON=1`, `wallhack/logging_setup.py`), JSON 500 handler with request id, local-only `GET /api/diagnostics`.
+- perf: the analysis worker job reuses the coverage grid it already computed for map layers (`analyzeFloorWithGrid` in `rf-engine.js`); a layered analysis went from 148 to 100 ms (worker) and from 970 to 597 ms (main thread, 6x CDP throttle). `tools/perf_rf_browser.py --throttle` measures 1x, 4x and 6x; numbers in `docs/perf-rf.md`, labelled as an approximation.
+- test: request id, diagnostics secrets and locality, error handler, JSON formatter, error window and grid reuse equality tests.
+
 ### Scenarios, educational mode, explain and reports
 - feat: scenario presets (`scenarios.json`, generator `tools/make_scenarios.py`) loadable from the planner and the offline demo; `validateScenarioLibrary` in `planner-state.js`.
 - feat: educational mode (`planner-learn.js`, `learn-content.json`): Learn toggle with contextual panels, six lessons with engine-computed checks and an undoable "Show me", and a "why is the signal weak here" panel from the engine explain output.

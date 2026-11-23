@@ -165,3 +165,49 @@ Largest difference between the bench grids and the engine grid: 0 dB in node, 0 
 - GPU: nothing here uses the GPU. A WebGL or WebGPU compute path for propagation is a design idea only and is not built. The WebGL path in the planner draws an already computed RSSI grid.
 - Incremental rendering already exists: `rf-worker.js` posts a coarse pass first, then refines tile by tile (`progress` messages, at most one every 60 ms), and `planner.js` hands each message's grid to the heat renderer in `planner-heat.js`, which redraws it (chip text: "coarse pass, refining", then "refining N%"). For 100,000 points the first usable frame came after the coarse pass (see the worker rows) while the final result follows later.
 
+
+<!-- recorded sections below are kept when tools/perf_rf_browser.py rewrites this file -->
+
+## CPU-throttled planner page (APPROXIMATION of low-end and mobile CPUs)
+
+Measured with `python tools/perf_rf_browser.py --throttle` on Intel(R) Xeon(R) Platinum 8488C, 8 logical cores, Chromium 159.0.8154.6 headless (Playwright), on the seeded 4 AP, 1000 wall stress floor (`tools/perf_rf_lib.js`, seed 7). Throttling is Chrome DevTools `Emulation.setCPUThrottlingRate` at 4x and 6x, set on the page target. **This is an approximation, not a phone or a Raspberry Pi**: it slows JavaScript on the page's main thread by stretching CPU time, and does not model memory bandwidth, the GPU, thermal throttling or a small core count. No real low-end device was measured.
+
+Columns: cold load of the stress floor until the heat map is final (wall clock), one full frame (`benchmarkRender`), heat layer draw, move one AP and wait for the final map (5 times), an `analyze` job at 1 m cells without map layers, with the `rssi` layer, and with the `wall_loss` layer (3 times each, median), and JS heap after a forced GC (CDP `Performance.getMetrics`, page heap only, the worker heap is not included).
+
+### Finding: the throttle does not reach the Web Worker
+
+The `worker` rows barely change between 1x, 4x and 6x for compute (analysis jobs, cold load), while frame render times scale about 4x and 6x as expected. CDP CPU throttling applies to the page target, and the dedicated worker that computes the heat map is not throttled in this setup. So the worker rows show how the main thread behaves (render, frame cost) and the `main` rows (`?worker=0`, the fallback that computes on the UI thread in slices) are the honest throttled compute figures.
+
+### The extra coverageGrid per analysis (from FEAT-003), measured and removed
+
+FEAT-003 made the `analyze` worker job call `coverageGrid` a second time to build map layers, after `analyzeFloor` had already computed the same grid. That cost was never measured. Fix: `rf-engine.js` gains `analyzeFloorWithGrid` (returns the analytics and the grid it computed; `analyzeFloor` is now a thin wrapper around it), and `rf-worker.js` reuses that grid for the layers. The output is identical (`tests/test_rf_planner_js.py::test_analyze_floor_with_grid_matches_separate_calls`). The `wall_loss` layer still computes one extra grid, for the floor without walls, which is a different input.
+
+Before (extra grid), same command, same machine, same run session:
+
+| Compute backend, CPU throttle (CDP, approximation) | Cold load of 4 AP stress floor ms | Full frame render ms | Heat layer draw ms | Re-render after AP move: median / max ms | Analysis job, no layers ms | Analysis job, rssi layer ms | Analysis job, wall_loss layer ms | JS heap MB after GC |
+|---|---|---|---|---|---|---|---|---|
+| worker, 1x | 567 | 0.5 | 0.4 | 66 / 453 | 102 | 148 | 145 | 2.7 |
+| worker, 4x | 825 | 2.3 | 1.7 | 128 / 612 | 143 | 169 | 161 | 2.7 |
+| worker, 6x | 549 | 3.8 | 1.9 | 164 / 1009 | 122 | 172 | 178 | 2.7 |
+| main, 1x | 704 | 0.5 | 0.3 | 136 / 769 | 111 | 163 | 166 | 3.2 |
+| main, 4x | 6800 | 2.2 | 1.5 | 3488 / 4104 | 495 | 632 | 668 | 3.2 |
+| main, 6x | 12881 | 3.3 | 2.4 | 9579 / 11931 | 683 | 970 | 1006 | 3.2 |
+
+After (grid reused):
+
+| Compute backend, CPU throttle (CDP, approximation) | Cold load of 4 AP stress floor ms | Full frame render ms | Heat layer draw ms | Re-render after AP move: median / max ms | Analysis job, no layers ms | Analysis job, rssi layer ms | Analysis job, wall_loss layer ms | JS heap MB after GC |
+|---|---|---|---|---|---|---|---|---|
+| worker, 1x | 460 | 0.7 | 0.3 | 70 / 482 | 98 | 100 | 109 | 2.7 |
+| worker, 4x | 436 | 2.4 | 1.4 | 157 / 706 | 117 | 101 | 116 | 2.7 |
+| worker, 6x | 567 | 3.5 | 2.3 | 226 / 714 | 102 | 104 | 114 | 2.7 |
+| main, 1x | 642 | 0.6 | 0.3 | 138 / 713 | 121 | 102 | 105 | 3.1 |
+| main, 4x | 6988 | 2.1 | 0.8 | 3014 / 3881 | 432 | 433 | 475 | 3.2 |
+| main, 6x | 12787 | 3.2 | 1.7 | 8267 / 10282 | 608 | 597 | 708 | 3.2 |
+
+Reading the numbers:
+
+- The extra grid cost about 45 ms per layered analysis unthrottled (rssi layer 148 to 100 ms in the worker, 163 to 102 ms on the main thread) and about 370 ms on the main thread at 6x (970 to 597 ms). A layered analysis now costs the same as one without layers.
+- Rows that the change does not touch (cold load, AP move, frames) vary by 10 to 30 percent between the two runs. That is run-to-run noise on a shared machine, so only differences well above it are claimed.
+- The main-thread fallback is not usable for this stress floor on a CPU 4x to 6x slower: a single AP move takes 3 to 8 s to reach the final map (the coarse pass appears earlier). With a Web Worker the main thread stays free, but on a real slow device the worker itself would also be slower, which this method cannot show.
+- Heat layer draw and full frames stay under 4 ms at 6x, so drawing is not the bottleneck; compute is.
+- Memory: the page heap after GC is about 3 MB in every case. The worker heap is not measured.
