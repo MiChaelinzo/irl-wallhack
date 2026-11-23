@@ -93,7 +93,7 @@
       return { id: w.id, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, len: Math.hypot(w.x2 - w.x1, w.y2 - w.y1),
                loss: mat.attenuation_db[band], refl: mat.reflection_loss_db[band], openings: byWall[w.id] || [] };
     });
-    var prep = { walls: walls, band: band, index: null, seen: new Int32Array(walls.length), stamp: 0 };
+    var prep = { walls: walls, band: band, index: null, seen: new Int32Array(walls.length), stamp: 0, scratch: [], hits: [], hitLosses: [] };
     if (!brute && walls.length) {
       var cs = Math.max(idxCfg.min_cell_m, Math.sqrt(maxX * maxY * idxCfg.target_walls_per_cell / walls.length));
       var index = { cs: cs, cols: Math.max(1, Math.ceil(maxX / cs)), rows: Math.max(1, Math.ceil(maxY / cs)), cells: [] };
@@ -119,15 +119,32 @@
     return false;
   }
 
-  /** Indices (ascending) of walls whose cells the segment p->q passes through (DDA traversal). */
-  function segmentCandidates(prep, px, py, qx, qy) {
-    var ix = prep.index, out = [];
-    prep.stamp++;
-    function visit(c, r) {
-      if (c < 0 || r < 0 || c >= ix.cols || r >= ix.rows) { return; }
-      var cell = ix.cells[r * ix.cols + c];
-      for (var i = 0; i < cell.length; i++) { if (collect(prep, cell[i])) { out.push(cell[i]); } }
+  /** Appends the walls of one index cell that this query has not seen yet to `out` (stamp marks them). */
+  function visitCell(prep, out, c, r) {
+    var ix = prep.index;
+    if (c < 0 || r < 0 || c >= ix.cols || r >= ix.rows) { return; }
+    var cell = ix.cells[r * ix.cols + c];
+    for (var i = 0; i < cell.length; i++) {
+      var n = cell[i];
+      if (prep.seen[n] !== prep.stamp) { prep.seen[n] = prep.stamp; out.push(n); }
     }
+  }
+
+  /** Ascending order of the candidate indices keeps the loss summation order identical to Python. Short lists: insertion sort. */
+  function sortAscending(list) {
+    for (var i = 1; i < list.length; i++) {
+      var v = list[i], j = i - 1;
+      while (j >= 0 && list[j] > v) { list[j + 1] = list[j]; j--; }
+      list[j + 1] = v;
+    }
+    return list;
+  }
+
+  /** Fills `out` (emptied first) with the indices, in visiting order, of walls whose cells the segment p->q passes through (DDA traversal). */
+  function fillCandidates(prep, px, py, qx, qy, out) {
+    var ix = prep.index;
+    out.length = 0;
+    prep.stamp++;
     var cx = cellOf(ix, px, true), cy = cellOf(ix, py, false), ex = cellOf(ix, qx, true), ey = cellOf(ix, qy, false);
     var dx = qx - px, dy = qy - py;
     var stepX = dx > 0 ? 1 : -1, stepY = dy > 0 ? 1 : -1;
@@ -136,23 +153,28 @@
     var tDx = dx !== 0 ? ix.cs / Math.abs(dx) : Infinity, tDy = dy !== 0 ? ix.cs / Math.abs(dy) : Infinity;
     var guard = ix.cols + ix.rows + 4;
     for (var s = 0; s < guard; s++) {
-      visit(cx, cy);
+      visitCell(prep, out, cx, cy);
       if (cx === ex && cy === ey) { break; }
       if (tMaxX < tMaxY) { cx += stepX; tMaxX += tDx; }
       else if (tMaxY < tMaxX) { cy += stepY; tMaxY += tDy; }
-      else { visit(cx + stepX, cy); visit(cx, cy + stepY); cx += stepX; cy += stepY; tMaxX += tDx; tMaxY += tDy; }
+      else { visitCell(prep, out, cx + stepX, cy); visitCell(prep, out, cx, cy + stepY); cx += stepX; cy += stepY; tMaxX += tDx; tMaxY += tDy; }
     }
-    return out.sort(function (a, b) { return a - b; });
+    return out;
   }
 
-  /** Total loss of walls and openings crossed by p->q; same result with or without the index. */
+  /** Indices (ascending) of walls the segment p->q may touch, in a new array. */
+  function segmentCandidates(prep, px, py, qx, qy) { return sortAscending(fillCandidates(prep, px, py, qx, qy, [])); }
+
+  /**
+   * Total loss of walls and openings crossed by p->q; same result with or without the index. The losses are added in
+   * ascending wall order, as rfmodel.py does. With the index only the crossed walls are sorted (few), not every candidate.
+   */
   function wallLoss(env, prep, px, py, qx, qy, skipId, skipPoint) {
-    var walls = prep.walls, total = 0;
-    var list = null;
-    if (prep.index) { list = segmentCandidates(prep, px, py, qx, qy); }
+    var walls = prep.walls, hits = prep.hits, losses = prep.hitLosses, count = 0;
+    var list = prep.index ? fillCandidates(prep, px, py, qx, qy, prep.scratch) : null;
     var n = list ? list.length : walls.length;
     for (var i = 0; i < n; i++) {
-      var w = walls[list ? list[i] : i];
+      var id = list ? list[i] : i, w = walls[id];
       if (w.id === skipId || (skipPoint && touches(env, w, skipPoint))) { continue; }
       var along = rayWallHit(env, px, py, qx, qy, w);
       if (along === null) { continue; }
@@ -160,8 +182,12 @@
       for (var k = 0; k < w.openings.length; k++) {
         if (w.openings[k].from <= along && along <= w.openings[k].to) { loss = w.openings[k].loss; break; }
       }
-      total += loss;
+      var at = count++;
+      while (at > 0 && hits[at - 1] > id) { hits[at] = hits[at - 1]; losses[at] = losses[at - 1]; at--; }
+      hits[at] = id; losses[at] = loss;
     }
+    var total = 0;
+    for (var h = 0; h < count; h++) { total += losses[h]; }
     return total;
   }
 

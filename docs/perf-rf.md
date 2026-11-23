@@ -136,12 +136,30 @@ Floor 100 m x 100 m (seed 7, 1000 walls, 4 access points, basic mode, 2.4 GHz), 
 | index strategies | 4 AP, 100489 points, bench quadtree | 989.8 | 974.5 | 1007 | cold first run 1011.5 ms; 0.6x the engine grid time |
 
 
+### Engine grid path profile and fix (node)
+
+Measured with `node --cpu-prof` on the 100,489 point, 1000 wall, 4 AP floor (script: `computeApGrid` for the 4 APs, repeated), and with `node tools/perf_rf.js --points 100000 --repeat 5` on Intel(R) Xeon(R) Platinum 8488C, 8 logical cores, node v22.23.4. The "before" rows are the numbers in the node table above (run before this change); the "after" rows are from this run. The browser (Chromium) tables above were not re-measured and still show the old engine.
+
+Profile before the change (self time over 4 repeats): `segmentCandidates` 4462 ms, `basicDbm` 1294 ms, `wallLoss` plus its inlined `rayWallHit` 1223 ms, garbage collector 146 ms. Causes found in `segmentCandidates`: a closure created per call, a new result array per call, and a comparator `Array.sort` of every candidate wall (a ray crosses many candidate walls, only a few are actually hit).
+
+Fix in `rf-engine.js` (results unchanged): the cell visitor is a module function, `wallLoss` reuses a per-floor scratch array for the candidates, and only the walls that are actually crossed are put in ascending index order (small insertion sort) before the losses are added, so the summation order still matches `rfmodel.py`. `segmentCandidates` (used by the multipath blocker list) still returns a new sorted array.
+
+| Case (4 AP, 100489 points, 1000 walls) | Before ms (median) | After ms (median) |
+|---|---|---|
+| engine uniform grid | 1675.1 | 684.6 |
+| engine brute force | 2268.9 | 2343.9 |
+| worker core, final result | 1899.2 | 734.9 |
+| worker core, first usable frame | 143 | 56.7 |
+| bench uniform grid (reference kernel, unchanged) | 397.9 | 421.2 |
+
+Largest difference between the bench grids and the engine grid after the change: 0 dB. The engine grid path is now 1.6x the bench kernel instead of 4.2x. The rest of the gap (float64 and config lookups per ray, openings, antenna and per-call object access) is not profiled further.
+
 Largest difference between the bench grids and the engine grid: 0 dB in node, 0 dB in the browser.
 
 - `engine uniform grid` and `engine brute force` are the real `rf-engine.js` with and without its index. The three `bench` rows use one shared, bench-local kernel (`localGrid` in `tools/perf_rf_lib.js`) that only changes how wall candidates are picked, so they compare index structures with nothing else varying. Index construction is inside the timed region for every indexed row.
 - Same kernel, quadtree against uniform grid: the uniform grid took 397.9 ms and the quadtree 989.8 ms (median), so the quadtree is 2.5x slower. Brute force on the same kernel took 1808.9 ms.
 - **Decision: keep the uniform grid, do not adopt the quadtree.** The quadtree does not beat the grid on this scenario (axis-aligned walls of 2 to 8 m spread evenly over the floor, which is the case a grid is built for). `rf-engine.js` is unchanged.
-- The quadtree (989.8 ms) is faster than the engine's own grid path (1675.1 ms), but that gap is not an index effect: the same grid idea on the bench kernel takes 397.9 ms. The engine's per-ray work outside the index (candidate sort for summation order parity with Python, per call closures, per call object lookups) is where the time goes. That is a hypothesis from these numbers, not profiled, and it is the place to look first if more speed is needed.
+- The quadtree (989.8 ms) was faster than the engine's own grid path (1675.1 ms) before the fix below, and that gap was not an index effect: the same grid idea on the bench kernel takes 397.9 ms. The cause is profiled and fixed, see the next section.
 - A quadtree could win on clustered floors (dense buildings in a large empty area). That case was not measured, so no claim is made.
 - Octrees are 3D. The engine is 2D with a per-floor loss (`floor_loss_db`), so an octree does not apply until true 3D propagation exists.
 - GPU: nothing here uses the GPU. A WebGL or WebGPU compute path for propagation is a design idea only and is not built. The WebGL path in the planner draws an already computed RSSI grid.
