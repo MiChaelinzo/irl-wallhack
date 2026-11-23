@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Scenarios, educational mode, explain and reports
+- feat: scenario presets (`scenarios.json`, generator `tools/make_scenarios.py`) loadable from the planner and the offline demo; `validateScenarioLibrary` in `planner-state.js`.
+- feat: educational mode (`planner-learn.js`, `learn-content.json`): Learn toggle with contextual panels, six lessons with engine-computed checks and an undoable "Show me", and a "why is the signal weak here" panel from the engine explain output.
+- feat: `POST /api/planner/explain`, grounded on engine numbers with a deterministic fallback when the LLM is off, number-grounding check on replies, consent kept for cloud providers.
+- feat: `rf-optimizer.js` gains `planChannelsSinr`, `suggestMeshNodes` and `suggestDeadZoneFixes`; the Smart planner lists them with confidence and rationale. New `planner` config keys `sinr_default_standard`, `sinr_default_standard_6ghz`, `channel_sinr_passes`, `max_dead_zone_fixes` and `confidence.full_gain_db`.
+- feat: PDF report adds floor overview, per-mode coverage maps, AP locations, spectrum summary, performance and a text summary.
+- test: `tests/test_scenarios.py`, `tests/test_planner_learn.py`, `tests/test_explain.py`; `tools/planner_smoke.py` covers presets, lessons, advice and the report; new screenshots in `docs/`.
+
 ### Platform documentation
 - docs: `docs/platform/` audit and design set (README index, 01 to 06, 08 to 23, generated material database as 07, `adr-frontend-stack.md`) written from the code with evidence tables, honest VERIFIED / PARTIALLY VERIFIED / UNVERIFIED labels, a ranked top 100 list whose Done rows cite existing files, and DESIGN ONLY labels for educational mode, AR, computer vision, campus and smart-city planning.
 - test: `tests/test_platform_docs.py` checks the files exist, the top 100 has at least 100 ranked rows in composite order, the composite matches its formula and every Done row cites files that exist.

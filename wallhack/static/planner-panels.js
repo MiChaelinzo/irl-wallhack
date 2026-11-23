@@ -661,7 +661,7 @@
       state.recs.forEach(function (r) {
         var applied = !!state.applied[r.id];
         var li = el("li", { class: applied ? "applied" : "" });
-        li.appendChild(el("div", { class: "rec-main" }, [el("strong", { text: r.kind.replace("_", " ") }), " ", el("span", { text: r.text })]));
+        li.appendChild(el("div", { class: "rec-main" }, [el("strong", { text: r.kind.replace(/_/g, " ") }), " ", el("span", { text: r.text })]));
         li.appendChild(el("div", { class: "muted hint", text: "Confidence: " + (r.confidence === null ? "n/a" : Math.round(r.confidence * 100) + "%") + ". " + r.reason }));
         var row = el("div", { class: "tool-row" });
         if (r.ghost) {
@@ -669,7 +669,7 @@
           row.appendChild(pv);
           li.addEventListener("mouseenter", function () { setGhost(r); }); li.addEventListener("mouseleave", function () { setGhost(null); });
         }
-        row.appendChild(button(applied ? "Applied" : "Apply", function () { applyRecs([r], "Apply recommendation: " + r.kind.replace("_", " ")); }, applied ? { disabled: "" } : { "data-rec": r.id }));
+        row.appendChild(button(applied ? "Applied" : "Apply", function () { applyRecs([r], "Apply recommendation: " + r.kind.replace(/_/g, " ")); }, applied ? { disabled: "" } : { "data-rec": r.id }));
         li.appendChild(row); list.appendChild(li);
       });
       if (!state.recs.length) { list.appendChild(el("li", { text: "No changes recommended." })); }

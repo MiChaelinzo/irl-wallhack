@@ -53,7 +53,7 @@ A persona is a system prompt, not a new model. Proposed prompt contract:
 
 What exists (VERIFIED against mocked HTTP servers only, UNVERIFIED against real providers): providers `ollama`, `llamacpp`, `openai`, `azure`; off by default (`llm_provider = ""`); keys only from `OPENAI_API_KEY` or `AZURE_OPENAI_API_KEY`; cloud providers need `confirm_off_device=true` on every request; response size capped; errors never include keys. `POST /api/insights/explain` rewords the sensing findings from `insights.py`.
 
-What is NOT BUILT: an explain endpoint for planner advice. Design:
+Built: `POST /api/planner/explain` (`wallhack/llm.py` `explain_planner`, `app.py`). The body is validated and size capped. With the LLM off the answer is a deterministic rule-based text (HTTP 200, `source: "rules"`). With a provider, a reply that contains a number not present in the input is rejected and replaced by the rule-based text; provider failures also fall back. A cloud provider without `confirm_off_device` gives 409 and sends nothing. VERIFIED with a mocked provider (`tests/test_explain.py`), UNVERIFIED against real providers. In the static demo the button is hidden. The original design:
 
 1. New route, for example `POST /api/planner/explain`, same guards as `/api/insights/explain` (same-origin, JSON only, `confirm_off_device`).
 2. Body is the engine result (issues, recommendations, numbers). The server validates shape and size, then builds the prompt from a template. The model is asked to narrate, not to calculate.

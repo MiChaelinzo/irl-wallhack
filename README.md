@@ -147,6 +147,7 @@ Off by default (`llm_provider` empty). Set it with `--config`/`config.json` or `
 | Premium UI | Complete | PARTIALLY VERIFIED; no Pi 4 frame-rate measurement. |
 | RF intelligence scores | Complete | Model constants are textbook values, UNVERIFIED against real buildings. |
 | RF lab (non-WiFi interferers, PER/latency/airtime estimates, stairwell voids, explain, spectrum, decay, roaming map) | Complete | VERIFIED by automated Python tests and Python/JS parity (`tests/test_rf_lab.py`). Every number is a MODEL ESTIMATE with assumed constants (no standard SINR to PER formula exists); UNVERIFIED against real radios, microwave ovens or buildings. No UI editor for interferers or voids yet. |
+| Scenario presets, educational mode, plan explanation, richer PDF report | Complete | VERIFIED by automated tests (`tests/test_scenarios.py`, `test_planner_learn.py`, `test_explain.py`) and headless Chromium (`tools/planner_smoke.py`, live and `--demo`). The explain endpoint is VERIFIED against a mocked provider only, UNVERIFIED against real LLM services. Lesson content is not reviewed by a teacher, and PDFs are UNVERIFIED in a real viewer. |
 | Judge mode | Complete | Statuses are checked against this README by a test. |
 
 ## Platform documentation

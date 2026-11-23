@@ -157,7 +157,7 @@ def test_analysis_jobs_in_worker_core():
             keys: Object.keys(plan), cancelled, planned, rank: rank.rows.map(x => [x.id, x.score]) });
     """, project)
     assert r["coverage"] == r["direct"] and not r["hasGrid"]
-    assert len(r["steps"]) == 5 and r["steps"][0] == "finding coverage issues" and r["placements"] >= 1
+    assert len(r["steps"]) == 8 and r["steps"][0] == "finding coverage issues" and r["placements"] >= 1
     assert {"issues", "placements", "count", "power", "channels"} <= set(r["keys"])
     assert r["cancelled"] == 1 and r["planned"] == 0
     assert [x[0] for x in r["rank"]] == ["y", "x"] and r["rank"][0][1] > r["rank"][1][1]

@@ -129,6 +129,7 @@ def run(page, base, problems, args):
     wait_idle(page)
     run_features(page, problems)
     run_lab_features(page, problems, args)
+    run_learn_features(page, problems, args)
     if not args.no_screenshot:
         page.screenshot(path=str(ROOT / "docs" / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
 
@@ -506,6 +507,79 @@ def run_lab_features(page, problems, args):
             page.locator("#panel-" + name).scroll_into_view_if_needed()
             page.locator("#panel-" + name).screenshot(path=str(docs / ("screenshot-planner-%s%s.png" % (name, suffix))))
         page.set_viewport_size(VIEWPORT)
+
+
+def run_learn_features(page, problems, args):
+    """Scenario presets, educational mode, lessons, probe explanation, plan explanation and the report sections."""
+    suffix = "-demo" if args.demo else ""
+    docs = ROOT / "docs"
+    page.set_viewport_size({"width": 1400, "height": 1100})
+    ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
+    if len(ids) != 7:
+        problems.append("preset picker lists %d scenarios instead of 7" % len(ids))
+    for pid in ids:
+        page.select_option("#presetSel", pid); page.click("#presetLoad")
+        page.wait_for_function("(n) => window.PlannerApp.store.project.name === n", arg=page.evaluate("(id) => window.PlannerApp.learn.presets.find(p => p.id === id).project.name", pid), timeout=5000)
+        wait_idle(page)
+    page.select_option("#presetSel", "office_floor"); page.click("#presetLoad"); wait_idle(page)
+    if not args.no_screenshot:
+        page.evaluate("window.scrollTo(0, 0)")
+        page.locator(".p-tools").screenshot(path=str(docs / ("screenshot-planner-presets%s.png" % suffix)))
+    # educational mode
+    page.click("#learnBtn")
+    if page.get_attribute("#learnBtn", "aria-pressed") != "true":
+        problems.append("Learn toggle did not switch on")
+    page.focus("#bandSel")
+    if "frequencies" not in page.inner_text("#learnContext").lower():
+        problems.append("contextual panel did not show the frequencies topic for the band control")
+    tab(page, "learn")
+    page.select_option("#lessonSel", "walls"); wait_idle(page)
+    if "Not yet" not in page.inner_text("#lessonBox"):
+        problems.append("lesson should start unsolved")
+    page.click("#whyBtn")
+    if "Where the signal went" not in page.inner_text("#whyOut"):
+        problems.append("probe explanation did not render")
+    page.click("#lessonShow"); wait_idle(page)
+    page.wait_for_function("() => /Lesson complete/.test(document.getElementById('lessonBox').innerText)", timeout=15000)
+    page.select_option("#lessonSel", "channels"); wait_idle(page)
+    page.click("#lessonShow"); wait_idle(page)
+    page.wait_for_function("() => /Lesson complete/.test(document.getElementById('lessonBox').innerText)", timeout=15000)
+    if not args.no_screenshot:
+        page.evaluate("window.scrollTo(0, 0)")
+        page.screenshot(path=str(docs / ("screenshot-planner-learn%s.png" % suffix)), full_page=True)
+    page.click("#learnBtn")
+    # plan, recommendations and explanation
+    page.select_option("#presetSel", "hotel_floor"); page.click("#presetLoad"); wait_idle(page)
+    tab(page, "smart")
+    page.click("#planRun")
+    page.wait_for_selector("#recList li", timeout=120000)
+    kinds = page.evaluate("() => Array.from(document.querySelectorAll('#recList .rec-main strong')).map(e => e.textContent)")
+    if "dead zone fix" not in kinds or "add ap" not in kinds:
+        problems.append("recommendation panel lacks dead-zone or placement entries: %s" % kinds)
+    if "Confidence:" not in page.inner_text("#recList"):
+        problems.append("recommendations show no confidence")
+    if args.demo:
+        if page.locator("#explainBtn").count():
+            problems.append("the explain button must be hidden in the static demo")
+    else:
+        page.click("#explainBtn")
+        page.wait_for_function("() => /MODEL ESTIMATE/.test(document.getElementById('explainOut').innerText)", timeout=15000)
+        if "Rule-based text" not in page.inner_text("#explainOut"):
+            problems.append("explanation should be rule-based when no LLM is configured")
+    if not args.no_screenshot:
+        page.locator("#panel-smart").screenshot(path=str(docs / ("screenshot-planner-advice%s.png" % suffix)))
+    # report
+    tab(page, "export")
+    with page.expect_download(timeout=30000) as d:
+        page.click("[data-export=pdf]")
+    pdf = Path(d.value.path()).read_bytes()
+    for text in (b"Floor overview", b"Coverage maps per propagation mode", b"Access point locations", b"Spectrum summary", b"Performance of this analysis", b"Text summary", b"MODEL ESTIMATE"):
+        if text not in pdf:
+            problems.append("PDF report lacks the section %r" % text.decode())
+    if not args.no_screenshot:
+        page.locator("#panel-export").screenshot(path=str(docs / ("screenshot-planner-report%s.png" % suffix)))
+    page.set_viewport_size(VIEWPORT)
+    print("learn feature checks done")
 
 
 def main() -> int:

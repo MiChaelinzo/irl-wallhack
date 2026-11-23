@@ -229,6 +229,7 @@
     }
     function startLesson(id) {
       var l = lessonById(id), preset = data.presets.filter(function (p) { return p.id === l.scenario; })[0];
+      data.lesson = null;   // the load below fires store events that must not check the old lesson against the new project
       app.loadProject(JSON.parse(JSON.stringify(preset.project)));
       app.store.setFloor(l.floor);
       setBand(null); data.lesson = l; renderLesson(); showTopic(l.topic);
@@ -297,7 +298,12 @@
     }
 
     $("learnBtn").addEventListener("click", function () { setLearn(!data.on); });
-    app.store.subscribe(function (ev) { if (data.lesson && ev.source !== "select") { renderLesson(); } });
+    app.store.subscribe(function (ev) {
+      if (ev.source === "load") { whyOut.textContent = ""; }   // the explanation belonged to the previous project
+      if (!data.lesson || ev.source === "select") { return; }
+      if (!app.store.project.floors.some(function (f) { return f.id === data.lesson.floor; })) { data.lesson = null; }   // another project was loaded
+      renderLesson();
+    });
     Promise.all([getJson("learn-content.json"), getJson("scenarios.json")]).then(function (r) {
       data.presets = S.validateScenarioLibrary(r[1], { config: app.config });
       data.content = validateContent(r[0], data.presets);

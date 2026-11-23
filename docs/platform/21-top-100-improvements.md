@@ -32,7 +32,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 14 | Model-sensitivity confidence for recommendations | 4 | 3 | 5 | 5 | 3 | 5 | 81.7 | Done | `wallhack/static/rf-optimizer.js`, `docs/rf-planner.md` |
 | 15 | Optional LLM, off by default, keys from env only | 4 | 3 | 4 | 5 | 4 | 4 | 80.0 | Done | `wallhack/llm.py`, `tests/test_insights.py` |
 | 16 | Static demo build for Vercel with strict CSP | 5 | 3 | 3 | 5 | 4 | 3 | 80.0 | Done | `tools/build_demo.py`, `vercel.json`, `tests/test_demo_build.py` |
-| 17 | Educational mode with guided lessons | 4 | 3 | 3 | 5 | 5 | 4 | 80.0 | Not started | none |
+| 17 | Educational mode with guided lessons | 4 | 3 | 3 | 5 | 5 | 4 | 80.0 | Done | `wallhack/static/planner-learn.js`, `tests/test_planner_learn.py` |
 | 18 | LLM explain endpoint for planner recommendations | 4 | 3 | 4 | 5 | 4 | 4 | 80.0 | Not started | none |
 | 19 | Antenna orientation optimiser (azimuth search) | 4 | 3 | 4 | 5 | 4 | 4 | 80.0 | Not started | none |
 | 20 | Phone coverage test feeding measured points back | 4 | 4 | 4 | 5 | 5 | 4 | 80.0 | Not started | none |

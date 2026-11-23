@@ -27,7 +27,7 @@ Competitor statements in `19-competitive-analysis.md` come from general knowledg
 | 13 | [Security review](13-security-review.md) | Findings with severity and status |
 | 14 | [Deployment plan](14-deployment-plan.md) | Pi, LAN, Vercel, Docker (design) |
 | 15 | [Wi-Fi physics](15-wifi-physics.md) | Formulas, citations, inaccuracy report |
-| 16 | [Educational mode](16-educational-mode.md) | DESIGN ONLY |
+| 16 | [Educational mode](16-educational-mode.md) | BUILT (first version), PARTIALLY VERIFIED |
 | 17 | [AR and computer vision](17-ar-computer-vision.md) | DESIGN ONLY |
 | 18 | [Reporting engine](18-reporting-engine.md) | Audit of exports and gaps |
 | 19 | [Competitive analysis](19-competitive-analysis.md) | General knowledge, not freshly researched |
