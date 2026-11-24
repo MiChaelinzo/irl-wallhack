@@ -18,6 +18,16 @@ from pathlib import Path
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def docs_dir(args):
+    """Only the live default run writes the committed docs/ screenshots. The demo and canvas2d
+    runs are checks and write to a temp folder, so docs/ does not hold near-duplicate images."""
+    if not (args.demo or args.canvas2d):
+        return ROOT / "docs"
+    path = Path(tempfile.gettempdir()) / "wallhack-smoke-shots"
+    path.mkdir(exist_ok=True)
+    return path
 PORT = 8765
 VIEWPORT = {"width": 1400, "height": 900}
 IDLE_TIMEOUT_MS = 30000
@@ -133,7 +143,7 @@ def run(page, base, problems, args):
     run_view3d_features(page, problems, args)
     run_learn_features(page, problems, args)
     if not args.no_screenshot:
-        page.screenshot(path=str(ROOT / "docs" / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
+        page.screenshot(path=str(docs_dir(args) / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
 
 
 SPARSE = {"name": "Smoke plan", "floors": [{
@@ -505,7 +515,7 @@ def run_lab_features(page, problems, args):
     print("lab feature checks done")
     if not args.no_screenshot:
         suffix = "-demo" if args.demo else ""
-        docs = ROOT / "docs"
+        docs = docs_dir(args)
         page.set_viewport_size({"width": 1400, "height": 1100})
         page.select_option("#layerSel", "sinr"); page.select_option("#paletteSel", "viridis")
         lab_idle(page); page.wait_for_timeout(300)
@@ -535,7 +545,9 @@ def run_twin_lab_features(page, problems, args):
     page.click("#tlRun")
     page.wait_for_selector("#tlEvents, #panel-twinlab :text('No handoffs')", timeout=10000)
     if "Handoff from ap1" not in page.inner_text("#panel-twinlab"):
-        problems.append("timeline shows no handoff from ap1 to ap2: " + page.inner_text("#tlEvents")[:200])
+        # #tlEvents is absent when there are no handoffs, so report the panel text and the waypoints instead
+        problems.append("timeline shows no handoff from ap1 to ap2: %s, path %s" % (
+            page.inner_text("#panel-twinlab")[:300].replace("\n", " | "), app_eval(page, "return a.twinLab.state.path")))
     page.fill("#tlScrub", "5")
     if "dBm" not in page.inner_text("#tlReadout"):
         problems.append("scrubber readout empty")
@@ -546,7 +558,7 @@ def run_twin_lab_features(page, problems, args):
     if not args.no_screenshot:
         suffix = "-demo" if args.demo else ""
         page.locator("#panel-twinlab").scroll_into_view_if_needed()
-        page.locator("#panel-twinlab").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-timeline%s.png" % suffix)))
+        page.locator("#panel-twinlab").screenshot(path=str(docs_dir(args) / ("screenshot-planner-timeline%s.png" % suffix)))
     page.click("#recRun")
     page.wait_for_selector("#recScore", timeout=60000)
     if "out of 100" not in page.inner_text("#recScore"):
@@ -609,7 +621,7 @@ def run_view3d_features(page, problems, args):
     page.click("#view3dTour")
     page.click("#view3dReset")
     if not args.no_screenshot:
-        page.locator("#view3dCanvas").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-3d%s.png" % ("-demo" if args.demo else ""))))
+        page.locator("#view3dCanvas").screenshot(path=str(docs_dir(args) / ("screenshot-planner-3d%s.png" % ("-demo" if args.demo else ""))))
     tab(page, "beams")
     page.wait_for_selector("#genOut table")
     if "Wi-Fi 7" not in page.inner_text("#genOut") or "ILLUSTRATION" not in page.inner_text("#panel-beams"):
@@ -624,18 +636,18 @@ def run_view3d_features(page, problems, args):
         problems.append("beam text did not follow the steering slider: " + page.inner_text("#beamText"))
     if not args.no_screenshot:
         suffix = "-demo" if args.demo else ""
-        page.locator("#panel-beams").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-beams%s.png" % suffix)))
+        page.locator("#panel-beams").screenshot(path=str(docs_dir(args) / ("screenshot-planner-beams%s.png" % suffix)))
         wall_id = app_eval(page, "return a.store.project.floors[0].walls[0].id")
         app_eval(page, "a.store.select({ walls: [%r] }); a.editor.invalidate(); return 0" % wall_id)
         page.wait_for_selector("#inspector:not([hidden])", timeout=5000)
-        page.locator("#inspector").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-materials%s.png" % suffix)))
+        page.locator("#inspector").screenshot(path=str(docs_dir(args) / ("screenshot-planner-materials%s.png" % suffix)))
     print("3D view checks done")
 
 
 def run_learn_features(page, problems, args):
     """Scenario presets, educational mode, lessons, probe explanation, plan explanation and the report sections."""
     suffix = "-demo" if args.demo else ""
-    docs = ROOT / "docs"
+    docs = docs_dir(args)
     page.set_viewport_size({"width": 1400, "height": 1100})
     ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
     if len(ids) != 10:

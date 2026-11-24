@@ -4,7 +4,7 @@
 DEV-ONLY. axe-core is fetched from npm into a temporary directory on every run (`npm pack axe-core`) and injected
 with Playwright's add_script_tag, so it is never vendored or committed and the pages keep their strict CSP
 (the page CSP of the live app is not set, but the Vercel demo's is, and the injection happens outside the page source).
-Pages checked: /planner and / of the live app, then dist/index.html and dist/planner.html (run tools/build_demo.py first).
+Pages checked: /planner, /, /judge and /mobile of the live app, then dist/index.html and dist/planner.html (run tools/build_demo.py first).
 Also checks on the live planner: W selects the wall tool from the keyboard, the Tab focus ring is visible, and an
 uncaught error appears in the alert live region (front-end error boundary in common.js).
 Exit code 1 when any serious or critical violation is found. Moderate and minor ones are listed but do not fail the run.
@@ -115,7 +115,9 @@ def main() -> int:
     planner_ready = "window.PlannerApp && window.PlannerApp.ready"
     targets += [("planner 3D view tab (live)", targets[0][1], planner_ready, "view3d"),
                 ("planner timeline tab (live)", targets[0][1], planner_ready, "twinlab"),
-                ("planner beams tab (live)", targets[0][1], planner_ready, "beams")]
+                ("planner beams tab (live)", targets[0][1], planner_ready, "beams"),
+                ("judge (live)", "http://127.0.0.1:%d/judge" % PORT, "document.querySelectorAll('.judge-item').length > 0"),
+                ("mobile companion (live)", "http://127.0.0.1:%d/mobile" % PORT, "document.readyState === 'complete'")]
     if (ROOT / "dist" / "planner.html").is_file():
         servers.append(subprocess.Popen([sys.executable, "-m", "http.server", str(DEMO_PORT), "--bind", "127.0.0.1", "--directory", str(ROOT / "dist")],
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
