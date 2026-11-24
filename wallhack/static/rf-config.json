@@ -1424,6 +1424,29 @@
   "max_distance_m": 60.0,
   "max_samples": 500
  },
+ "timeline": {
+  "label": "ESTIMATE: signal along a walking path with a simple client roaming rule, not a measurement of any real client",
+  "source": "The path is sampled every step_m metres along each straight segment (plus every waypoint). At each sample the engine gives the level of every AP. The client stays on its serving AP until a stronger AP is at least analytics.roam_min_dbm and either the serving AP has fallen below analytics.roam_min_dbm or the stronger AP beats it by hysteresis_db. A sample is in a handoff zone when the two strongest APs are both at least analytics.roam_min_dbm and within analytics.roam_margin_db, the same rule as the roaming map. Real clients use vendor specific roaming thresholds and scan timing that are not modelled.",
+  "step_m": 0.5,
+  "hysteresis_db": 4.0,
+  "max_samples": 2000,
+  "max_waypoints": 50
+ },
+ "recommendations": {
+  "label": "ESTIMATE: ranked actions, every delta is the difference between two runs of the same propagation model, confidence is model sensitivity not accuracy",
+  "source": "The coverage score out of 100 is the weighted mean of the coverage percentage, the share of the floor that is not a dead zone and the mean throughput against throughput_full_mbps. Each action is applied to a copy of the project and the analytics of both are compared, so every delta is measured. Actions are ranked by score delta, then by id. Actions that do not raise the score by at least min_score_gain are dropped. Confidence is the share of wall attenuation perturbations (planner.confidence) under which the action still raises the score.",
+  "score_weights": {"coverage": 0.5, "no_dead_zone": 0.3, "throughput": 0.2},
+  "throughput_full_mbps": 300.0,
+  "min_score_gain": 0.5,
+  "move_step_m": 2.5,
+  "max_actions": 8,
+  "standard_upgrade": {"wifi4": "wifi5", "wifi5": "wifi6", "wifi6": "wifi6e", "wifi6e": "wifi7"},
+  "design": {
+   "label": "ESTIMATE: generated network plan from the planner placement search, a starting point to verify with a site survey",
+   "max_aps": 12,
+   "default_standard": "wifi6"
+  }
+ },
  "roaming": {
   "label": "ESTIMATE: exact per-cell roaming data from the strongest and second strongest AP, the blend is a planning aid, not a client roaming simulation",
   "source": "Per cell: the strongest AP, the second AP, the margin between them and a zone. Zone handoff: both APs at least analytics.roam_min_dbm and the margin at most analytics.roam_margin_db. Zone overlap: a second AP at least analytics.overlap_min_dbm within analytics.overlap_margin_db of the strongest. Else single. Blend is the share of the cell notionally served by the strongest AP: 50 percent at zero margin rising linearly to 100 percent at analytics.roam_margin_db. Client roaming thresholds and stickiness are not modelled.",

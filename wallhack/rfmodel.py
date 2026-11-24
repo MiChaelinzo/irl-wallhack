@@ -71,6 +71,7 @@ VOIDS = CONFIG["voids"]
 SPECTRUM = CONFIG["spectrum"]
 DECAY = CONFIG["decay"]
 ROAMING = CONFIG["roaming"]
+TIMELINE = CONFIG["timeline"]
 LABEL = "ESTIMATE: log-distance model with wall attenuation, not a measurement"
 MODE_LABEL = "MODEL ESTIMATE ({mode} mode, {band} GHz), not a measurement"
 
@@ -1152,6 +1153,117 @@ def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] 
     if explain:
         out["explain"] = _explain(twin, floor, ap, ap_floor, x, y, used, mode, materials, rssi)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Signal timeline along a walking path with handoff events. Reference for rf-engine.js signalTimeline.
+# ---------------------------------------------------------------------------------------------
+TIMELINE_LABEL = TIMELINE["label"]
+
+
+def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) -> List[dict]:
+    """Sample points of a polyline: the first waypoint, every step_m along each same-floor segment, every later waypoint.
+
+    A segment between two floors is a jump (stairs or lift): only its end point is sampled and the distance does not grow."""
+    if not isinstance(path, list) or not path:
+        raise ValueError("path needs at least one waypoint")
+    if len(path) > TIMELINE["max_waypoints"]:
+        raise ValueError(f"path has more than {TIMELINE['max_waypoints']} waypoints")
+    if not step_m > 0:
+        raise ValueError("step_m must be positive")
+    for w in path:
+        floor_by_id(twin, w["floor"])
+    points = [{"floor": path[0]["floor"], "x": path[0]["x"], "y": path[0]["y"], "s": 0.0}]
+    travelled = 0.0
+    for a, b in zip(path, path[1:]):
+        if a["floor"] != b["floor"]:
+            points.append({"floor": b["floor"], "x": b["x"], "y": b["y"], "s": travelled})
+            continue
+        dx, dy = b["x"] - a["x"], b["y"] - a["y"]
+        length = math.sqrt(dx * dx + dy * dy)
+        k = 1
+        while k * step_m < length - 1e-9:
+            d = k * step_m
+            t = d / length
+            points.append({"floor": a["floor"], "x": a["x"] + dx * t, "y": a["y"] + dy * t, "s": travelled + d})
+            k += 1
+        travelled += length
+        points.append({"floor": b["floor"], "x": b["x"], "y": b["y"], "s": travelled})
+        if len(points) > max_samples:
+            raise ValueError(f"path needs more than {max_samples} samples, use a larger step_m")
+    return points
+
+
+def signal_timeline(twin: dict, path: List[dict], band: Optional[str] = None, mode: str = "basic",
+                    step_m: Optional[float] = None, hysteresis_db: Optional[float] = None) -> dict:
+    """Signal along a walking path for a client that roams with hysteresis.
+
+    path: [{floor, x, y}, ...]. Returns {samples, events, summary, label}. Samples hold the position, the serving AP,
+    its level, the strongest AP at that point and whether the point is in a handoff zone. Events are "handoff",
+    "coverage_lost" and "coverage_regained". Deterministic: the same twin and path always give the same result."""
+    step = TIMELINE["step_m"] if step_m is None else step_m
+    hyst = TIMELINE["hysteresis_db"] if hysteresis_db is None else hysteresis_db
+    mode = check_mode(mode)
+    points = _path_points(twin, path, step, TIMELINE["max_samples"])
+    materials = material_table(twin)
+    levels = {f["id"]: f["level"] for f in twin["floors"]}
+    entries = [(ap, f) for f in twin["floors"] for ap in f["aps"]]
+    roam_min, roam_margin, dead = ANALYTICS["roam_min_dbm"], ANALYTICS["roam_margin_db"], ANALYTICS["dead_zone_dbm"]
+    samples, events = [], []
+    serving: Optional[int] = None
+    in_dead = False
+    for i, p in enumerate(points):
+        floor = floor_by_id(twin, p["floor"])
+        x, y = _round(p["x"], 3), _round(p["y"], 3)
+        rssis, bands = [], []
+        for ap, f in entries:
+            used = check_band(band or ap.get("band", DEFAULT_BAND))
+            bands.append(used)
+            rssis.append(_round(rssi_from_ap(ap, f, floor, x, y, abs(levels[f["id"]] - levels[floor["id"]]), used, mode, materials), 1))
+        best = None
+        for k, v in enumerate(rssis):
+            if best is None or v > rssis[best]:
+                best = k
+        sample = {"i": i, "s_m": _round(p["s"], 3), "floor": p["floor"], "x": x, "y": y}
+        if best is None:
+            sample.update({"ap_id": None, "rssi_dbm": NO_SIGNAL_DBM, "quality": quality_band(NO_SIGNAL_DBM), "best_ap_id": None,
+                           "best_rssi_dbm": NO_SIGNAL_DBM, "in_handoff_zone": False, "throughput_mbps": 0.0})
+            samples.append(sample)
+            continue
+        if serving is None:
+            serving = best
+        elif best != serving and rssis[best] >= roam_min and (rssis[serving] < roam_min or rssis[best] - rssis[serving] >= hyst):
+            events.append({"kind": "handoff", "i": i, "s_m": sample["s_m"], "floor": p["floor"], "x": x, "y": y,
+                           "from_ap": entries[serving][0]["id"], "to_ap": entries[best][0]["id"],
+                           "from_rssi_dbm": rssis[serving], "to_rssi_dbm": rssis[best]})
+            serving = best
+        others = [v for k, v in enumerate(rssis) if k != best]
+        second = max(others) if others else None
+        zone = second is not None and rssis[best] >= roam_min and second >= roam_min and rssis[best] - second <= roam_margin
+        rssi = max(rssis[serving], NO_SIGNAL_DBM)
+        ap = entries[serving][0]
+        channel, width = _ap_radio(ap, bands[serving])
+        rate = estimated_throughput_mbps(rssi, bands[serving], legacy_table_width(bands[serving], width) if "standard" in ap else width)
+        if rssi < dead and not in_dead:
+            events.append({"kind": "coverage_lost", "i": i, "s_m": sample["s_m"], "floor": p["floor"], "x": x, "y": y, "rssi_dbm": rssi})
+        elif rssi >= dead and in_dead:
+            events.append({"kind": "coverage_regained", "i": i, "s_m": sample["s_m"], "floor": p["floor"], "x": x, "y": y, "rssi_dbm": rssi})
+        in_dead = rssi < dead
+        sample.update({"ap_id": ap["id"], "rssi_dbm": rssi, "quality": quality_band(rssi), "best_ap_id": entries[best][0]["id"],
+                       "best_rssi_dbm": rssis[best], "in_handoff_zone": zone, "throughput_mbps": _round(rate, 1)})
+        samples.append(sample)
+    served = [s for s in samples if s["ap_id"] is not None]
+    sticky = [s["best_rssi_dbm"] - s["rssi_dbm"] for s in served if s["best_ap_id"] != s["ap_id"]]
+    summary = {"length_m": _round(points[-1]["s"], 2), "samples": len(samples), "step_m": step, "hysteresis_db": hyst,
+               "handoffs": sum(1 for e in events if e["kind"] == "handoff"),
+               "coverage_lost_events": sum(1 for e in events if e["kind"] == "coverage_lost"),
+               "handoff_zone_pct": _round(100.0 * sum(1 for s in samples if s["in_handoff_zone"]) / len(samples), 1),
+               "dead_samples_pct": _round(100.0 * sum(1 for s in served if s["rssi_dbm"] < dead) / len(samples), 1) if served else 100.0,
+               "min_rssi_dbm": min((s["rssi_dbm"] for s in served), default=NO_SIGNAL_DBM),
+               "mean_rssi_dbm": _mean([s["rssi_dbm"] for s in served]),
+               "mean_throughput_mbps": _mean([s["throughput_mbps"] for s in samples]),
+               "sticky_samples": len(sticky), "max_sticky_gap_db": _round(max(sticky), 1) if sticky else 0.0}
+    return {"label": TIMELINE_LABEL, "band": band, "mode": mode, "samples": samples, "events": events, "summary": summary}
 
 
 # ---------------------------------------------------------------------------------------------

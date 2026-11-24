@@ -1092,6 +1092,84 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- signal timeline along a walking path (like rfmodel.signal_timeline)
+  function pathPoints(project, path, step, tl) {
+    if (!Array.isArray(path) || !path.length) { throw new Error("path needs at least one waypoint"); }
+    if (path.length > tl.max_waypoints) { throw new Error("path has more than " + tl.max_waypoints + " waypoints"); }
+    if (!(step > 0)) { throw new Error("step_m must be positive"); }
+    path.forEach(function (w) { findFloor(project, w.floor); });
+    var points = [{ floor: path[0].floor, x: path[0].x, y: path[0].y, s: 0 }], travelled = 0;
+    for (var n = 1; n < path.length; n++) {
+      var a = path[n - 1], b = path[n];
+      if (a.floor !== b.floor) { points.push({ floor: b.floor, x: b.x, y: b.y, s: travelled }); continue; }
+      var dx = b.x - a.x, dy = b.y - a.y, length = Math.sqrt(dx * dx + dy * dy);
+      for (var k = 1; k * step < length - 1e-9; k++) {
+        var d = k * step, t = d / length;
+        points.push({ floor: a.floor, x: a.x + dx * t, y: a.y + dy * t, s: travelled + d });
+      }
+      travelled += length;
+      points.push({ floor: b.floor, x: b.x, y: b.y, s: travelled });
+      if (points.length > tl.max_samples) { throw new Error("path needs more than " + tl.max_samples + " samples, use a larger step_m"); }
+    }
+    return points;
+  }
+
+  /**
+   * Signal along a walking path for a client that roams with hysteresis. path: [{floor, x, y}].
+   * opts: {env | config, band, mode, step_m, hysteresis_db}. Same output as rfmodel.signal_timeline.
+   */
+  function signalTimeline(project, path, opts) {
+    var o = optionsOf({ env: opts.env, config: opts.config, project: project, band: opts.band, mode: opts.mode });
+    var env = o.env, cfg = env.config, tl = cfg.timeline, an = cfg.analytics, noSignal = cfg.engine.no_signal_dbm;
+    var step = opts.step_m === undefined ? tl.step_m : opts.step_m, hyst = opts.hysteresis_db === undefined ? tl.hysteresis_db : opts.hysteresis_db;
+    var points = pathPoints(project, path, step, tl), cache = {};
+    var entries = [];
+    project.floors.forEach(function (f) { f.aps.forEach(function (ap) { entries.push({ ap: ap, floor: f }); }); });
+    var samples = [], events = [], serving = null, inDead = false;
+    points.forEach(function (p, i) {
+      var floor = findFloor(project, p.floor), x = roundTo(p.x, 3), y = roundTo(p.y, 3), rssis = [], bands = [], best = null, k;
+      entries.forEach(function (e, idx) {
+        var used = checkBand(env, o.band || e.ap.band || DEFAULT_BAND);
+        bands.push(used); rssis.push(roundTo(levelAt(env, floor, e.ap, e.floor, x, y, used, o.mode, cache), 1));
+        if (best === null || rssis[idx] > rssis[best]) { best = idx; }
+      });
+      var sample = { i: i, s_m: roundTo(p.s, 3), floor: p.floor, x: x, y: y };
+      if (best === null) {
+        samples.push(Object.assign(sample, { ap_id: null, rssi_dbm: noSignal, quality: qualityBand(cfg, noSignal), best_ap_id: null,
+          best_rssi_dbm: noSignal, in_handoff_zone: false, throughput_mbps: 0 }));
+        return;
+      }
+      if (serving === null) { serving = best; }
+      else if (best !== serving && rssis[best] >= an.roam_min_dbm && (rssis[serving] < an.roam_min_dbm || rssis[best] - rssis[serving] >= hyst)) {
+        events.push({ kind: "handoff", i: i, s_m: sample.s_m, floor: p.floor, x: x, y: y, from_ap: entries[serving].ap.id, to_ap: entries[best].ap.id,
+          from_rssi_dbm: rssis[serving], to_rssi_dbm: rssis[best] });
+        serving = best;
+      }
+      var second = null;
+      for (k = 0; k < rssis.length; k++) { if (k !== best && (second === null || rssis[k] > second)) { second = rssis[k]; } }
+      var zone = second !== null && rssis[best] >= an.roam_min_dbm && second >= an.roam_min_dbm && rssis[best] - second <= an.roam_margin_db;
+      var rssi = Math.max(rssis[serving], noSignal), ap = entries[serving].ap, radio = apRadio(cfg, ap, bands[serving]);
+      var rate = throughputMbps(cfg, rssi, bands[serving], ap.standard !== undefined ? legacyTableWidth(cfg, bands[serving], radio.width) : radio.width);
+      if (rssi < an.dead_zone_dbm && !inDead) { events.push({ kind: "coverage_lost", i: i, s_m: sample.s_m, floor: p.floor, x: x, y: y, rssi_dbm: rssi }); }
+      else if (rssi >= an.dead_zone_dbm && inDead) { events.push({ kind: "coverage_regained", i: i, s_m: sample.s_m, floor: p.floor, x: x, y: y, rssi_dbm: rssi }); }
+      inDead = rssi < an.dead_zone_dbm;
+      samples.push(Object.assign(sample, { ap_id: ap.id, rssi_dbm: rssi, quality: qualityBand(cfg, rssi), best_ap_id: entries[best].ap.id,
+        best_rssi_dbm: rssis[best], in_handoff_zone: zone, throughput_mbps: roundTo(rate, 1) }));
+    });
+    var served = samples.filter(function (s) { return s.ap_id !== null; });
+    var sticky = served.filter(function (s) { return s.best_ap_id !== s.ap_id; }).map(function (s) { return s.best_rssi_dbm - s.rssi_dbm; });
+    function count(kind) { return events.filter(function (e) { return e.kind === kind; }).length; }
+    var summary = { length_m: roundTo(points[points.length - 1].s, 2), samples: samples.length, step_m: step, hysteresis_db: hyst,
+      handoffs: count("handoff"), coverage_lost_events: count("coverage_lost"),
+      handoff_zone_pct: roundTo(100 * samples.filter(function (s) { return s.in_handoff_zone; }).length / samples.length, 1),
+      dead_samples_pct: served.length ? roundTo(100 * served.filter(function (s) { return s.rssi_dbm < an.dead_zone_dbm; }).length / samples.length, 1) : 100,
+      min_rssi_dbm: served.length ? Math.min.apply(null, served.map(function (s) { return s.rssi_dbm; })) : noSignal,
+      mean_rssi_dbm: meanOf(served.map(function (s) { return s.rssi_dbm; })),
+      mean_throughput_mbps: meanOf(samples.map(function (s) { return s.throughput_mbps; })),
+      sticky_samples: sticky.length, max_sticky_gap_db: sticky.length ? roundTo(Math.max.apply(null, sticky), 1) : 0 };
+    return { label: cfg.timeline.label, band: o.band, mode: o.mode, samples: samples, events: events, summary: summary };
+  }
+
   // ---------------------------------------------------------------- explanation of one point (MODEL)
   var EXPLAIN_LABEL = "MODEL ESTIMATE: explanation of the modelled level at one point, each term is a typical planning value, not a measurement";
 
@@ -1339,7 +1417,7 @@
   var api = { makeEnv: makeEnv, registerMode: registerMode, registerMaterials: registerMaterials, modeIds: modeIds,
               prepareFloor: prepareFloor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid, computeApRegion: computeApRegion,
               mergeBest: mergeBest, coverageGrid: coverageGrid, apGrids: apGrids, analytics: analytics,
-              analyzeFloor: analyzeFloor, analyzeFloorWithGrid: analyzeFloorWithGrid, probeAt: probeAt, scoreAnalytics: scoreAnalytics,
+              analyzeFloor: analyzeFloor, analyzeFloorWithGrid: analyzeFloorWithGrid, probeAt: probeAt, signalTimeline: signalTimeline, scoreAnalytics: scoreAnalytics,
               compareScenarios: compareScenarios, phyRateMbps: phyRateMbps, throughputMbps: throughputMbps,
               qualityBand: qualityBand, antennaGainDb: antennaGainDb, noiseFloorDbm: noiseFloorDbm,
               standardPhyRateMbps: standardPhyRateMbps, sinrPhyRateMbps: sinrPhyRateMbps, interferenceCoupling: interferenceCoupling,
