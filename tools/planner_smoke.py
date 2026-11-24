@@ -129,6 +129,7 @@ def run(page, base, problems, args):
     wait_idle(page)
     run_features(page, problems)
     run_lab_features(page, problems, args)
+    run_twin_lab_features(page, problems)
     run_learn_features(page, problems, args)
     if not args.no_screenshot:
         page.screenshot(path=str(ROOT / "docs" / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
@@ -518,14 +519,59 @@ def run_lab_features(page, problems, args):
         page.set_viewport_size(VIEWPORT)
 
 
+def run_twin_lab_features(page, problems):
+    """Timeline with handoffs, what-if, ranked recommendations and the generated network plan (dialogs are accepted by run_features)."""
+    page.evaluate("(p) => window.PlannerApp.loadProject(p)", LAB)
+    wait_idle(page)
+    tab(page, "twinlab")
+    page.click("#tlRun")
+    if "Draw a path first" not in page.inner_text("#panel-twinlab"):
+        problems.append("timeline ran without a path")
+    page.click("#tlDraw")
+    click_world(page, 3, 3); click_world(page, 15, 10); click_world(page, 27, 17)
+    if app_eval(page, "return a.twinLab.state.path.length") != 3:
+        problems.append("path tool did not add 3 waypoints")
+    page.click("#tlRun")
+    page.wait_for_selector("#tlEvents, #panel-twinlab :text('No handoffs')", timeout=10000)
+    if "Handoff from ap1" not in page.inner_text("#panel-twinlab"):
+        problems.append("timeline shows no handoff from ap1 to ap2: " + page.inner_text("#tlEvents")[:200])
+    page.fill("#tlScrub", "5")
+    if "dBm" not in page.inner_text("#tlReadout"):
+        problems.append("scrubber readout empty")
+    page.select_option("#wiKind", "move_ap"); page.fill("#wiX", "10"); page.fill("#wiY", "10"); page.click("#wiRun")
+    page.wait_for_selector("#wiOut table", timeout=30000)
+    if "Coverage score" not in page.inner_text("#wiOut"):
+        problems.append("what-if panel lacks the coverage score row")
+    page.click("#recRun")
+    page.wait_for_selector("#recScore", timeout=60000)
+    if "out of 100" not in page.inner_text("#recScore"):
+        problems.append("recommendation score missing")
+    page.click("#designRun")
+    page.wait_for_selector("#planOut table", timeout=60000)
+    page.wait_for_selector("#planNarration p", timeout=15000)
+    if "MODEL ESTIMATE" not in page.inner_text("#planNarration"):
+        problems.append("plan narration lacks the estimate label: " + page.inner_text("#planNarration")[:200])
+    before = n_aps_now(page)
+    page.click("#planApply")
+    page.wait_for_function("() => window.PlannerApp.store.project.floors[0].aps.every(a => a.id.indexOf('plan-ap') === 0)", timeout=5000)
+    app_eval(page, "a.store.undo(); return 0")
+    if n_aps_now(page) != before:
+        problems.append("undo of the network plan did not restore the APs")
+    print("twin lab checks done")
+
+
+def n_aps_now(page):
+    return page.evaluate("() => window.PlannerApp.store.project.floors.reduce((n, f) => n + f.aps.length, 0)")
+
+
 def run_learn_features(page, problems, args):
     """Scenario presets, educational mode, lessons, probe explanation, plan explanation and the report sections."""
     suffix = "-demo" if args.demo else ""
     docs = ROOT / "docs"
     page.set_viewport_size({"width": 1400, "height": 1100})
     ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
-    if len(ids) != 7:
-        problems.append("preset picker lists %d scenarios instead of 7" % len(ids))
+    if len(ids) != 10:
+        problems.append("preset picker lists %d scenarios instead of 10" % len(ids))
     for pid in ids:
         page.select_option("#presetSel", pid); page.click("#presetLoad")
         page.wait_for_function("(n) => window.PlannerApp.store.project.name === n", arg=page.evaluate("(id) => window.PlannerApp.learn.presets.find(p => p.id === id).project.name", pid), timeout=5000)

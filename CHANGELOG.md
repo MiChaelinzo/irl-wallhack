@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### V2 timeline, what-if, recommendations and network design
+- feat: `rfmodel.signal_timeline` and `RFEngine.signalTimeline`: signal along a walking path with handoff events (hysteresis from `timeline.hysteresis_db`, thresholds from `analytics.roam_min_dbm` and `roam_margin_db`), sticky client samples and a summary. Python and JS output are identical (`tests/test_rf_timeline.py`).
+- feat: `rf-optimizer.js` gains `whatIf`, `applyChange`, `diffAnalytics`, `recommend` (coverage score out of 100 and ranked actions with measured deltas and confidence), `designNetwork`, `narratePlan` and `planPayload`; new config blocks `timeline` and `recommendations`.
+- feat: planner tab "Timeline and what-if": path tool and chart with scrubber, what-if before and after panel, ranked actions with Apply, Design my network with undoable apply and narration through `POST /api/planner/explain` (rule-based fallback, LLM wording UNVERIFIED, mock tested only). Worker jobs `recommend` and `design`.
+- feat: scenario presets hospital ward, smart home and apartment with neighbours (ten in total).
+- test: `tests/test_rf_timeline.py`, `tests/test_rf_recommend.py`; `tools/planner_smoke.py` covers the new tab, live and demo.
+
 ### RF lab documentation and status
 - docs: `docs/platform/24-rf-lab-status.md` lists every mandate section as complete, partial or deferred with files and open gaps (room creation tool, true 3D, exact ray tracing, survey calibration and real-hardware validation are not complete).
 - docs: `CONTRIBUTING.md` (setup, checks, parity workflow, adding a material, adding a heat layer, commit style); architecture diagram updated in `03-architecture.md`; propagation methodology in `15-wifi-physics.md` and `rf-planner.md`; optimization guide in `09-rendering-optimization.md`; deployment operations notes in `14-deployment-plan.md`; roadmap and top 100 statuses updated (rows 5, 6, 18, 35 and 49 are Done, rows 30, 53, 66, 68 and 82 are Partial); stale README rows corrected.

@@ -465,7 +465,7 @@
       say({ select: "Select tool", wall: "Draw wall tool: drag on the plan", ap: "Place access point tool: click on the plan",
             label: "Room label tool: click on the plan", pan: "Pan tool", calibrate: "Calibrate: click two points on the floor-plan image",
             "note-text": "Text note tool: click on the plan", "note-arrow": "Arrow note tool: drag on the plan", "note-pin": "Pin note tool: click on the plan",
-            "device": "IoT device tool: click on the plan", door: "Door tool: click on a wall", window: "Window tool: click on a wall",
+            "device": "IoT device tool: click on the plan", path: "Walking path tool: click each waypoint on the plan", door: "Door tool: click on a wall", window: "Window tool: click on a wall",
             void: "Floor opening tool: drag a rectangle for a stairwell, atrium or shaft", interferer: "Interference source tool: click on the plan" }[t]);
       self.invalidate();
     };

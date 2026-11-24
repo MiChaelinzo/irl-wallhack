@@ -125,3 +125,20 @@ def test_javascript_timeline_matches_python_exactly():
         assert js_res["summary"] == py["summary"]
         handoffs += py["summary"]["handoffs"]
     assert handoffs > 0, "the parity jobs must include at least one handoff"
+
+
+@needs_node
+def test_chart_model_places_events_inside_the_chart_and_lists_events():
+    js = """
+      const E = require(process.argv[1] + '/rf-engine.js'), M = require(process.argv[1] + '/planner-modes.js');
+      const P = JSON.parse(require('fs').readFileSync(0, 'utf8')), env = E.makeEnv(P.config);
+      const r = E.signalTimeline(P.project, P.path, {env});
+      console.log(JSON.stringify({m: M.timelineChartModel(r, P.config, {w: 560, h: 180}), lines: M.timelineEventLines(r), events: r.events.length}));
+    """
+    res = subprocess.run(["node", "-e", js, str(STATIC)], capture_output=True, text=True,
+                         input=json.dumps({"config": rfmodel.CONFIG, "project": corridor([(5.0, 3.0), (25.0, 3.0)]), "path": WALK}))
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout)
+    m = out["m"]
+    assert len(m["line"]) == 57 and all(24 <= x <= 536 and 24 <= y <= 156 for x, y in m["line"])
+    assert out["events"] == len(m["events"]) == len(out["lines"]) == 1 and out["lines"][0].startswith("Handoff from ap0")

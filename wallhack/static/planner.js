@@ -684,7 +684,7 @@
     app.editor = E.create({ base: $("cBase"), edit: $("cEdit"), store: store, materials: materialTable(), config: config,
       onFrame: function (view) { app.renderer.draw(view); drawMinimap(); }, onDraw: function (c, view, f) { drawProbe(c, view); overlays.forEach(function (fn) { fn(c, view, f); }); }, announce: say, textLimit: function () { return S.textLimit(validateOpts()); }, onPointer: onPointer, onHelp: function () { app.help(); },
       onArrowWithoutSelection: moveProbeByKey,
-      onToolPointer: function (tool, phase, raw, e) { return (tool.indexOf("note-") === 0 && app.noteTool) ? app.noteTool(tool, phase, raw, e) : (tool === "device" && app.deviceTool) ? app.deviceTool(phase, raw, e) : false; },
+      onToolPointer: function (tool, phase, raw, e) { return (tool.indexOf("note-") === 0 && app.noteTool) ? app.noteTool(tool, phase, raw, e) : (tool === "device" && app.deviceTool) ? app.deviceTool(phase, raw, e) : (tool === "path" && app.pathTool) ? app.pathTool(phase, raw, e) : false; },
       onTool: function (t) { Array.prototype.forEach.call(document.querySelectorAll("[data-tool]"), function (b) { b.setAttribute("aria-pressed", String(b.dataset.tool === t)); }); },
       onGrid: function (on) { $("gridBtn").setAttribute("aria-pressed", String(on)); } });
     minimap = H.createMinimap({ canvas: $("minimap"), getFloor: currentFloor, getView: function () { return app.editor.view; }, getThumb: function () { return app.renderer.thumb; },

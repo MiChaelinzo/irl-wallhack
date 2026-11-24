@@ -132,6 +132,27 @@
     return rows;
   }
 
+  // ------------------------------------------------------------------ timeline chart model
+  /** Pixel geometry of the timeline chart: signal line points, handoff markers and the roam threshold line. Pure, tested under node. */
+  function timelineChartModel(result, config, size) {
+    var an = config.analytics, lo = config.engine.no_signal_dbm, hi = -30, total = Math.max(result.summary.length_m, 1e-9), pad = 24;
+    function px(sM) { return pad + (size.w - 2 * pad) * sM / total; }
+    function py(dbm) { var v = Math.min(hi, Math.max(lo, dbm)); return size.h - pad - (size.h - 2 * pad) * (v - lo) / (hi - lo); }
+    return { line: result.samples.map(function (s) { return [px(s.s_m), py(s.rssi_dbm)]; }),
+             best: result.samples.map(function (s) { return [px(s.s_m), py(s.best_rssi_dbm)]; }),
+             events: result.events.map(function (e) { return { kind: e.kind, x: px(e.s_m), label: e.kind === "handoff" ? e.from_ap + " to " + e.to_ap : e.kind === "coverage_lost" ? "coverage lost" : "coverage regained" }; }),
+             roam_y: py(an.roam_min_dbm), dead_y: py(an.dead_zone_dbm), x_of: px, pad: pad };
+  }
+
+  /** Text lines of the events of a timeline, in walking order. */
+  function timelineEventLines(result) {
+    return result.events.map(function (e) {
+      var at = "at " + e.s_m + " m (" + e.x + " m, " + e.y + " m)";
+      return e.kind === "handoff" ? "Handoff from " + e.from_ap + " (" + e.from_rssi_dbm + " dBm) to " + e.to_ap + " (" + e.to_rssi_dbm + " dBm) " + at
+        : (e.kind === "coverage_lost" ? "Coverage lost " : "Coverage regained ") + at + ", " + e.rssi_dbm + " dBm";
+    });
+  }
+
   // ------------------------------------------------------------------ UI
   function mount(app) {
     var P = root.PlannerPanels, X = root.PlannerExport, S = root.PlannerState, el = P.el, H = root.PlannerHeat;
@@ -310,6 +331,9 @@
     } });
     if (app.tabs.rerenderExport) { app.tabs.rerenderExport(); }
 
+
+    mountTwinLab(app);
+
     function renderAll() { renderMesh(); renderCapacity(); renderIot(); renderEnterprise(); }
     app.onAnalysis = renderAll;
     app.store.subscribe(function (ev) { if (ev.source !== "select") { renderAll(); } });
@@ -317,8 +341,233 @@
     app.modes = { renderAll: renderAll, last: last };
   }
 
+  // ------------------------------------------------------------------ timeline, what-if, recommendations, design (tab "Timeline and what-if")
+  function mountTwinLab(app) {
+    var P = root.PlannerPanels, S = root.PlannerState, el = P.el, E_ = root.RFEngine, Opt = root.RFOptimizer, doc = root.document;
+    var demo = !!root.WALLHACK_DEMO, tl = app.config.timeline, rc = app.config.recommendations;
+    var panel = app.tabs.add("twinlab", "Timeline and what-if");
+    var st = { path: [], result: null, index: 0, plan: null, recs: null };
+    function floor() { return app.currentFloor(); }
+    function note(t) { return el("p", { class: "muted hint", text: t }); }
+    function box(title, kids) { return el("section", { class: "mode-box" }, [el("h3", { text: title })].concat(kids)); }
+    var host = el("div", { class: "mode-grid" });
+    panel.appendChild(el("p", { class: "muted hint", text: tl.label }));
+    panel.appendChild(host);
+
+    // ---- walking timeline
+    var tlOut = el("div"), tlMsg = el("p", { class: "muted", role: "status" }), scrub = el("input", { type: "range", id: "tlScrub", min: "0", max: "0", step: "1", value: "0", "aria-label": "Position along the walking path" });
+    var chart = el("canvas", { id: "tlChart", class: "tl-chart", width: "560", height: "180", role: "img", "aria-label": "Signal strength along the walking path with handoff markers" });
+    var readout = el("p", { id: "tlReadout", role: "status", "aria-live": "polite" });
+    function drawChart() {
+      var c = chart.getContext("2d"), w = chart.width, h = chart.height;
+      c.clearRect(0, 0, w, h);
+      if (!st.result) { return; }
+      var m = timelineChartModel(st.result, app.config, { w: w, h: h });
+      c.lineWidth = 1; c.strokeStyle = "#475569"; c.setLineDash([4, 4]);
+      [m.roam_y, m.dead_y].forEach(function (y) { c.beginPath(); c.moveTo(m.pad, y); c.lineTo(w - m.pad, y); c.stroke(); });
+      c.setLineDash([]); c.lineWidth = 1; c.strokeStyle = "#64748b";
+      c.beginPath(); m.best.forEach(function (p, i) { if (i) { c.lineTo(p[0], p[1]); } else { c.moveTo(p[0], p[1]); } }); c.stroke();
+      c.lineWidth = 2; c.strokeStyle = "#38bdf8"; c.beginPath(); m.line.forEach(function (p, i) { if (i) { c.lineTo(p[0], p[1]); } else { c.moveTo(p[0], p[1]); } }); c.stroke();
+      c.fillStyle = "#fbbf24"; c.font = "11px sans-serif";
+      m.events.forEach(function (e) { c.fillRect(e.x - 1, m.pad, 2, h - 2 * m.pad); c.fillText(e.label, Math.min(e.x + 3, w - 90), m.pad - 6); });
+      var cur = m.line[st.index];
+      if (cur) { c.fillStyle = "#f8fafc"; c.beginPath(); c.arc(cur[0], cur[1], 4, 0, Math.PI * 2); c.fill(); }
+    }
+    function showSample() {
+      var s = st.result && st.result.samples[st.index];
+      readout.textContent = s ? "At " + s.s_m + " m on floor " + s.floor + ": " + s.rssi_dbm + " dBm from " + (s.ap_id || "no AP") + " (" + s.quality + "), about " + s.throughput_mbps + " Mbps" +
+        (s.in_handoff_zone ? ", in a handoff zone" : "") + (s.best_ap_id && s.best_ap_id !== s.ap_id ? ", " + s.best_ap_id + " is stronger at " + s.best_rssi_dbm + " dBm but the client has not roamed yet" : "") + "." : "";
+      drawChart(); app.editor.invalidate();
+    }
+    scrub.addEventListener("input", function () { st.index = parseInt(scrub.value, 10) || 0; showSample(); });
+    function renderTimeline() {
+      tlOut.textContent = "";
+      var r = st.result;
+      if (!r) { return; }
+      var sm = r.summary;
+      tlOut.appendChild(P.table("Walk summary (" + ESTIMATE + ")", ["Item", "Value"], [["Length", sm.length_m + " m"], ["Samples", String(sm.samples) + " every " + sm.step_m + " m"], ["Handoffs", String(sm.handoffs)],
+        ["Time in a handoff zone", P.pct(sm.handoff_zone_pct)], ["Samples below the dead zone level", P.pct(sm.dead_samples_pct)], ["Weakest signal", sm.min_rssi_dbm + " dBm"],
+        ["Mean signal", (sm.mean_rssi_dbm === null ? "n/a" : sm.mean_rssi_dbm + " dBm")], ["Mean speed", (sm.mean_throughput_mbps === null ? "n/a" : sm.mean_throughput_mbps + " Mbps")],
+        ["Samples on a weaker AP than the best (sticky client)", sm.sticky_samples + (sm.sticky_samples ? ", up to " + sm.max_sticky_gap_db + " dB" : "")]]));
+      var lines = timelineEventLines(r), ul = el("ul", { id: "tlEvents" });
+      lines.forEach(function (l) { ul.appendChild(el("li", { text: l })); });
+      tlOut.appendChild(el("h4", { text: "Events" })); tlOut.appendChild(lines.length ? ul : note("No handoffs or coverage changes on this path."));
+    }
+    function runTimeline() {
+      if (!st.path.length) { tlMsg.textContent = "Draw a path first: press Draw path, then click at least two points on the plan."; return; }
+      try {
+        st.result = E_.signalTimeline(app.store.project, st.path, { env: app.env, band: app.settings.band || undefined, mode: app.settings.mode });
+      } catch (e) { tlMsg.textContent = "Could not run the timeline: " + e.message; return; }
+      st.index = 0; scrub.max = String(st.result.samples.length - 1); scrub.value = "0";
+      tlMsg.textContent = "Walk of " + st.result.summary.length_m + " m with " + st.result.summary.handoffs + " handoffs (" + ESTIMATE + ").";
+      renderTimeline(); showSample();
+    }
+    app.pathTool = function (phase, raw) {
+      if (phase !== "down") { return phase === "move"; }
+      var f = floor();
+      if (st.path.length >= tl.max_waypoints) { tlMsg.textContent = "A path can have at most " + tl.max_waypoints + " points."; return true; }
+      st.path.push({ floor: f.id, x: round(Math.min(f.width_m, Math.max(0, raw.x)), 2), y: round(Math.min(f.depth_m, Math.max(0, raw.y)), 2) });
+      st.result = null; tlMsg.textContent = st.path.length + " points. Press Run timeline when the path is done."; renderTimeline(); drawChart(); app.editor.invalidate();
+      return true;
+    };
+    app.overlay(function (c, view) {
+      if (!st.path.length) { return; }
+      var f = floor(), pts = st.path.filter(function (p) { return p.floor === f.id; });
+      function sx(x) { return view.ox + x * view.scale; }
+      function sy(y) { return view.oy + y * view.scale; }
+      c.save(); c.strokeStyle = "#38bdf8"; c.lineWidth = 2; c.setLineDash([6, 4]); c.beginPath();
+      pts.forEach(function (p, i) { if (i) { c.lineTo(sx(p.x), sy(p.y)); } else { c.moveTo(sx(p.x), sy(p.y)); } }); c.stroke(); c.setLineDash([]);
+      pts.forEach(function (p) { c.fillStyle = "#38bdf8"; c.beginPath(); c.arc(sx(p.x), sy(p.y), 4, 0, Math.PI * 2); c.fill(); });
+      var s = st.result && st.result.samples[st.index];
+      if (s && s.floor === f.id) { c.fillStyle = "#fbbf24"; c.beginPath(); c.arc(sx(s.x), sy(s.y), 6, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+    });
+    host.appendChild(box("Walking timeline and handoffs", [note("Draw a walking path on the plan. The client keeps its AP until a stronger one wins by " + tl.hysteresis_db + " dB or the signal drops below " + app.config.analytics.roam_min_dbm + " dBm."),
+      el("div", { class: "tool-row" }, [P.button("Draw path", function () { app.editor.setTool("path"); }, { id: "tlDraw", "data-tool": "path", "aria-pressed": "false" }),
+        P.button("Run timeline", runTimeline, { id: "tlRun" }), P.button("Clear path", function () { st.path = []; st.result = null; tlMsg.textContent = "Path cleared."; renderTimeline(); drawChart(); app.editor.invalidate(); }, { id: "tlClear" })]),
+      tlMsg, chart, el("label", { class: "inline" }, ["Scrub ", scrub]), readout, tlOut]));
+
+    // ---- what-if
+    var kindSel = el("select", { id: "wiKind", "aria-label": "Kind of change" }), apSel = el("select", { id: "wiAp", "aria-label": "Access point" }), valSel = el("select", { id: "wiValue", "aria-label": "New value" });
+    var xIn = el("input", { type: "number", id: "wiX", step: "0.5", "aria-label": "X in metres" }), yIn = el("input", { type: "number", id: "wiY", step: "0.5", "aria-label": "Y in metres" });
+    var wiOut = el("div", { id: "wiOut" }), wiMsg = el("p", { class: "muted", role: "status" });
+    var KINDS = [["move_ap", "Move an AP"], ["upgrade_standard", "Upgrade the WiFi standard"], ["upgrade_profile", "Switch to an AP class profile"], ["remove_wall", "Remove a wall"], ["add_mesh_node", "Add a mesh node"], ["set_channels", "Change the channel"]];
+    KINDS.forEach(function (k) { kindSel.appendChild(el("option", { value: k[0], text: k[1] })); });
+    function fillOptions(sel, pairs) { sel.textContent = ""; pairs.forEach(function (p) { sel.appendChild(el("option", { value: p[0], text: p[1] })); }); }
+    function refreshWhatIf() {
+      var f = floor(), k = kindSel.value;
+      fillOptions(apSel, f.aps.map(function (a) { return [a.id, a.id]; }));
+      if (k === "remove_wall") { fillOptions(valSel, f.walls.map(function (w) { return [w.id, w.id + " (" + w.material + ")"]; })); }
+      else if (k === "upgrade_standard") { fillOptions(valSel, Object.keys(app.config.wifi_standards.standards).map(function (id) { return [id, app.config.wifi_standards.standards[id].label]; })); }
+      else if (k === "upgrade_profile") { fillOptions(valSel, Object.keys(app.config.ap_profiles.profiles).map(function (id) { return [id, app.config.ap_profiles.profiles[id].label]; })); }
+      else if (k === "set_channels") { var ch = app.config.planner.channel_sets[app.settings.band || app.config.planner.default_band] || []; fillOptions(valSel, ch.map(function (c) { return [String(c), "Channel " + c]; })); }
+      else { fillOptions(valSel, []); }
+      apSel.disabled = k === "remove_wall" || k === "add_mesh_node"; valSel.disabled = k === "move_ap" || k === "add_mesh_node";
+      xIn.disabled = yIn.disabled = !(k === "move_ap" || k === "add_mesh_node");
+    }
+    kindSel.addEventListener("change", refreshWhatIf);
+    function changeFromForm() {
+      var f = floor(), k = kindSel.value, x = parseFloat(xIn.value), y = parseFloat(yIn.value);
+      if (k === "move_ap") { return { kind: k, ap_id: apSel.value, x: x, y: y }; }
+      if (k === "upgrade_standard") { return { kind: k, ap_id: apSel.value, standard: valSel.value }; }
+      if (k === "upgrade_profile") { return { kind: k, ap_id: apSel.value, profile_id: valSel.value }; }
+      if (k === "remove_wall") { return { kind: k, floor: f.id, wall_id: valSel.value }; }
+      if (k === "add_mesh_node") { return { kind: k, floor: f.id, x: x, y: y, parent_ap_id: f.aps.length ? f.aps[0].id : undefined }; }
+      return { kind: k, assignments: [{ ap_id: apSel.value, channel: parseInt(valSel.value, 10) }] };
+    }
+    function showDiff(target, w, caption) {
+      var b = w.before, a = w.after, d = w.delta;
+      target.textContent = "";
+      target.appendChild(P.table(caption, ["Measure", "Before", "After", "Change"], [
+        ["Coverage score (out of 100)", b.score, a.score, P.signed(d.score)], ["Coverage", P.pct(b.coverage_pct), P.pct(a.coverage_pct), P.signed(d.coverage_pct) + " pts"],
+        ["Dead zone", P.pct(b.dead_zone_pct), P.pct(a.dead_zone_pct), P.signed(d.dead_zone_pct) + " pts"], ["Average speed", b.mean_throughput_mbps + " Mbps", a.mean_throughput_mbps + " Mbps", P.signed(d.mean_throughput_mbps) + " Mbps"],
+        ["Client capacity", String(b.client_capacity), String(a.client_capacity), P.signed(d.client_capacity)], ["Optimiser score", b.optimiser_score, a.optimiser_score, P.signed(d.optimiser_score)]]));
+      target.appendChild(note("Confidence " + w.confidence + ". " + w.reason));
+    }
+    function runWhatIf() {
+      try {
+        var change = changeFromForm(), f = floor();
+        var w = Opt.whatIf(app.store.project, f.id, change, { env: app.env, band: app.settings.band || undefined, mode: app.settings.mode, cellM: P.analysisCell(f), floor: f.id });
+        showDiff(wiOut, w, "Before and after (" + ESTIMATE + ", " + (KINDS.filter(function (k) { return k[0] === change.kind; })[0][1]) + ")"); wiMsg.textContent = "";
+      } catch (e) { wiMsg.textContent = "Could not run the what-if: " + e.message; }
+    }
+    host.appendChild(box("What-if comparison", [note("Pick one change. The plan is copied, the change applied to the copy, and both runs of the engine are compared."),
+      el("div", { class: "tool-row" }, [kindSel, apSel, valSel, el("label", { class: "inline" }, ["x ", xIn]), el("label", { class: "inline" }, ["y ", yIn]), P.button("Compare", runWhatIf, { id: "wiRun" })]), wiMsg, wiOut]));
+
+    // ---- apply helpers shared by recommendations and the design
+    function opsFor(change, f) {
+      var p = app.store.project;
+      if (change.kind === "move_ap") { return [S.setOp("ap", p, f.id, change.ap_id, { x: change.x, y: change.y })]; }
+      if (change.kind === "upgrade_standard") { return [S.setOp("ap", p, f.id, change.ap_id, { standard: change.standard })]; }
+      if (change.kind === "set_channels") { return change.assignments.map(function (a) { return S.setOp("ap", p, f.id, a.ap_id, { channel: a.channel }); }); }
+      if (change.kind === "add_mesh_node") {
+        var target = S.findFloor(p, change.floor), node = { id: S.nextId(target.aps, "mesh"), x: change.x, y: change.y, tx_dbm: app.config.planner.default_tx_dbm, band: app.config.planner.default_band };
+        if (change.parent_ap_id) { node.mesh_parent = change.parent_ap_id; }
+        return [S.addOp("ap", p, change.floor, node)];
+      }
+      return [];
+    }
+
+    // ---- recommendations
+    var recOut = el("div", { id: "recOut" }), recMsg = el("p", { class: "muted", role: "status" });
+    function renderRecs() {
+      recOut.textContent = "";
+      var r = st.recs;
+      if (!r) { return; }
+      recOut.appendChild(el("p", { id: "recScore", class: "stat-v", text: "Coverage score " + r.score + " out of 100" }));
+      if (!r.actions.length) { recOut.appendChild(note(r.note)); return; }
+      recOut.appendChild(P.table("Ranked actions, each measured on a copy of the plan (" + ESTIMATE + ")", ["#", "Action", "Score", "Coverage", "Speed", "Confidence", "Apply"],
+        r.actions.map(function (a) {
+          var ops = opsFor(a.change, floor());
+          return [String(a.rank), a.text, a.before.score + " to " + a.after.score + " (" + P.signed(a.delta.score) + ")", P.signed(a.delta.coverage_pct) + " pts", P.signed(a.delta.mean_throughput_mbps) + " Mbps", String(a.confidence),
+            ops.length ? P.button("Apply", function () { app.store.exec({ label: a.text, ops: ops }); recMsg.textContent = "Applied: " + a.text + ". Undo with Ctrl+Z."; }, { "aria-label": "Apply: " + a.text }) : "-"];
+        })));
+      recOut.appendChild(note("Confidence is sensitivity to wall attenuation errors, not accuracy. " + r.label));
+    }
+    function runRecs() {
+      recMsg.textContent = "Testing actions...";
+      var f = floor();
+      app.runJob({ type: "recommend", floor: f.id, cell_m: P.analysisCell(f) }, { result: function (m) { st.recs = m; recMsg.textContent = ""; renderRecs(); }, error: function (m) { recMsg.textContent = "Failed: " + m.message; } });
+    }
+    host.appendChild(box("Recommendations", [note("Ranked by the measured gain in the coverage score. Each action is a what-if on a copy of your plan."),
+      el("div", { class: "tool-row" }, [P.button("Find best actions", runRecs, { id: "recRun" })]), recMsg, recOut]));
+
+    // ---- design my network
+    var planOut = el("div", { id: "planOut" }), planMsg = el("p", { class: "muted", role: "status" }), narration = el("div", { id: "planNarration", "aria-live": "polite" });
+    function narrate(plan) {
+      narration.textContent = "";
+      function local(why) {
+        plan.text.split("\n").forEach(function (line) { narration.appendChild(el("p", { text: line })); });
+        narration.appendChild(el("p", { class: "muted hint", text: "Rule-based text (no LLM used)" + (why ? ": " + why : "") + "." }));
+      }
+      if (demo || !root.fetch) { local("the static demo has no server"); return; }
+      function ask(confirm) {
+        var body = Opt.planPayload(plan); if (confirm) { body.confirm_off_device = true; }
+        root.fetch("/api/planner/explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (r) {
+            narration.textContent = "";
+            if (r.status === 409) { narration.appendChild(el("p", { text: r.body.detail })); narration.appendChild(P.button("Send the numbers to the cloud provider", function () { ask(true); }, { id: "planConfirm" })); return; }
+            if (r.status !== 200) { local("the server refused the request"); return; }
+            narration.appendChild(el("p", { class: "muted hint", text: (r.body.source === "llm" ? "Reworded by " + r.body.provider + ", checked against the plan numbers" : "Rule-based text (no LLM used)") + ". " + r.body.note }));
+            r.body.explanation.split("\n").forEach(function (line) { narration.appendChild(el("p", { text: line })); });
+          })
+          .catch(function (e) { narration.textContent = ""; local(e.message); });
+      }
+      local("asking the server"); ask(false);
+    }
+    function renderPlan() {
+      planOut.textContent = "";
+      var p = st.plan;
+      if (!p) { return; }
+      planOut.appendChild(P.table("Planned access points (" + ESTIMATE + ")", ["AP", "Position", "Band", "Channel", "Standard", "Antenna"],
+        p.aps.map(function (a) { return [a.id, a.x + " m, " + a.y + " m", a.band + " GHz", a.channel === undefined ? "default" : String(a.channel), a.standard, a.pattern === "sector" ? "sector at " + a.azimuth_deg + " degrees" : "omni"]; })));
+      if (p.mesh_nodes.length) { planOut.appendChild(P.table("Mesh nodes", ["Floor", "Position", "Uplink", "Backhaul"], p.mesh_nodes.map(function (m) { return [m.floor, m.x + " m, " + m.y + " m", m.parent_ap_id, m.backhaul_dbm + " dBm"]; }))); }
+      showDiff(planOut.appendChild(el("div")), { before: p.before, after: p.after, delta: Object.assign({}, { score: p.delta.score, coverage_pct: p.delta.coverage_pct, dead_zone_pct: p.after.dead_zone_pct - p.before.dead_zone_pct,
+        mean_throughput_mbps: p.after.mean_throughput_mbps - p.before.mean_throughput_mbps, client_capacity: p.after.client_capacity - p.before.client_capacity, optimiser_score: p.after.optimiser_score - p.before.optimiser_score }),
+        confidence: "n/a", reason: p.reached ? "The coverage target is reached." : "The coverage target is not reached." }, "Your plan compared with the generated plan (" + ESTIMATE + ")");
+      planOut.appendChild(P.button("Apply plan", function () {
+        var f = floor(), st2 = app.store, ops = f.aps.map(function (a) { return S.removeOp("ap", st2.project, f.id, a.id); }).concat(p.aps.map(function (a) { return S.addOp("ap", st2.project, f.id, a); }));
+        p.mesh_nodes.forEach(function (m) { ops.push(S.addOp("ap", st2.project, m.floor, { id: m.id, x: m.x, y: m.y, tx_dbm: m.tx_dbm, band: m.band, mesh_parent: m.parent_ap_id })); });
+        if (!root.confirm("Replace the " + f.aps.length + " access points on " + f.name + " with the " + p.aps.length + " planned ones? You can undo this.")) { return; }
+        st2.exec({ label: "Apply network plan", ops: ops }); planMsg.textContent = "Applied the plan. Undo restores the old layout.";
+      }, { id: "planApply" }));
+      planOut.appendChild(el("h4", { text: "In plain language" })); planOut.appendChild(narration);
+    }
+    function runDesign() {
+      planMsg.textContent = "Designing..."; var f = floor();
+      app.runJob({ type: "design", floor: f.id, cell_m: P.analysisCell(f) }, { result: function (m) { st.plan = m; planMsg.textContent = ""; renderPlan(); narrate(m); }, error: function (m) { planMsg.textContent = "Failed: " + m.message; } });
+    }
+    host.appendChild(box("Design my network", [note(rc.design.label + " It ignores the access points now on this floor."),
+      el("div", { class: "tool-row" }, [P.button("Design my network", runDesign, { id: "designRun" })]), planMsg, planOut]));
+
+    app.store.subscribe(function (ev) { if (ev.source !== "select") { refreshWhatIf(); } });
+    refreshWhatIf();
+    app.twinLab = { state: st, runTimeline: runTimeline };
+  }
+
   var api = { wouldLoop: wouldLoop, meshReport: meshReport, capacityReport: capacityReport, iotReport: iotReport, enterpriseLayout: enterpriseLayout,
-              billOfQuantities: billOfQuantities, mount: mount };
+              billOfQuantities: billOfQuantities, timelineChartModel: timelineChartModel, timelineEventLines: timelineEventLines, mount: mount };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.PlannerModes = api;
 })(typeof self !== "undefined" ? self : this);
