@@ -211,3 +211,44 @@ Reading the numbers:
 - The main-thread fallback is not usable for this stress floor on a CPU 4x to 6x slower: a single AP move takes 3 to 8 s to reach the final map (the coarse pass appears earlier). With a Web Worker the main thread stays free, but on a real slow device the worker itself would also be slower, which this method cannot show.
 - Heat layer draw and full frames stay under 4 ms at 6x, so drawing is not the bottleneck; compute is.
 - Memory: the page heap after GC is about 3 MB in every case. The worker heap is not measured.
+
+## V2 features (timeline, what-if, recommendations, design, 3D view), measured in FEAT-005
+
+Measured on Intel(R) Xeon(R) Platinum 8488C, 8 logical cores, node v22.23.4, Chromium 159 headless (SwiftShader software GL), 2026-11-24. Not Raspberry Pi 4 numbers. Nothing in this section was estimated.
+
+### Node: `node tools/perf_rf_v2.js` (5 runs after one warm-up, one thread)
+
+| Measurement | Median ms | Min | Max | Notes |
+|---|---|---|---|---|
+| timeline, stress floor, 1 AP, 1000 walls | 7.5 | 4.9 | 10.6 | 1087 samples (zigzag path of about 540 m at 0.5 m steps) |
+| timeline, stress floor, 4 AP, 1000 walls | 13.1 | 12.3 | 17.6 | 1087 samples |
+| what-if move one AP, stress floor, 4 AP, 1000 walls | 1348.5 | 1330.2 | 1370.9 | one nominal run plus the model perturbation runs for the confidence |
+| what-if move one AP, large_home preset | 5.9 | 5.2 | 7.9 | |
+| recommend (ranked actions), large_home preset | 35.5 | 26 | 47.2 | every candidate action is a what-if |
+| designNetwork, large_home preset | 16.3 | 13.5 | 20.9 | |
+
+The what-if on the stress floor is the one number that is not interactive (about 1.3 s). The timeline is cheap because it samples points, not a grid. Grid sizes of 10,000 and 100,000 cells for the heat map engine are in the tables above (24,000 cells at 0.5 m, 100,489 points in the 100,000 point scenario); the V2 features do not add a grid of their own.
+
+### 3D view: `tools/perf_3d.py --frames 60` (large_home preset, SwiftShader)
+
+| Renderer | Tab open (ms) | Median frame (ms) | p95 frame (ms) | Quads | Lines |
+|---|---|---|---|---|---|
+| WebGL | 54 | 1.4 | 3.2 | 8 | 88 |
+| canvas projection | 50 | 1.2 | 2.3 | 8 | 88 |
+
+`planner-3d.js` is 42,755 B (13,714 B gzip). The scene is small (8 quads, 88 lines), so these frame times say little about a large building and nothing about a GPU or a Pi 4.
+
+### Main-thread AP move under 4x CPU throttle: profiled, not reduced
+
+Question: why does moving one AP take 3 to 8 s to reach the final map on the main-thread fallback (`?worker=0`) at 4x and 6x throttle, when it takes 138 ms unthrottled?
+
+Method: CDP `Profiler` (sampling every 0.5 ms) around one AP move on the 4 AP stress floor at 4x, in headless Chromium; single move to idle, repeated runs.
+
+Findings:
+
+- Time to final map at 4x varied between 1.9 and 3.3 s from run to run (median of 6 runs 2.6 s).
+- JavaScript self time was about 0.75 s (`wallLoss` 0.51 to 0.54 s, `fillCandidates` 0.11 s, then drawing and contour code under 0.05 s each). The rest of the sampled time, about 1.2 to 2.6 s, is reported as `(program)`, which is native work outside JavaScript (layout, paint, compositing and timers in a page that runs in software), not something a code change in the engine reaches.
+- Hypothesis tested: the 8 ms slices end in `setTimeout(0)`, and browsers clamp nested timers to 4 ms. A `MessageChannel` yield was tried. Median of 6 runs with it: 2.5 s, without it 2.6 s, with overlapping ranges (1.97 to 2.98 s versus 2.23 to 2.93 s). No difference beyond noise, so the change was reverted and nothing was kept.
+- Raising the slice length from 8 to 50 ms roughly halved the move time (3.3 and 2.8 s down to 1.4 s, 2 runs each), which shows that the per-slice overhead matters. It also makes each main-thread block up to 50 ms, which is a long task and defeats the point of slicing, so it was not adopted.
+
+Conclusion: the profile does not point to a cheap, safe fix. The supported way to avoid this cost is the Web Worker, where the main thread stays free (no long task over 50 ms while dragging, see the planner page table). This measurement is an approximation of a slow CPU, see the throttling caveats above. The slice length versus overhead trade-off is open work.

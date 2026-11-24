@@ -426,7 +426,7 @@
     var P = root.PlannerPanels, S = root.PlannerState, el = P.el, E_ = root.RFEngine, Opt = root.RFOptimizer, doc = root.document;
     var demo = !!root.WALLHACK_DEMO, tl = app.config.timeline, rc = app.config.recommendations;
     var panel = app.tabs.add("twinlab", "Timeline and what-if");
-    var st = { path: [], result: null, index: 0, plan: null, recs: null };
+    var st = { path: [], result: null, index: 0, plan: null, recs: null, whatIf: null };
     function floor() { return app.currentFloor(); }
     function note(t) { return el("p", { class: "muted hint", text: t }); }
     function box(title, kids) { return el("section", { class: "mode-box" }, [el("h3", { text: title })].concat(kids)); }
@@ -548,6 +548,7 @@
       try {
         var change = changeFromForm(), f = floor();
         var w = Opt.whatIf(app.store.project, f.id, change, { env: app.env, band: app.settings.band || undefined, mode: app.settings.mode, cellM: P.analysisCell(f), floor: f.id });
+        st.whatIf = w;
         showDiff(wiOut, w, "Before and after (" + ESTIMATE + ", " + (KINDS.filter(function (k) { return k[0] === change.kind; })[0][1]) + ")"); wiMsg.textContent = "";
       } catch (e) { wiMsg.textContent = "Could not run the what-if: " + e.message; }
     }

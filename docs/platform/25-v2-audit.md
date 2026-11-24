@@ -29,13 +29,13 @@ The "Planned in" column names the V2 feature that does the work. Rows marked Don
 | 11 | "Design my network" plan generator | Done (MODEL, narration UNVERIFIED) | `designNetwork`, `narratePlan`, `planPayload` in `rf-optimizer.js`, narration through `POST /api/planner/explain`, `tests/test_rf_recommend.py` | Closed in FEAT-003. The LLM wording is mock tested only (UNVERIFIED with a real model), the rule-based text is the fallback | FEAT-003 |
 | 12 | Scenario presets: hospital, apartment with neighbours, shared walls | Done (MODEL) | Ten presets in `wallhack/static/scenarios.json` from `tools/make_scenarios.py`: the seven earlier ones plus hospital ward, smart home and apartment with neighbours | Closed in FEAT-003. Layouts are illustrative, not real buildings | FEAT-003 |
 | 13 | Explanation of results with grounded numbers | Already existed | `probeAt(..., {explain: true})`, `POST /api/planner/explain`, number check in `wallhack/llm.py`, `tests/test_explain.py` | LLM path is mock tested only (UNVERIFIED). The number check had two defects, fixed in this feature (see below) | none |
-| 14 | 3D building view | Partial | Schematic 3D room view (`wallhack/static/view3d.js`) reused by the planner 3D mode (`planner-modes.js`) | No stacked floors with slabs, no slicing plane, no signal volume, no basement support | FEAT-004 |
-| 15 | Beamforming visualisation | Partial | Horizontal antenna pattern model in `rf-config.json` (`antenna`) and engine | No omni versus steered display, no polar animation | FEAT-004 |
-| 16 | Generation comparison (WiFi 4, 5, 6, 6E, 7) | Partial | Per-AP standard selection and PHY rates (`wifi_standards`) | No side by side comparison table of coverage, speed, penetration, capacity | FEAT-004 |
-| 17 | Mesh backhaul and load balance display | Partial | Mesh hop count, backhaul RSSI and end-to-end rate (`meshReport` in `planner-modes.js`) | No links drawn on the map, no load balance | FEAT-004 |
-| 18 | Educational lessons: reflection, beamforming, 6 GHz | Partial | Six lessons with engine-computed checks (`planner-learn.js`, `learn-content.json`, `tests/test_planner_learn.py`) | The three topics are not lessons yet | FEAT-004 |
-| 19 | Benchmarks, reports and documentation for the new features | Partial | `docs/perf-rf.md`, `tools/perf_rf.js`, `tools/perf_rf_browser.py`; PDF, PNG, CSV, JSON export (`planner-export.js`) | No numbers for the new features, no device recommendations or before and after pages, no SINR columns in CSV | FEAT-005 |
-| 20 | Accessibility check in CI and updated screenshots | Partial | `tools/a11y_check.py` (axe-core, manual), `tools/screenshot.py`, `docs/screenshot-*.png` | Axe is not in CI. New views have no screenshots | FEAT-005 |
+| 14 | 3D building view | Done (MODEL) | `wallhack/static/planner-3d.js` (stacked floors from the elevation model, basements, slicing plane, signal volume interpolated in dB between floors, WebGL with canvas fallback), `tests/test_planner_3d.py`, `docs/platform/adr-3d-view.md`, `docs/screenshot-planner-3d.png` | Closed in FEAT-004. The volume is interpolated from per-floor 2D results, not a 3D simulation. Frame time measured in SwiftShader only, Pi 4 UNVERIFIED | FEAT-004 |
+| 15 | Beamforming visualisation | Done (ILLUSTRATION) | Tab "Beams and generations" in `planner-modes.js` (omni versus steered polar plot, lobe on the plan), `docs/screenshot-planner-beams.png` | Closed in FEAT-004. The polar plot is an illustration of the antenna model, labelled as such | FEAT-004 |
+| 16 | Generation comparison (WiFi 4, 5, 6, 6E, 7) | Done (MODEL) | Comparison table and per-floor run in the beams tab (`planner-modes.js`), `wifi_standards` in `rf-config.json` | Closed in FEAT-004. Standards not allowed on a band are marked, not guessed | FEAT-004 |
+| 17 | Mesh backhaul and load balance display | Done (MODEL) | Backhaul lines on the plan, load balance bars and coverage rings (`planner-modes.js`) | Closed in FEAT-004 | FEAT-004 |
+| 18 | Educational lessons: reflection, beamforming, 6 GHz | Done | Lessons in `wallhack/static/learn-content.json` with engine-computed checks (`planner-learn.js`, `tests/test_planner_learn.py`) | Closed in FEAT-004. Not reviewed by a teacher | FEAT-004 |
+| 19 | Benchmarks, reports and documentation for the new features | Done (measured, MODEL) | `tools/perf_rf_v2.js` (timeline, what-if, recommend, design), `tools/perf_3d.py`, `docs/perf-rf.md` (V2 section), PDF sections for network health, device recommendations and before and after, CSV SINR rows in `planner-export.js` (`tests/test_planner_panels.py`) | Closed in FEAT-005. PDFs are UNVERIFIED in a real viewer. No Pi 4 numbers | FEAT-005 |
+| 20 | Accessibility check in CI and updated screenshots | Partial | `tools/a11y_check.py` now also opens the 3D, timeline and beams tabs (0 serious or critical after a fix to the table scroll regions), new `docs/screenshot-planner-{3d,timeline,beams,materials}[-demo].png` from `tools/planner_smoke.py` | Axe is not in CI: it needs a Playwright Chromium download and an `npm pack` on every run, which the current CI job does not install. Run it by hand before a release | FEAT-005 |
 
 ## WOW list
 
@@ -46,12 +46,12 @@ The "Planned in" column names the V2 feature that does the work. Rows marked Don
 | Walk the house and watch the signal and handoffs | Done (MODEL) | Items 7 and 8, tab "Timeline and what-if" | FEAT-003 |
 | Move one AP and see the before and after at once | Done (MODEL) | What-if panel (item 9) | FEAT-003 |
 | "Design my network" in one click | Done (MODEL) | Item 11 | FEAT-003 |
-| Fly through a multi-floor building with a heat layer on each floor | Partial | See item 14 | FEAT-004 |
-| Watch a beam steer towards a client | Partial | See item 15 | FEAT-004 |
-| WiFi 4 to 7 side by side | Partial | See item 16 | FEAT-004 |
+| Fly through a multi-floor building with a heat layer on each floor | Done (MODEL) | See item 14 | FEAT-004 |
+| Watch a beam steer towards a client | Done (ILLUSTRATION) | See item 15 | FEAT-004 |
+| WiFi 4 to 7 side by side | Done (MODEL) | See item 16 | FEAT-004 |
 | Static demo that runs offline with a strict CSP | Already existed | `tools/build_demo.py`, `tests/test_static.py` | none |
-| Project report as PDF with no library | Already existed | `planner-export.js` | extended by FEAT-005 |
-| Room creation tool (draw a rectangle, get four walls and a label) | New (optional) | Rooms are walls plus a text label today (`24-rf-lab-status.md`, row 9) | FEAT-005 if time allows |
+| Project report as PDF with no library | Already existed | `planner-export.js` | extended by FEAT-005 (network health, device recommendations, before and after, CSV SINR) |
+| Room creation tool (draw a rectangle, get four walls and a label) | Deferred (not built in V2) | Rooms are walls plus a text label today (`24-rf-lab-status.md`, row 9) | FEAT-005 (skipped, listed in `20-roadmap.md`) |
 
 ## Defects found and fixed in this feature
 

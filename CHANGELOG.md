@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### V2 reports, measurements, screenshots and accessibility
+- feat: PDF report gains network health, device recommendations and before and after what-if tables from the Timeline and what-if tab; CSV gains per-AP SINR rows (`planner-export.js`, `tests/test_planner_panels.py`).
+- fix: table scroll regions in the planner now have `tabindex`, `role=region` and a label (axe `scrollable-region-focusable`, found in the beams tab).
+- feat: `tools/a11y_check.py` opens the 3D, timeline and beams tabs; `tools/planner_smoke.py` writes screenshots of the 3D view, timeline and what-if, beams and wall material inspector (live and demo); `tools/perf_rf_v2.js` times the V2 features.
+- docs: V2 measurements and the profile of the throttled main-thread AP move (a `MessageChannel` yield was tried and reverted, no difference beyond noise) in `docs/perf-rf.md`; audit, lab status, roadmap (future work: DXF and IFC, exact ray tracing, survey calibration, room tool, AR), user guide and contributing updated. Room creation tool not built.
+
 ### Planner 3D view, beam and generation views, new lessons
 - docs: `docs/platform/adr-3d-view.md` records the decision with measurements: in-house WebGL plus canvas projection (42,755 B) instead of vendored three.js (670,681 B). `adr-frontend-stack.md` status line points to it. Pi 4 frame rate UNVERIFIED.
 - feat: `planner-3d.js` and the "3D view" tab: stacked floors from the elevation model (basements, slabs), orbit and fly-through camera (mouse, touch, keyboard), heat map per floor, access point and mesh markers, slicing plane and a signal volume of translucent slices. The volume is interpolated from per-floor 2D results (linear in dB), not a 3D simulation, and says so. WebGL with a canvas projection fallback (`?renderer=canvas2d`), text alternative, reduced motion respected. New `planner_3d` block in `rf-config.json`.

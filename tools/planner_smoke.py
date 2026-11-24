@@ -129,7 +129,7 @@ def run(page, base, problems, args):
     wait_idle(page)
     run_features(page, problems)
     run_lab_features(page, problems, args)
-    run_twin_lab_features(page, problems)
+    run_twin_lab_features(page, problems, args)
     run_view3d_features(page, problems, args)
     run_learn_features(page, problems, args)
     if not args.no_screenshot:
@@ -520,7 +520,7 @@ def run_lab_features(page, problems, args):
         page.set_viewport_size(VIEWPORT)
 
 
-def run_twin_lab_features(page, problems):
+def run_twin_lab_features(page, problems, args):
     """Timeline with handoffs, what-if, ranked recommendations and the generated network plan (dialogs are accepted by run_features)."""
     page.evaluate("(p) => window.PlannerApp.loadProject(p)", LAB)
     wait_idle(page)
@@ -543,6 +543,10 @@ def run_twin_lab_features(page, problems):
     page.wait_for_selector("#wiOut table", timeout=30000)
     if "Coverage score" not in page.inner_text("#wiOut"):
         problems.append("what-if panel lacks the coverage score row")
+    if not args.no_screenshot:
+        suffix = "-demo" if args.demo else ""
+        page.locator("#panel-twinlab").scroll_into_view_if_needed()
+        page.locator("#panel-twinlab").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-timeline%s.png" % suffix)))
     page.click("#recRun")
     page.wait_for_selector("#recScore", timeout=60000)
     if "out of 100" not in page.inner_text("#recScore"):
@@ -605,7 +609,7 @@ def run_view3d_features(page, problems, args):
     page.click("#view3dTour")
     page.click("#view3dReset")
     if not args.no_screenshot:
-        page.locator("#view3dCanvas").screenshot(path=str(ROOT / "docs" / "screenshot-planner-3d.png"))
+        page.locator("#view3dCanvas").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-3d%s.png" % ("-demo" if args.demo else ""))))
     tab(page, "beams")
     page.wait_for_selector("#genOut table")
     if "Wi-Fi 7" not in page.inner_text("#genOut") or "ILLUSTRATION" not in page.inner_text("#panel-beams"):
@@ -618,6 +622,13 @@ def run_view3d_features(page, problems, args):
     page.fill("#beamSteer", "90")
     if "Steered toward 90" not in page.inner_text("#beamText"):
         problems.append("beam text did not follow the steering slider: " + page.inner_text("#beamText"))
+    if not args.no_screenshot:
+        suffix = "-demo" if args.demo else ""
+        page.locator("#panel-beams").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-beams%s.png" % suffix)))
+        wall_id = app_eval(page, "return a.store.project.floors[0].walls[0].id")
+        app_eval(page, "a.store.select({ walls: [%r] }); a.editor.invalidate(); return 0" % wall_id)
+        page.wait_for_selector("#inspector:not([hidden])", timeout=5000)
+        page.locator("#inspector").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-materials%s.png" % suffix)))
     print("3D view checks done")
 
 

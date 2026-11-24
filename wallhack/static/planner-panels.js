@@ -219,7 +219,7 @@
     });
     if (!rows.length) { body.appendChild(el("tr", {}, [el("td", { colspan: headers.length, text: "None" })])); }
     t.appendChild(body);
-    return el("div", { class: "tscroll" }, [t]);
+    return el("div", { class: "tscroll", tabindex: "0", role: "region", "aria-label": caption }, [t]);
   }
   function card(label, value, note, cls) {
     return el("div", { class: "stat" + (cls ? " " + cls : "") }, [el("span", { class: "stat-v", text: value }), el("span", { class: "stat-l", text: label }), note ? el("span", { class: "stat-n", text: note }) : null]);
