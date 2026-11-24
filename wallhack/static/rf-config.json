@@ -597,6 +597,234 @@
    ],
    "notes": "Thick concrete block, precast panel or corrugated steel cladding of a factory or warehouse. The range is wide because cladding, racking and stored goods change the loss; use the metal material for a solid steel sheet."
   },
+  "steel": {
+   "label": "Steel",
+   "attenuation_db": {
+    "2.4": 32.0,
+    "5": 36.0,
+    "6": 38.0
+   },
+   "reflection_loss_db": {
+    "2.4": 0.5,
+    "5": 0.5,
+    "6": 0.5
+   },
+   "range_db": {
+    "2.4": {
+     "min": 20.0,
+     "typical": 32.0,
+     "max": 50.0
+    },
+    "5": {
+     "min": 24.0,
+     "typical": 36.0,
+     "max": 55.0
+    },
+    "6": {
+     "min": 26.0,
+     "typical": 38.0,
+     "max": 58.0
+    }
+   },
+   "frequency_exponent": 0.17,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Structural steel plate, beams and heavy cladding. Effectively a blocker, the measured loss is set by leakage at joints, gaps and openings, not by the steel itself."
+  },
+  "aluminium": {
+   "label": "Aluminium",
+   "attenuation_db": {
+    "2.4": 24.0,
+    "5": 28.0,
+    "6": 30.0
+   },
+   "reflection_loss_db": {
+    "2.4": 1.0,
+    "5": 1.0,
+    "6": 1.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 14.0,
+     "typical": 24.0,
+     "max": 38.0
+    },
+    "5": {
+     "min": 17.0,
+     "typical": 28.0,
+     "max": 42.0
+    },
+    "6": {
+     "min": 19.0,
+     "typical": 30.0,
+     "max": 45.0
+    }
+   },
+   "frequency_exponent": 0.22,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Aluminium sheet, window frames, curtain wall mullions and foil-backed boards. Thin sheet leaks at edges, so the range is wide."
+  },
+  "tiles": {
+   "label": "Tiles",
+   "attenuation_db": {
+    "2.4": 8.0,
+    "5": 10.0,
+    "6": 11.0
+   },
+   "reflection_loss_db": {
+    "2.4": 6.0,
+    "5": 5.0,
+    "6": 5.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 5.0,
+     "typical": 8.0,
+     "max": 13.0
+    },
+    "5": {
+     "min": 6.0,
+     "typical": 10.0,
+     "max": 16.0
+    },
+    "6": {
+     "min": 7.0,
+     "typical": 11.0,
+     "max": 18.0
+    }
+   },
+   "frequency_exponent": 0.32,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Ceramic or stone tile on a masonry or board backing, as in bathrooms and kitchens. The tile layer adds a few dB over the bare backing, the backing sets most of the loss."
+  },
+  "insulated_wall": {
+   "label": "Insulated wall",
+   "attenuation_db": {
+    "2.4": 8.0,
+    "5": 10.0,
+    "6": 11.0
+   },
+   "reflection_loss_db": {
+    "2.4": 5.0,
+    "5": 5.0,
+    "6": 5.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 5.0,
+     "typical": 8.0,
+     "max": 12.0
+    },
+    "5": {
+     "min": 6.0,
+     "typical": 10.0,
+     "max": 14.0
+    },
+    "6": {
+     "min": 7.0,
+     "typical": 11.0,
+     "max": 16.0
+    }
+   },
+   "frequency_exponent": 0.32,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Stud wall with mineral wool or foam insulation and plasterboard on both sides. Foil-faced insulation raises the loss towards the upper end of the range."
+  },
+  "metal_door": {
+   "label": "Metal door",
+   "attenuation_db": {
+    "2.4": 20.0,
+    "5": 24.0,
+    "6": 26.0
+   },
+   "reflection_loss_db": {
+    "2.4": 2.0,
+    "5": 2.0,
+    "6": 2.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 12.0,
+     "typical": 20.0,
+     "max": 30.0
+    },
+    "5": {
+     "min": 15.0,
+     "typical": 24.0,
+     "max": 35.0
+    },
+    "6": {
+     "min": 17.0,
+     "typical": 26.0,
+     "max": 38.0
+    }
+   },
+   "frequency_exponent": 0.26,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Steel or aluminium skinned door in a frame. Loss is lower than the solid metal wall because of gaps around the leaf, a closed door is assumed."
+  },
+  "fire_door": {
+   "label": "Fire door",
+   "attenuation_db": {
+    "2.4": 14.0,
+    "5": 17.0,
+    "6": 19.0
+   },
+   "reflection_loss_db": {
+    "2.4": 3.0,
+    "5": 3.0,
+    "6": 3.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 9.0,
+     "typical": 14.0,
+     "max": 22.0
+    },
+    "5": {
+     "min": 11.0,
+     "typical": 17.0,
+     "max": 26.0
+    },
+    "6": {
+     "min": 12.0,
+     "typical": 19.0,
+     "max": 28.0
+    }
+   },
+   "frequency_exponent": 0.31,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Fire-rated door with a steel skin, mineral core and a closed frame. Between a wooden door and a metal door, a closed door is assumed."
+  },
   "flooring": {
    "label": "Flooring",
    "attenuation_db": {
@@ -1468,5 +1696,192 @@
    "#cc79a7",
    "#999999"
   ]
+ },
+ "floor_elevation": {
+  "label": "MODEL ESTIMATE: floor-to-floor loss scales with the elevation difference when both floors set elevation_m, not a measurement",
+  "source": "Floor loss per floor is a typical figure for a slab of about reference_height_m floor-to-floor height. A floor pair that sets elevation_m on both floors crosses |elevation difference| / reference_height_m floors, at least one. Floors without elevation_m keep the whole-floor count from their level, so saved projects are unchanged. Basements have negative elevation_m.",
+  "reference_height_m": 3.0,
+  "elevation_m_range": [
+   -30.0,
+   300.0
+  ]
+ },
+ "ap_profiles": {
+  "label": "Typical generic router and access point classes, not product names, planning values only",
+  "source": "Each profile is a typical class of consumer, gaming, mesh and enterprise Wi-Fi equipment, not a specific product. Transmit power per band is chosen so that tx_dbm plus antenna_gain_dbi stays within the ETSI EIRP limit of that band (EN 300 328 for 2.4 GHz at 20 dBm, EN 301 893 for 5 GHz at 23 dBm in the lower 5 GHz sub-bands, EN 303 687 for 6 GHz low power indoor at 23 dBm). FCC limits are higher, so the profiles also meet them. Limits are approximate, check the current regulation of the country before deploying.",
+  "eirp_limit_dbm": {
+   "etsi": {
+    "2.4": 20.0,
+    "5": 23.0,
+    "6": 23.0
+   },
+   "fcc": {
+    "2.4": 36.0,
+    "5": 36.0,
+    "6": 30.0
+   }
+  },
+  "profiles": {
+   "consumer": {
+    "label": "Consumer router",
+    "description": "Typical home router class: dual band, two spatial streams, small integrated antennas.",
+    "standard": "wifi6",
+    "band": "5",
+    "bands": [
+     "2.4",
+     "5"
+    ],
+    "spatial_streams": 2,
+    "tx_dbm": {
+     "2.4": 17.0,
+     "5": 20.0
+    },
+    "antenna_gain_dbi": 3.0,
+    "pattern": "omni",
+    "beamforming": true,
+    "confidence": "low"
+   },
+   "gaming": {
+    "label": "Gaming router",
+    "description": "Typical high end home router class: tri band, four spatial streams, larger antennas.",
+    "standard": "wifi7",
+    "band": "5",
+    "bands": [
+     "2.4",
+     "5",
+     "6"
+    ],
+    "spatial_streams": 4,
+    "tx_dbm": {
+     "2.4": 15.0,
+     "5": 18.0,
+     "6": 18.0
+    },
+    "antenna_gain_dbi": 5.0,
+    "pattern": "omni",
+    "beamforming": true,
+    "confidence": "low"
+   },
+   "mesh": {
+    "label": "Mesh node",
+    "description": "Typical mesh satellite class: tri band, two spatial streams, a dedicated backhaul radio is not modelled.",
+    "standard": "wifi6e",
+    "band": "5",
+    "bands": [
+     "2.4",
+     "5",
+     "6"
+    ],
+    "spatial_streams": 2,
+    "tx_dbm": {
+     "2.4": 17.0,
+     "5": 20.0,
+     "6": 20.0
+    },
+    "antenna_gain_dbi": 3.0,
+    "pattern": "omni",
+    "beamforming": true,
+    "confidence": "low"
+   },
+   "enterprise": {
+    "label": "Enterprise access point",
+    "description": "Typical ceiling mounted enterprise AP class: tri band, four spatial streams, omnidirectional ceiling antenna.",
+    "standard": "wifi7",
+    "band": "5",
+    "bands": [
+     "2.4",
+     "5",
+     "6"
+    ],
+    "spatial_streams": 4,
+    "tx_dbm": {
+     "2.4": 16.0,
+     "5": 19.0,
+     "6": 19.0
+    },
+    "antenna_gain_dbi": 4.0,
+    "pattern": "omni",
+    "beamforming": true,
+    "confidence": "low"
+   }
+  }
+ },
+ "client_devices": {
+  "label": "MODEL ESTIMATE: typical sustained demand of common Smart Home client classes, not measurements",
+  "source": "Demand is a typical sustained figure: 1080p IP camera 2 to 6 Mbps, 4K streaming TV about 25 Mbps (streaming services recommend 15 to 25 Mbps), phone video call and browsing about 5 Mbps, console game download and stream mix about 15 Mbps, IoT sensor under 1 Mbps. Bands are the typical radio support of the class, many cameras and IoT devices are 2.4 GHz only.",
+  "devices": {
+   "camera": {
+    "label": "IP camera",
+    "demand_mbps": 4.0,
+    "bands": [
+     "2.4",
+     "5"
+    ]
+   },
+   "tv": {
+    "label": "Smart TV (4K streaming)",
+    "demand_mbps": 25.0,
+    "bands": [
+     "2.4",
+     "5"
+    ]
+   },
+   "phone": {
+    "label": "Phone",
+    "demand_mbps": 5.0,
+    "bands": [
+     "2.4",
+     "5",
+     "6"
+    ]
+   },
+   "console": {
+    "label": "Game console",
+    "demand_mbps": 15.0,
+    "bands": [
+     "2.4",
+     "5"
+    ]
+   },
+   "iot": {
+    "label": "IoT device",
+    "demand_mbps": 0.5,
+    "bands": [
+     "2.4"
+    ]
+   }
+  }
+ },
+ "capacity_models": {
+  "label": "CAPACITY MODEL, not a measurement: OFDMA, MU-MIMO and beamforming are simple planning models of their typical gain, real gains depend on the client, the traffic and the driver",
+  "source": "OFDMA (IEEE 802.11ax-2021 and 802.11be) splits a channel into resource units so that small frames of several clients share one transmission, the gain grows with the number of clients and saturates. DL MU-MIMO (802.11ac wave 2 and later) serves several clients at once with separate spatial streams, each extra client adds spatial_efficiency of one client of capacity. Beamforming focuses the transmit pattern towards a client, modelled as array gain of array_gain_db_per_doubling for each doubling of the stream count, scaled by steering_efficiency and capped at max_gain_db. The numeric values are planning assumptions of low confidence, not taken from a measurement campaign.",
+  "ofdma": {
+   "gain_by_standard": {
+    "wifi6": 0.15,
+    "wifi6e": 0.15,
+    "wifi7": 0.2
+   },
+   "saturation_clients": 8
+  },
+  "mu_mimo": {
+   "max_users_by_standard": {
+    "wifi5": 4,
+    "wifi6": 8,
+    "wifi6e": 8,
+    "wifi7": 8
+   },
+   "spatial_efficiency": 0.7
+  },
+  "beamforming": {
+   "standards": [
+    "wifi5",
+    "wifi6",
+    "wifi6e",
+    "wifi7"
+   ],
+   "array_gain_db_per_doubling": 3.0,
+   "steering_efficiency": 0.5,
+   "max_gain_db": 6.0
+  }
  }
 }

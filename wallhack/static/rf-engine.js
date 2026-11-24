@@ -340,9 +340,16 @@
     return false;
   }
 
+  /** Floors crossed for the floor loss (rfmodel.floors_crossed): the level difference, or with elevation_m on both floors
+   *  |elevation difference| / reference_height_m, at least one. */
+  function floorsCrossed(config, apFloor, floor, apart) {
+    if (apart === 0 || !apFloor || apFloor.elevation_m === undefined || floor.elevation_m === undefined) { return apart; }
+    return Math.max(1.0, Math.abs(floor.elevation_m - apFloor.elevation_m) / config.floor_elevation.reference_height_m);
+  }
+
   /** Floor loss between the AP floor and the receiving floor with voids (rfmodel.floor_penetration_db). */
   function floorPenetrationDb(config, ap, apFloor, floor, x, y, apart, band) {
-    var base = config.floor_loss_db[band] * apart;
+    var base = config.floor_loss_db[band] * floorsCrossed(config, apFloor, floor, apart);
     if (apart === 0 || !apFloor) { return base; }
     var open = (inVoid(apFloor, ap.x, ap.y) ? 1 : 0) + (inVoid(floor, x, y) ? 1 : 0);
     if (open === 0) { return base; }
@@ -368,7 +375,7 @@
     var ctx = { env: env, prep: prep, ap: ap, band: band, reflectors: null };
     var fn = modes[o.mode];
     if (o.mode !== DEFAULT_MODE) { ctx.reflectors = reflectorsNear(env, prep, ap.x, ap.y); }
-    var floorLoss = env.config.floor_loss_db[band] * floorsApart, cfg = env.config;
+    var floorLoss = env.config.floor_loss_db[band] * floorsCrossed(env.config, apFloor, floor, floorsApart), cfg = env.config;
     var hasVoids = floorsApart > 0 && !!((apFloor && apFloor.voids && apFloor.voids.length) || (floor.voids && floor.voids.length));
     var ax = gridAxes(floor, o.cellM), i = 0;
     if (region) {   // cells [c0,c1) x [r0,r1) only, written at their place in the full row-major grid
@@ -506,7 +513,7 @@
   // ---------------------------------------------------------------- WiFi standards, SINR, MLO (ESTIMATES)
   // Mirror of the wifi_standards, interference and MLO functions of wallhack/rfmodel.py. Formulas: docs/rf-planner.md.
   var AP_MODEL_FIELDS = ["standard", "spatial_streams", "mlo_bands", "antenna_gain_dbi", "azimuth_deg", "pattern",
-                         "beamwidth_deg", "front_to_back_db"];
+                         "beamwidth_deg", "front_to_back_db", "beamforming"];
   var SINR_LABEL = "MODEL ESTIMATE: SINR throughput from co-channel and adjacent-channel interference, not a measurement";
 
   function standardSpec(config, standard) {
@@ -807,7 +814,7 @@
    * Coverage analytics of one floor, same output as rfmodel.analytics. `gridResult` is a coverageGrid
    * result, `aps` the apGrids list. ESTIMATES only.
    */
-  function analytics(gridResult, aps, config, mloGrids, external) {
+  function analytics(gridResult, aps, config, mloGrids, external, placedClients) {
     var a = config.analytics, rows = gridResult.rows, cols = gridResult.cols, cellM = gridResult.cell_m;
     var area = cellM * cellM, total = rows * cols, n, i, j;
     var best = [].concat.apply([], gridResult.rssi);
@@ -905,7 +912,104 @@
       aps: perAp, total_client_capacity: perAp.reduce(function (s, e) { return s + e.client_capacity; }, 0)
     };
     if (aps.some(function (ap) { return ap.standard !== undefined; })) { result.sinr = sinrSection(aps, bestAp, flats, cols, rows, config, mloGrids, external, cellM); }
+    if (placedClients && placedClients.length) { result.clients = clientCapacitySection(placedClients, aps, bestAp, best, cols, rows, cellM, config); }
     return result;
+  }
+
+  // ---------------------------------------------------------------- v2 data models (ESTIMATES)
+  // Mirror of the "v2 data models" section of wallhack/rfmodel.py: derived material fields, AP class profiles,
+  // and the OFDMA, MU-MIMO and beamforming CAPACITY MODELS with the Smart Home client section.
+  var CLIENT_LABEL = "CAPACITY MODEL: client demand against estimated link rates, OFDMA, MU-MIMO and beamforming are planning models, not measurements";
+  var MATERIAL_BAND_FIELDS = { "2.4": "attenuation24GHz", "5": "attenuation5GHz", "6": "attenuation6GHz" };
+  function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, String(key)); }
+
+  function dbToPowerFraction(lossDb) { return Math.pow(10, -lossDb / 10); }
+
+  /** Derived, read-only material fields (rfmodel.material_fields): attenuationNGHz in dB, penetrationRate and reflectionRate as power fractions at `band`. */
+  function materialFields(config, material, band) {
+    band = band || DEFAULT_BAND;
+    if (!config.bands[band]) { throw new Error("band must be one of " + Object.keys(config.bands).join(", ")); }
+    var out = {};
+    Object.keys(MATERIAL_BAND_FIELDS).forEach(function (b) { out[MATERIAL_BAND_FIELDS[b]] = has(material.attenuation_db, b) ? material.attenuation_db[b] : null; });
+    out.penetrationRate = roundTo(dbToPowerFraction(material.attenuation_db[band]), 4);
+    out.reflectionRate = roundTo(dbToPowerFraction(material.reflection_loss_db[band]), 4);
+    return out;
+  }
+
+  /** A copy of `ap` with the radio fields of a generic class profile (rfmodel.apply_ap_profile). */
+  function applyApProfile(config, ap, profileId, band) {
+    var profiles = config.ap_profiles.profiles;
+    if (!has(profiles, profileId)) { throw new Error("profile must be one of " + Object.keys(profiles).join(", ")); }
+    var profile = profiles[profileId], chosen = band || profile.band;
+    if (profile.bands.indexOf(chosen) < 0) { throw new Error("profile '" + profileId + "' supports the bands " + profile.bands.join(", ")); }
+    var out = {};
+    ["id", "x", "y", "name"].forEach(function (k) { if (ap[k] !== undefined) { out[k] = ap[k]; } });
+    out.tx_dbm = profile.tx_dbm[chosen]; out.band = chosen; out.standard = profile.standard;
+    out.spatial_streams = profile.spatial_streams; out.antenna_gain_dbi = profile.antenna_gain_dbi;
+    out.pattern = profile.pattern; out.beamforming = profile.beamforming; out.profile = profileId;
+    return out;
+  }
+
+  function apStreams(config, ap) { return ap.spatial_streams || defaultStreams(config, ap.standard); }
+
+  function ofdmaCapacityGain(config, standard, nClients) {
+    var m = config.capacity_models.ofdma;
+    if (standard === undefined || !has(m.gain_by_standard, standard) || nClients < 2) { return 1.0; }
+    return 1.0 + m.gain_by_standard[standard] * Math.min(1.0, (nClients - 1) / m.saturation_clients);
+  }
+
+  function muMimoUsers(config, standard, streams, nClients) {
+    var limits = config.capacity_models.mu_mimo.max_users_by_standard;
+    if (standard === undefined || !has(limits, standard) || nClients < 1) { return 1; }
+    return Math.max(1, Math.min(nClients, streams, limits[standard]));
+  }
+
+  function muMimoCapacityGain(config, users) { return 1.0 + (users - 1) * config.capacity_models.mu_mimo.spatial_efficiency; }
+
+  function beamformingGainDb(config, ap) {
+    var m = config.capacity_models.beamforming;
+    if (!ap.beamforming || m.standards.indexOf(ap.standard) < 0) { return 0.0; }
+    return Math.min(m.max_gain_db, m.array_gain_db_per_doubling * Math.log2(apStreams(config, ap)) * m.steering_efficiency);
+  }
+
+  /** Smart Home client demand against estimated links (rfmodel.client_capacity_section). */
+  function clientCapacitySection(clients, aps, bestAp, best, cols, rows, cellM, config) {
+    var devices = config.client_devices.devices, attached = {}, entries = [];
+    clients.forEach(function (c) {
+      var dev = devices[c.device];
+      var col = Math.min(cols - 1, Math.max(0, Math.floor(c.x / cellM))), row = Math.min(rows - 1, Math.max(0, Math.floor(c.y / cellM)));
+      var n = row * cols + col, i = bestAp[n];
+      var entry = { id: c.id, device: c.device, ap: i >= 0 ? aps[i].id : null, status: "ok", rssi_dbm: roundTo(best[n], 1),
+                    beamforming_gain_db: 0.0, link_mbps: 0.0, demand_mbps: dev.demand_mbps, airtime_pct: 0.0, delivered_mbps: 0.0, satisfied: false };
+      var airtime = 0;
+      entries.push(entry);
+      if (i < 0) { entry.status = "no_coverage"; return; }
+      if (dev.bands.indexOf(aps[i].band) < 0) { entry.status = "band_unsupported"; return; }
+      var gain = beamformingGainDb(config, aps[i]);
+      var link = throughputMbps(config, best[n] + gain, aps[i].band, tableWidth(config, aps[i]));
+      if (link <= 0) { entry.status = "no_link"; return; }
+      entry.beamforming_gain_db = roundTo(gain, 2); entry.link_mbps = roundTo(link, 1);
+      airtime = dev.demand_mbps / link;
+      (attached[i] = attached[i] || []).push({ entry: entry, airtime: airtime });
+    });
+    var perAp = aps.map(function (ap, i) {
+      var members = attached[i] || [], standard = ap.standard;
+      var users = muMimoUsers(config, standard, standard !== undefined ? apStreams(config, ap) : 1, members.length);
+      var ofdma = ofdmaCapacityGain(config, standard, members.length), mu = muMimoCapacityGain(config, users);
+      var raw = members.reduce(function (s, m) { return s + m.airtime; }, 0), load = raw / (ofdma * mu);
+      members.forEach(function (m) {
+        m.entry.airtime_pct = roundTo(100.0 * m.airtime / (ofdma * mu), 1);
+        m.entry.delivered_mbps = roundTo(m.entry.demand_mbps / Math.max(1.0, load), 2);
+        m.entry.satisfied = load <= 1.0;
+      });
+      return { id: ap.id, clients: members.length, demand_mbps: roundTo(members.reduce(function (s, m) { return s + m.entry.demand_mbps; }, 0), 2),
+               raw_airtime_pct: roundTo(100.0 * raw, 1), ofdma_gain: roundTo(ofdma, 3), mu_mimo_users: users,
+               mu_mimo_gain: roundTo(mu, 3), airtime_pct: roundTo(100.0 * load, 1), saturated: load > 1.0 };
+    });
+    return { label: CLIENT_LABEL, clients: entries, aps: perAp,
+             demand_mbps: roundTo(entries.reduce(function (s, e) { return s + e.demand_mbps; }, 0), 2),
+             delivered_mbps: roundTo(entries.reduce(function (s, e) { return s + e.delivered_mbps; }, 0), 2),
+             satisfied_pct: entries.length ? roundTo(100.0 * entries.filter(function (e) { return e.satisfied; }).length / entries.length, 1) : 0.0 };
   }
 
   /** coverageGrid, apGrids and analytics for one floor in one call (like rfmodel.analyze_floor). */
@@ -932,7 +1036,7 @@
       return Object.assign({}, src, { grid: [].concat.apply([], grid) });
     });
     var grid = coverageGrid(project, floorId, shared);
-    return { analytics: analytics(grid, apGrids(project, floorId, shared), o.env.config, mloGrids, external), grid: grid };
+    return { analytics: analytics(grid, apGrids(project, floorId, shared), o.env.config, mloGrids, external, findFloor(project, floorId).clients), grid: grid };
   }
 
   /** (walls, openings) crossed by the straight path p->q; a crossing through an opening counts as an opening. */
@@ -1048,7 +1152,7 @@
       walls.push({ wall: w.id, material: w.material, material_label: w.label, through: through, loss_db: roundTo(loss, 2) });
     });
     var wallsDb = walls.reduce(function (sum, w) { return sum + w.loss_db; }, 0);
-    var floorFull = cfg.floor_loss_db[band] * apart, floorDb = floorPenetrationDb(cfg, ap, apFloor, floor, x, y, apart, band);
+    var floorFull = cfg.floor_loss_db[band] * floorsCrossed(cfg, apFloor, floor, apart), floorDb = floorPenetrationDb(cfg, ap, apFloor, floor, x, y, apart, band);
     var total = roundTo(path, 2) + wallsDb + roundTo(floorDb, 2);
     var direct = ap.tx_dbm + gain - total;
     var indirect = [];
@@ -1243,7 +1347,10 @@
               resolveInterferers: resolveInterferers, externalCoupling: externalCoupling, packetErrorRate: packetErrorRate,
               linkReliability: linkReliability, spectrumAnalysis: spectrumAnalysis, signalDecay: signalDecay,
               inVoid: inVoid, floorPenetrationDb: floorPenetrationDb, apRadio: apRadio, sourceSpanMhz: sourceSpanMhz,
-              channelCentreMhz: channelCentreMhz };
+              channelCentreMhz: channelCentreMhz,
+              floorsCrossed: floorsCrossed, materialFields: materialFields, applyApProfile: applyApProfile,
+              ofdmaCapacityGain: ofdmaCapacityGain, muMimoUsers: muMimoUsers, muMimoCapacityGain: muMimoCapacityGain,
+              beamformingGainDb: beamformingGainDb, clientCapacitySection: clientCapacitySection };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFEngine = api;
 })(typeof self !== "undefined" ? self : this);

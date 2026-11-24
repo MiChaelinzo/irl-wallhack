@@ -327,10 +327,19 @@ def in_void(floor: dict, x: float, y: float) -> bool:
     return False
 
 
+def floors_crossed(ap_floor: dict, floor: dict, floors_apart: int, config: dict = CONFIG) -> float:
+    """Floors the signal crosses for the floor loss. It is `floors_apart` (the level difference) unless both floors set
+    `elevation_m`, then |elevation difference| / floor_elevation.reference_height_m, at least one, so a tall or a deep
+    floor-to-floor gap costs more than one standard floor. Legacy projects without elevation_m keep the whole count."""
+    if floors_apart == 0 or "elevation_m" not in ap_floor or "elevation_m" not in floor:
+        return floors_apart
+    return max(1.0, abs(floor["elevation_m"] - ap_floor["elevation_m"]) / config["floor_elevation"]["reference_height_m"])
+
+
 def floor_penetration_db(ap: dict, ap_floor: dict, floor: dict, x: float, y: float, floors_apart: int, band: str) -> float:
     """Floor loss between the AP floor and the receiving floor. Every path end that sits inside a void on its own
     floor removes `voids.open_end_reduction` of it (capped at all of it). Without voids it is floor_loss_db x floors."""
-    base = CONFIG["floor_loss_db"][band] * floors_apart
+    base = CONFIG["floor_loss_db"][band] * floors_crossed(ap_floor, floor, floors_apart)
     if floors_apart == 0:
         return base
     open_ends = int(in_void(ap_floor, ap["x"], ap["y"])) + int(in_void(floor, x, y))
@@ -470,7 +479,7 @@ def _ap_radio(ap: dict, band: str) -> Tuple[int, int]:
 
 
 AP_MODEL_FIELDS = ("standard", "spatial_streams", "mlo_bands", "antenna_gain_dbi", "azimuth_deg", "pattern",
-                   "beamwidth_deg", "front_to_back_db")   # optional AP fields, copied to ap_grids output when set
+                   "beamwidth_deg", "front_to_back_db", "beamforming")   # optional AP fields, copied to ap_grids output when set
 SINR_LABEL = "MODEL ESTIMATE: SINR throughput from co-channel and adjacent-channel interference, not a measurement"
 
 
@@ -807,13 +816,15 @@ def _table_width(ap: dict, config: dict) -> int:
 
 
 def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_grids: Optional[dict] = None,
-              external: Optional[List[dict]] = None) -> dict:
+              external: Optional[List[dict]] = None, placed_clients: Optional[List[dict]] = None) -> dict:
     """Coverage analytics of one floor. `grid_result` is a coverage_grid result, `aps` the ap_grids list.
 
     ESTIMATES only. See docs/rf-planner.md for every formula. When any AP sets `standard` the result gains
     a "sinr" section (all other fields are unchanged). `mlo_grids` maps an AP id to {band: RSSI grid} of its
     extra MLO links, built by analyze_floor. `external` lists resolved non-WiFi and neighbour sources with their flat
     RSSI `grid` (resolve_interferers plus a grid per source, built by analyze_floor), folded into the "sinr" section.
+    `placed_clients` lists the Smart Home client devices of the floor; when it is not empty the result gains a "clients"
+    section (client_capacity_section), otherwise every field is as before.
     """
     a = config["analytics"]
     rows, cols, cell_m = grid_result["rows"], grid_result["cols"], grid_result["cell_m"]
@@ -913,7 +924,153 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
         "aps": per_ap, "total_client_capacity": sum(e["client_capacity"] for e in per_ap)}
     if any("standard" in ap for ap in aps):
         result["sinr"] = _sinr_section(aps, best_ap, flats, cols, rows, config, mlo_grids, external, cell_m)
+    if placed_clients:
+        result["clients"] = client_capacity_section(placed_clients, aps, best_ap, best, cols, rows, cell_m, config)
     return result
+
+
+
+# ---------------------------------------------------------------- v2 data models (ESTIMATES)
+CLIENT_LABEL = "CAPACITY MODEL: client demand against estimated link rates, OFDMA, MU-MIMO and beamforming are planning models, not measurements"
+MATERIAL_BAND_FIELDS = {"2.4": "attenuation24GHz", "5": "attenuation5GHz", "6": "attenuation6GHz"}
+
+
+def db_to_power_fraction(loss_db: float) -> float:
+    """Linear power fraction left after `loss_db` of loss: 10^(-dB / 10)."""
+    return 10.0 ** (-loss_db / 10.0)
+
+
+def material_fields(material: dict, band: str = DEFAULT_BAND) -> dict:
+    """Derived, read-only material fields, computed from the stored per-band dB values (nothing new is stored, so
+    saved projects and custom materials are unaffected).
+
+    attenuation24GHz, attenuation5GHz, attenuation6GHz: `attenuation_db` per band, in dB.
+    penetrationRate: power fraction that passes the wall at `band`, 10^(-attenuation_db / 10).
+    reflectionRate: power fraction that is reflected at `band`, 10^(-reflection_loss_db / 10).
+    The rates are linear fractions (0 to 1) rounded to 4 decimals. MODEL ESTIMATE from typical dB values. Bands the
+    material does not define give None for their attenuation field."""
+    check_band(band)
+    out = {name: material["attenuation_db"].get(b) for b, name in MATERIAL_BAND_FIELDS.items()}
+    out["penetrationRate"] = _round(db_to_power_fraction(material["attenuation_db"][band]), 4)
+    out["reflectionRate"] = _round(db_to_power_fraction(material["reflection_loss_db"][band]), 4)
+    return out
+
+
+def ap_profile(profile_id: str, config: dict = CONFIG) -> dict:
+    profiles = config["ap_profiles"]["profiles"]
+    if profile_id not in profiles:
+        raise ValueError(f"profile must be one of {list(profiles)}")
+    return profiles[profile_id]
+
+
+def apply_ap_profile(ap: dict, profile_id: str, band: Optional[str] = None, config: dict = CONFIG) -> dict:
+    """A copy of `ap` with the radio fields of a generic class profile: band, standard, spatial_streams, tx_dbm (for
+    that band), antenna_gain_dbi, pattern, beamforming and `profile`. Position, id and name stay. Fields that depend on
+    the radio and the previous band (channel, width_mhz, MLO links and sector settings) are dropped so the result is valid."""
+    profile = ap_profile(profile_id, config)
+    chosen = band or profile["band"]
+    if chosen not in profile["bands"]:
+        raise ValueError(f"profile {profile_id!r} supports the bands {profile['bands']}")
+    keep = {k: v for k, v in ap.items() if k in ("id", "x", "y", "name")}
+    keep.update({"tx_dbm": profile["tx_dbm"][chosen], "band": chosen, "standard": profile["standard"],
+                 "spatial_streams": profile["spatial_streams"], "antenna_gain_dbi": profile["antenna_gain_dbi"],
+                 "pattern": profile["pattern"], "beamforming": profile["beamforming"], "profile": profile_id})
+    return keep
+
+
+def ap_streams(ap: dict, config: dict = CONFIG) -> int:
+    return ap.get("spatial_streams") or default_streams(ap["standard"], config)
+
+
+def ofdma_capacity_gain(standard: Optional[str], n_clients: int, config: dict = CONFIG) -> float:
+    """CAPACITY MODEL: airtime capacity multiplier from OFDMA. 1 + gain x min(1, (n - 1) / saturation_clients), so a
+    single client gains nothing and the gain saturates. Standards without OFDMA give 1."""
+    m = config["capacity_models"]["ofdma"]
+    gain = m["gain_by_standard"].get(standard)
+    if gain is None or n_clients < 2:
+        return 1.0
+    return 1.0 + gain * min(1.0, (n_clients - 1) / m["saturation_clients"])
+
+
+def mu_mimo_users(standard: Optional[str], streams: int, n_clients: int, config: dict = CONFIG) -> int:
+    """CAPACITY MODEL: clients served at the same time, min(clients, AP streams, standard maximum). 1 without MU-MIMO."""
+    limit = config["capacity_models"]["mu_mimo"]["max_users_by_standard"].get(standard)
+    if limit is None or n_clients < 1:
+        return 1
+    return max(1, min(n_clients, streams, limit))
+
+
+def mu_mimo_capacity_gain(users: int, config: dict = CONFIG) -> float:
+    """CAPACITY MODEL: spatial stream sharing, 1 + (users - 1) x spatial_efficiency."""
+    return 1.0 + (users - 1) * config["capacity_models"]["mu_mimo"]["spatial_efficiency"]
+
+
+def beamforming_gain_db(ap: dict, config: dict = CONFIG) -> float:
+    """CAPACITY MODEL: steered pattern gain towards a client, in dB. Zero unless the AP sets `beamforming` and its
+    standard supports it. min(max_gain_db, array_gain_db_per_doubling x log2(streams) x steering_efficiency)."""
+    m = config["capacity_models"]["beamforming"]
+    if not ap.get("beamforming") or ap.get("standard") not in m["standards"]:
+        return 0.0
+    return min(m["max_gain_db"], m["array_gain_db_per_doubling"] * math.log2(ap_streams(ap, config)) * m["steering_efficiency"])
+
+
+def client_capacity_section(clients: List[dict], aps: List[dict], best_ap: List[int], best: List[float], cols: int,
+                            rows: int, cell_m: float, config: dict = CONFIG) -> dict:
+    """Smart Home client demand against the estimated link of each client (CAPACITY MODEL).
+
+    Each client attaches to the strongest AP of its cell. It cannot attach when no AP covers the cell (`no_coverage`),
+    when the AP band is not in the device bands (`band_unsupported`) or when the link rate is zero (`no_link`).
+    The link rate is the legacy throughput estimate at the client RSSI plus the AP beamforming gain. Per AP the raw
+    airtime load is the sum of demand / link rate, divided by the OFDMA and MU-MIMO capacity gains. A load above 1
+    saturates the AP and every attached client then receives demand / load."""
+    devices = config["client_devices"]["devices"]
+    attached: Dict[int, List[dict]] = {}
+    entries = []
+    for c in clients:
+        dev = devices[c["device"]]
+        col = min(cols - 1, max(0, int(math.floor(c["x"] / cell_m))))
+        row = min(rows - 1, max(0, int(math.floor(c["y"] / cell_m))))
+        n = row * cols + col
+        i = best_ap[n]
+        entry = {"id": c["id"], "device": c["device"], "ap": aps[i]["id"] if i >= 0 else None, "status": "ok",
+                 "rssi_dbm": _round(best[n], 1), "beamforming_gain_db": 0.0, "link_mbps": 0.0,
+                 "demand_mbps": dev["demand_mbps"], "airtime_pct": 0.0, "delivered_mbps": 0.0, "satisfied": False}
+        entries.append(entry)
+        if i < 0:
+            entry["status"] = "no_coverage"
+            continue
+        if aps[i]["band"] not in dev["bands"]:
+            entry["status"] = "band_unsupported"
+            continue
+        gain = beamforming_gain_db(aps[i], config)
+        link = estimated_throughput_mbps(best[n] + gain, aps[i]["band"], _table_width(aps[i], config), config)
+        if link <= 0.0:
+            entry["status"] = "no_link"
+            continue
+        entry["beamforming_gain_db"], entry["link_mbps"] = _round(gain, 2), _round(link, 1)
+        entry["_airtime"] = dev["demand_mbps"] / link
+        attached.setdefault(i, []).append(entry)
+    per_ap = []
+    for i, ap in enumerate(aps):
+        members = attached.get(i, [])
+        standard = ap.get("standard")
+        users = mu_mimo_users(standard, ap_streams(ap, config) if standard else 1, len(members), config)
+        ofdma, mu = ofdma_capacity_gain(standard, len(members), config), mu_mimo_capacity_gain(users, config)
+        raw = sum(m["_airtime"] for m in members)
+        load = raw / (ofdma * mu)
+        for m in members:
+            m["airtime_pct"] = _round(100.0 * m["_airtime"] / (ofdma * mu), 1)
+            m["delivered_mbps"] = _round(m["demand_mbps"] / max(1.0, load), 2)
+            m["satisfied"] = load <= 1.0
+        per_ap.append({"id": ap["id"], "clients": len(members), "demand_mbps": _round(sum(m["demand_mbps"] for m in members), 2),
+                       "raw_airtime_pct": _round(100.0 * raw, 1), "ofdma_gain": _round(ofdma, 3), "mu_mimo_users": users,
+                       "mu_mimo_gain": _round(mu, 3), "airtime_pct": _round(100.0 * load, 1), "saturated": load > 1.0})
+    for e in entries:
+        e.pop("_airtime", None)
+    demand = sum(e["demand_mbps"] for e in entries)
+    return {"label": CLIENT_LABEL, "clients": entries, "aps": per_ap,
+            "demand_mbps": _round(demand, 2), "delivered_mbps": _round(sum(e["delivered_mbps"] for e in entries), 2),
+            "satisfied_pct": _round(100.0 * sum(1 for e in entries if e["satisfied"]) / len(entries), 1) if entries else 0.0}
 
 
 def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, band: Optional[str] = None,
@@ -931,7 +1088,8 @@ def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, ban
         pseudo = {"id": src["id"], "x": src["x"], "y": src["y"], "tx_dbm": src["tx_dbm"], "band": src["band"]}
         grid = ap_grids(twin, floor_id, cell_m, [(pseudo, floor_by_id(twin, src["floor"]))], src["band"], mode)[0]["grid"]
         external.append(dict(src, grid=[v for row in grid for v in row]))
-    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids, external)
+    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids, external,
+                     floor_by_id(twin, floor_id).get("clients"))
 
 
 def _obstructions(floor: dict, px: float, py: float, qx: float, qy: float) -> Tuple[int, int]:
@@ -1069,7 +1227,7 @@ def _explain(twin: dict, floor: dict, ap: dict, ap_floor: dict, x: float, y: flo
         walls.append({"wall": wall["id"], "material": name, "material_label": materials[name]["label"],
                       "through": opening["kind"] if opening else "wall", "loss_db": _round(loss, 2)})
     walls_db = sum(w["loss_db"] for w in walls)
-    floor_full = CONFIG["floor_loss_db"][band] * apart
+    floor_full = CONFIG["floor_loss_db"][band] * floors_crossed(ap_floor, floor, apart)
     floor_db = floor_penetration_db(ap, ap_floor, floor, x, y, apart, band)
     total = _round(path, 2) + walls_db + _round(floor_db, 2)
     direct = ap["tx_dbm"] + gain - total
