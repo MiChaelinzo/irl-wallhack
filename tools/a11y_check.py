@@ -117,7 +117,7 @@ def main() -> int:
                 ("planner timeline tab (live)", targets[0][1], planner_ready, "twinlab"),
                 ("planner beams tab (live)", targets[0][1], planner_ready, "beams"),
                 ("judge (live)", "http://127.0.0.1:%d/judge" % PORT, "document.querySelectorAll('.judge-item').length > 0"),
-                ("mobile companion (live)", "http://127.0.0.1:%d/mobile" % PORT, "document.readyState === 'complete'")]
+                ("mobile companion (live)", "http://127.0.0.1:%d/mobile" % PORT, "document.getElementById('mConn').textContent !== 'connecting'")]
     if (ROOT / "dist" / "planner.html").is_file():
         servers.append(subprocess.Popen([sys.executable, "-m", "http.server", str(DEMO_PORT), "--bind", "127.0.0.1", "--directory", str(ROOT / "dist")],
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))

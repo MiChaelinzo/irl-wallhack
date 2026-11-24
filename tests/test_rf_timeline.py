@@ -154,7 +154,36 @@ def test_sample_cap_is_enforced_while_sampling_a_segment():
 @pytest.mark.parametrize("bad", [
     [None], ["g"], [{"floor": "g", "x": 1.0}], [{"x": 1.0, "y": 1.0}], [{"floor": 3, "x": 1.0, "y": 1.0}],
     [{"floor": "g", "x": "1", "y": 1.0}], [{"floor": "g", "x": True, "y": 1.0}], [{"floor": "g", "x": float("nan"), "y": 1.0}],
+    [{"floor": "g", "x": 10 ** 400, "y": 1.0}],
 ])
 def test_malformed_waypoints_raise_value_error(bad):
     with pytest.raises(ValueError):
         rfmodel.signal_timeline(corridor([(5.0, 3.0)]), bad)
+
+
+@needs_node
+def test_javascript_timeline_cap_and_waypoint_validation_match_python():
+    """rf-engine.js rejects the same malformed waypoints and the same oversized segment as rfmodel."""
+    project = corridor([(5.0, 3.0)])
+    huge = [{"floor": "g", "x": 0.0, "y": 3.0}, {"floor": "g", "x": 1e12, "y": 3.0}]
+    bad = [[None], ["g"], [{"floor": "g", "x": 1.0}], [{"x": 1.0, "y": 1.0}], [{"floor": 3, "x": 1.0, "y": 1.0}],
+           [{"floor": "g", "x": "1", "y": 1.0}], [{"floor": "g", "x": True, "y": 1.0}], [{"floor": "g", "x": None, "y": 1.0}]]
+    js = """
+      const E = require(process.argv[1] + '/rf-engine.js');
+      const P = JSON.parse(require('fs').readFileSync(0, 'utf8')), env = E.makeEnv(P.config);
+      const msg = (path) => { try { E.signalTimeline(P.project, path, {env}); return null; } catch (e) { return e.message; } };
+      const start = Date.now();
+      const capped = msg(P.huge);
+      console.log(JSON.stringify({capped, ms: Date.now() - start, bad: P.bad.map(msg)}));
+    """
+    res = subprocess.run(["node", "-e", js, str(STATIC)], capture_output=True, text=True,
+                         input=json.dumps({"config": rfmodel.CONFIG, "project": project, "huge": huge, "bad": bad}))
+    assert res.returncode == 0, res.stderr
+    got = json.loads(res.stdout)
+    assert got["capped"] and "samples" in got["capped"] and got["ms"] < 5000
+    for path, message in zip(bad, got["bad"]):
+        assert message == "each waypoint needs a floor id and finite numeric x and y", path
+        with pytest.raises(ValueError, match="each waypoint needs"):
+            rfmodel.signal_timeline(project, path)
+    with pytest.raises(ValueError, match="samples"):
+        rfmodel.signal_timeline(project, huge)
