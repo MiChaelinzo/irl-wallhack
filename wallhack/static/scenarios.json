@@ -1636,6 +1636,811 @@
     "sample": true,
     "units": "m"
    }
+  },
+  {
+   "description": "Drywall wards along a corridor, a steel lined imaging suite and three corridor APs that all use channel 36.",
+   "id": "hospital_ward",
+   "learn": "Medical devices and clinical apps need dependable roaming. Walk a path down the corridor in Timeline and check the handoffs, then run the channel plan.",
+   "name": "Hospital ward",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "5",
+        "channel": 36,
+        "id": "ap-west",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 7.0,
+        "y": 10.0
+       },
+       {
+        "band": "5",
+        "channel": 36,
+        "id": "ap-mid",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 20.0,
+        "y": 10.0
+       },
+       {
+        "band": "5",
+        "channel": 36,
+        "id": "ap-east",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 33.0,
+        "y": 10.0
+       }
+      ],
+      "depth_m": 20.0,
+      "furniture": [],
+      "height_m": 3.0,
+      "id": "ward",
+      "level": 0,
+      "name": "Hospital ward",
+      "openings": [
+       {
+        "id": "ward-i1-door",
+        "kind": "door",
+        "pos": 3.0,
+        "wall": "ward-i1",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i2-door",
+        "kind": "door",
+        "pos": 34.0,
+        "wall": "ward-i2",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i3-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i3",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i4-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i4",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i5-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i5",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i6-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i6",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i7-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i7",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i8-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i8",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i9-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i9",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i10-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i10",
+        "width": 0.9
+       },
+       {
+        "id": "ward-i11-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "ward-i11",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 8,
+        "id": "n0",
+        "name": "Ward 1",
+        "w": 8,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "n1",
+        "name": "Ward 2",
+        "w": 8,
+        "x": 8,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "n2",
+        "name": "Ward 3",
+        "w": 8,
+        "x": 16,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "n3",
+        "name": "Ward 4",
+        "w": 8,
+        "x": 24,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "n4",
+        "name": "Ward 5",
+        "w": 8,
+        "x": 32,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "s0",
+        "name": "Ward 6",
+        "w": 8,
+        "x": 0,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "s1",
+        "name": "Ward 7",
+        "w": 8,
+        "x": 8,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "s2",
+        "name": "Ward 8",
+        "w": 8,
+        "x": 16,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "s3",
+        "name": "Ward 9",
+        "w": 8,
+        "x": 24,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "imaging",
+        "name": "Imaging suite",
+        "w": 8,
+        "x": 32,
+        "y": 12
+       },
+       {
+        "d": 4,
+        "id": "corridor",
+        "name": "Corridor",
+        "w": 40,
+        "x": 0,
+        "y": 8
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "ward-x0",
+        "kind": "exterior",
+        "material": "reinforced_concrete",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "ward-x1",
+        "kind": "exterior",
+        "material": "reinforced_concrete",
+        "x1": 40.0,
+        "x2": 40.0,
+        "y1": 0,
+        "y2": 20.0
+       },
+       {
+        "id": "ward-x2",
+        "kind": "exterior",
+        "material": "reinforced_concrete",
+        "x1": 40.0,
+        "x2": 0,
+        "y1": 20.0,
+        "y2": 20.0
+       },
+       {
+        "id": "ward-x3",
+        "kind": "exterior",
+        "material": "reinforced_concrete",
+        "x1": 0,
+        "x2": 0,
+        "y1": 20.0,
+        "y2": 0
+       },
+       {
+        "id": "ward-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 8.0,
+        "y2": 8.0
+       },
+       {
+        "id": "ward-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 12.0,
+        "y2": 12.0
+       },
+       {
+        "id": "ward-i3",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "ward-i4",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 12.0,
+        "y2": 20.0
+       },
+       {
+        "id": "ward-i5",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 16.0,
+        "x2": 16.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "ward-i6",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 16.0,
+        "x2": 16.0,
+        "y1": 12.0,
+        "y2": 20.0
+       },
+       {
+        "id": "ward-i7",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 24.0,
+        "x2": 24.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "ward-i8",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 24.0,
+        "x2": 24.0,
+        "y1": 12.0,
+        "y2": 20.0
+       },
+       {
+        "id": "ward-i9",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 32.0,
+        "x2": 32.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "ward-i10",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 32.0,
+        "x2": 32.0,
+        "y1": 12.0,
+        "y2": 20.0
+       },
+       {
+        "id": "ward-i11",
+        "kind": "interior",
+        "material": "steel",
+        "x1": 32.0,
+        "x2": 32.0,
+        "y1": 12.0,
+        "y2": 20.0
+       }
+      ],
+      "width_m": 40.0
+     }
+    ],
+    "interferers": [
+     {
+      "floor": "ward",
+      "id": "staff-microwave",
+      "kind": "microwave",
+      "x": 4.0,
+      "y": 10.5
+     }
+    ],
+    "name": "Hospital ward",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "A router downstairs, clients on both floors (TV, camera, console, laptop) and no AP upstairs.",
+   "id": "smart_home",
+   "learn": "Use Recommendations to see whether a mesh node upstairs beats moving the router.",
+   "name": "Smart home",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "5",
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 17.0,
+        "x": 2.0,
+        "y": 7.0
+       }
+      ],
+      "clients": [
+       {
+        "device": "tv",
+        "id": "tv",
+        "x": 10.0,
+        "y": 4.0
+       },
+       {
+        "device": "camera",
+        "id": "cam",
+        "x": 11.0,
+        "y": 8.0
+       },
+       {
+        "device": "phone",
+        "id": "phone",
+        "x": 3.0,
+        "y": 2.0
+       },
+       {
+        "device": "iot",
+        "id": "plug",
+        "x": 9.0,
+        "y": 1.0
+       }
+      ],
+      "depth_m": 9.0,
+      "furniture": [],
+      "height_m": 2.6,
+      "id": "ground",
+      "level": 0,
+      "name": "Ground floor",
+      "openings": [
+       {
+        "id": "ground-i1-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "ground-i1",
+        "width": 0.9
+       },
+       {
+        "id": "ground-i2-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "ground-i2",
+        "width": 0.9
+       },
+       {
+        "id": "ground-win2",
+        "kind": "window",
+        "pos": 3.0,
+        "wall": "ground-x0",
+        "width": 1.6
+       },
+       {
+        "id": "ground-win3",
+        "kind": "window",
+        "pos": 7.0,
+        "wall": "ground-x2",
+        "width": 1.6
+       }
+      ],
+      "rooms": [
+       {
+        "d": 9,
+        "id": "living",
+        "name": "Living room",
+        "w": 6,
+        "x": 6,
+        "y": 0
+       },
+       {
+        "d": 5,
+        "id": "kitchen",
+        "name": "Kitchen",
+        "w": 6,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 4,
+        "id": "hall",
+        "name": "Hall",
+        "w": 6,
+        "x": 0,
+        "y": 5
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "ground-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "ground-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "ground-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 9.0
+       },
+       {
+        "id": "ground-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 0
+       },
+       {
+        "id": "ground-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 6.0,
+        "x2": 6.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "ground-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 6.0,
+        "y1": 5.0,
+        "y2": 5.0
+       }
+      ],
+      "width_m": 12.0
+     },
+     {
+      "aps": [],
+      "clients": [
+       {
+        "device": "phone",
+        "id": "tablet",
+        "x": 10.0,
+        "y": 4.0
+       },
+       {
+        "device": "console",
+        "id": "console",
+        "x": 6.0,
+        "y": 6.0
+       }
+      ],
+      "depth_m": 9.0,
+      "furniture": [],
+      "height_m": 2.6,
+      "id": "upper",
+      "level": 1,
+      "name": "Upper floor",
+      "openings": [
+       {
+        "id": "upper-i1-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "upper-i1",
+        "width": 0.9
+       },
+       {
+        "id": "upper-i2-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "upper-i2",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 9,
+        "id": "bed1",
+        "name": "Bedroom 1",
+        "w": 4,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 9,
+        "id": "bed2",
+        "name": "Bedroom 2",
+        "w": 4,
+        "x": 4,
+        "y": 0
+       },
+       {
+        "d": 9,
+        "id": "study",
+        "name": "Study",
+        "w": 4,
+        "x": 8,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "upper-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "upper-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "upper-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 9.0
+       },
+       {
+        "id": "upper-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 0
+       },
+       {
+        "id": "upper-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 4.0,
+        "x2": 4.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "upper-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 9.0
+       }
+      ],
+      "width_m": 12.0
+     }
+    ],
+    "name": "Smart home",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "A flat between two others, with concrete party walls and three neighbour networks, two on the router's channel 6.",
+   "id": "apartment_neighbours",
+   "learn": "Shared concrete walls shield the signal but neighbours still raise the noise on channel 6. Run the SINR channel plan and compare.",
+   "name": "Apartment with neighbours",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "2.4",
+        "channel": 6,
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 17.0,
+        "x": 1.0,
+        "y": 6.0
+       }
+      ],
+      "depth_m": 7.0,
+      "furniture": [],
+      "height_m": 2.5,
+      "id": "flat",
+      "level": 0,
+      "name": "Flat 3B",
+      "openings": [
+       {
+        "id": "flat-i1-door",
+        "kind": "door",
+        "pos": 3.0,
+        "wall": "flat-i1",
+        "width": 0.9
+       },
+       {
+        "id": "flat-win1",
+        "kind": "window",
+        "pos": 2.0,
+        "wall": "flat-x1",
+        "width": 1.6
+       }
+      ],
+      "rooms": [
+       {
+        "d": 7,
+        "id": "living",
+        "name": "Living room",
+        "w": 5,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 7,
+        "id": "bedroom",
+        "name": "Bedroom",
+        "w": 5,
+        "x": 5,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "flat-x0",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 0,
+        "x2": 10.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "flat-x1",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 10.0,
+        "x2": 10.0,
+        "y1": 0,
+        "y2": 7.0
+       },
+       {
+        "id": "flat-x2",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 10.0,
+        "x2": 0,
+        "y1": 7.0,
+        "y2": 7.0
+       },
+       {
+        "id": "flat-x3",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 0,
+        "x2": 0,
+        "y1": 7.0,
+        "y2": 0
+       },
+       {
+        "id": "flat-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 5.0,
+        "y1": 0,
+        "y2": 7.0
+       }
+      ],
+      "width_m": 10.0
+     }
+    ],
+    "interferers": [
+     {
+      "band": "2.4",
+      "channel": 6,
+      "floor": "flat",
+      "id": "flat-3a",
+      "kind": "neighbour_wifi",
+      "x": 0.2,
+      "y": 3.0
+     },
+     {
+      "band": "2.4",
+      "channel": 6,
+      "floor": "flat",
+      "id": "flat-3c",
+      "kind": "neighbour_wifi",
+      "x": 9.8,
+      "y": 3.0
+     },
+     {
+      "band": "2.4",
+      "channel": 11,
+      "floor": "flat",
+      "id": "flat-2b",
+      "kind": "neighbour_wifi",
+      "x": 5.0,
+      "y": 0.2
+     }
+    ],
+    "name": "Apartment with neighbours",
+    "sample": true,
+    "units": "m"
+   }
   }
  ],
  "schema_version": 1

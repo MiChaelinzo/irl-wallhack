@@ -11,7 +11,8 @@ from wallhack.app import STATIC
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 
-EXPECTED_IDS = ["small_apartment", "large_home", "office_floor", "school_building", "warehouse", "hotel_floor", "coffee_shop"]
+EXPECTED_IDS = ["small_apartment", "large_home", "office_floor", "school_building", "warehouse", "hotel_floor", "coffee_shop",
+                "hospital_ward", "smart_home", "apartment_neighbours"]
 PRELUDE = """
 const S = require(process.argv[1] + '/planner-state.js'), E = require(process.argv[1] + '/rf-engine.js'), O = require(process.argv[1] + '/rf-optimizer.js');
 const config = JSON.parse(require('fs').readFileSync(0, 'utf8')), env = E.makeEnv(config);
