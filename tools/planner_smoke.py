@@ -3,7 +3,7 @@
 
 Draws a wall with the mouse, undoes and redoes it, drags an access point, loads a generated PNG as a floor
 plan and calibrates its scale, checks the tooltip, keyboard probe, context menu and heat-map label, and
-saves docs/screenshot-planner.png. Fails on any console error, page error or HTTP error.
+saves the per-tab docs/screenshot-planner-<tab>.png shots (live run only; --demo and --canvas2d write to a temp folder). Fails on any console error, page error or HTTP error.
 Needs the optional `playwright` package and a browser: pip install playwright && playwright install chromium
 Usage: tools/planner_smoke.py [--demo] [--canvas2d] [--no-worker] [--no-screenshot]
 """
@@ -143,7 +143,7 @@ def run(page, base, problems, args):
     run_view3d_features(page, problems, args)
     run_learn_features(page, problems, args)
     if not args.no_screenshot:
-        page.screenshot(path=str(docs_dir(args) / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
+        page.screenshot(path=str(Path(tempfile.gettempdir()) / "wallhack-smoke-planner.png"))   # docs/screenshot-planner.png is owned by screenshot.py
 
 
 SPARSE = {"name": "Smoke plan", "floors": [{
@@ -521,7 +521,7 @@ def run_lab_features(page, problems, args):
         lab_idle(page); page.wait_for_timeout(300)
         tab(page, "layers")
         page.evaluate("window.scrollTo(0, 0)")
-        page.screenshot(path=str(docs / ("screenshot-planner-layers%s.png" % suffix)), full_page=True)
+        page.screenshot(path=str(docs / ("screenshot-planner-layers%s.png" % suffix)))
         page.select_option("#layerSel", "rssi"); page.select_option("#paletteSel", "classic")
         for name in ("dashboard", "spectrum"):
             tab(page, name)
@@ -681,7 +681,7 @@ def run_learn_features(page, problems, args):
     page.wait_for_function("() => /Lesson complete/.test(document.getElementById('lessonBox').innerText)", timeout=15000)
     if not args.no_screenshot:
         page.evaluate("window.scrollTo(0, 0)")
-        page.screenshot(path=str(docs / ("screenshot-planner-learn%s.png" % suffix)), full_page=True)
+        page.screenshot(path=str(docs / ("screenshot-planner-learn%s.png" % suffix)))
     page.click("#learnBtn")
     # plan, recommendations and explanation
     page.select_option("#presetSel", "hotel_floor"); page.click("#presetLoad"); wait_idle(page)

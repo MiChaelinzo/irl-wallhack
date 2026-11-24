@@ -5,7 +5,7 @@ Writes docs/screenshot.png (desktop), docs/screenshot-3d.png (3D view close-up) 
 docs/screenshot-mobile.png (phone width). Needs the optional `playwright` package and a browser:
 pip install playwright && playwright install chromium
 With --demo it serves the built static demo (run tools/build_demo.py first) and writes
-docs/screenshot-demo.png instead; it also requires the replay banner.
+docs/screenshot-demo.png instead (the other demo pages are only checked, their shots go to a temp folder); it also requires the replay banner.
 Also captures the timeline, insights and game cards and the mobile companion and judge pages
 (docs/screenshot-<name>.png), loading each page and checking it renders.
 Also captures the RF planner (docs/screenshot-planner*.png: heat map with bands and contours, compare, analytics,
@@ -16,6 +16,7 @@ import argparse
 import base64
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.request import urlopen
@@ -79,7 +80,7 @@ def capture_extras(browser, base, errors, problems, docs, pages, demo=False):
     count = judge.locator(".judge-item").count()
     if count < MIN_JUDGE_ITEMS:
         problems.append("judge page lists only %d items" % count)
-    judge.screenshot(path=str(docs / (prefix + "judge.png")), full_page=True)
+    judge.screenshot(path=str(docs / (prefix + "judge.png")))
     judge.close()
 
 
@@ -141,7 +142,7 @@ def capture_planner(browser, base, errors, problems, docs, demo=False):
     page.wait_for_function("document.getElementById('tgBands').checked")
     page.wait_for_timeout(500)
     planner_check(page, "main", problems)
-    page.screenshot(path=str(docs / ("screenshot-planner%s.png" % suffix)), full_page=True)
+    page.screenshot(path=str(docs / ("screenshot-planner%s.png" % suffix)))
     planner_tab(page, "analytics")
     page.wait_for_function("window.PlannerApp.panels.state.analysis && window.PlannerApp.panels.state.analysis.floor === 'g'", timeout=15000)
     page.locator("#panel-analytics").screenshot(path=str(docs / ("screenshot-planner-analytics%s.png" % suffix)))
@@ -165,7 +166,7 @@ def capture_planner(browser, base, errors, problems, docs, demo=False):
     page.evaluate(PLANNER_IDLE_JS)
     page.wait_for_timeout(500)
     planner_check(page, "light theme", problems)
-    page.screenshot(path=str(docs / ("screenshot-planner-light%s.png" % suffix)), full_page=True)
+    page.screenshot(path=str(docs / ("screenshot-planner-light%s.png" % suffix)))
     page.close()
     mobile = browser.new_page(viewport=MOBILE)
     watch(mobile, errors)
@@ -174,7 +175,7 @@ def capture_planner(browser, base, errors, problems, docs, demo=False):
     mobile.evaluate("(p) => window.PlannerApp.loadProject(p)", PLANNER_PLAN)
     planner_wait(mobile)
     planner_check(mobile, "phone width", problems)
-    mobile.screenshot(path=str(docs / ("screenshot-planner-mobile%s.png" % suffix)), full_page=True)
+    mobile.screenshot(path=str(docs / ("screenshot-planner-mobile%s.png" % suffix)))
     mobile.close()
 
 
@@ -237,11 +238,14 @@ def main_demo() -> int:
             page.wait_for_function("document.getElementById('conn').textContent === 'demo replay'", timeout=15000)
             page.wait_for_timeout(DEMO_SETTLE_MS)
             check(page, problems, demo=True)
-            page.screenshot(path=str(ROOT / "docs" / "screenshot-demo.png"), full_page=True)
+            page.screenshot(path=str(ROOT / "docs" / "screenshot-demo.png"))
             page.close()
-            capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, ROOT / "docs",
+            # Only the demo hero shot is committed; the other demo pages are checks, not docs.
+            scratch = Path(tempfile.gettempdir()) / "wallhack-demo-shots"
+            scratch.mkdir(exist_ok=True)
+            capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, scratch,
                            {"mobile": "mobile.html", "judge": "judge.html"}, demo=True)
-            capture_planner(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, ROOT / "docs", demo=True)
+            capture_planner(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, scratch, demo=True)
             browser.close()
         for msg in errors + problems:
             print("FAIL:", msg, file=sys.stderr)
@@ -268,12 +272,12 @@ def main() -> int:
             browser = p.chromium.launch()
             page = open_page(browser, DESKTOP, errors)
             check(page, problems)
-            page.screenshot(path=str(docs / "screenshot.png"), full_page=True)
+            page.screenshot(path=str(docs / "screenshot.png"))
             page.locator("#room3d").screenshot(path=str(docs / "screenshot-3d.png"))
             page.close()
             mobile = open_page(browser, MOBILE, errors)
             check(mobile, problems)
-            mobile.screenshot(path=str(docs / "screenshot-mobile.png"), full_page=True)
+            mobile.screenshot(path=str(docs / "screenshot-mobile.png"))
             mobile.close()
             capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, docs, {"mobile": "mobile", "judge": "judge"})
             capture_planner(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, docs)
