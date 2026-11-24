@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Polish pass 2: hierarchy, honesty checks, lighter screenshots
+- fix: timeline samples are capped inside the segment loop and waypoints are validated (`ValueError` in `rfmodel.signal_timeline`, matching JS); judge page status marks are CSS shapes (check, half circle, ring, cross) instead of symbol-font glyphs that rendered blank without the font; `make typecheck` fixes (commit dc5e378).
+- fix: the sticky planner map was constrained by the whole planner grid, so with the page scrolled to the analysis card it stayed pinned behind that card and clicks meant for the plan landed on the card. The tools, map and side columns now sit in their own `.planner-work` grid, so the map stops at the analysis card. This was the cause of the intermittent "no handoff" failure in `tools/planner_smoke.py`.
+- style: header hierarchy on every page: page links and toggles share one compact pill size, the renderer and compute chips are plain muted status text; on phones the wrapped header scrolls away instead of covering about a fifth of the screen.
+- style: planner analysis tabs read as navigation (muted labels, underline on the open tab, small gaps between the analyse, plan, export, simulate and view groups); high contrast and forced colours keep a visible marker. The material palette is a collapsible group placed after the project actions, so Project is reachable without scrolling past 22 materials.
+- style: the signal quality bars in Analytics are now an accessible list (band and share are read out), replacing the duplicate text table under them.
+- style: judge page puts the status and verification chips together on the right of each item; PARTIALLY VERIFIED and UNVERIFIED chips are dashed and muted so they read as weaker evidence; the side card no longer stretches.
+- refactor: removed the unused `levelOfFloor` helper in `rf-worker.js` (the only unreferenced top-level function found in `wallhack/static/*.js`).
+- test: `tools/a11y_check.py` also checks `/judge` and `/mobile`; the smoke timeline failure now reports the panel text and waypoints instead of timing out on a missing element.
+- docs: screenshots regenerated. `docs/*.png` went from 44 files, 15.2 MB (15,216,410 B) to 26 files, 5.1 MB (5,080,324 B). Removed the 18 `-demo` duplicates (the demo runs still check those pages but write to a temp folder), shots are viewport-sized instead of full-page (the dashboard shot was 1280x6264), and `tools/optimize_pngs.py` re-encodes losslessly with Pillow (about 4 percent; no lossy palette reduction). `tools/planner_smoke.py` no longer overwrites `docs/screenshot-planner.png`, which `tools/screenshot.py` owns.
+- docs: README opens with what the project is, the planner hero shot, a one-minute start and a table of pages with the honesty label each shows; the screenshot gallery is a compact grid. CONTRIBUTING notes the screenshot workflow.
+- Verification: VERIFIED by pytest, `make typecheck`, `node --check`, `bash -n scripts/*`, `tools/build_demo.py`, `tools/planner_smoke.py` (live, `--demo`, `--canvas2d`) and `tools/a11y_check.py` (0 serious or critical in dark, light, high contrast and light high contrast, live and demo pages). Light, dark, high contrast, low quality and phone width were looked at in headless Chromium screenshots only. UNVERIFIED: Firefox, Safari, real phones, screen readers and Windows forced colours.
+
 ### Design polish
 - style: form controls share one `:where()` rule, the focus ring is one token (`--ring`) instead of four duplicate rules, spacing and radius tokens added to `:root`, `accent-color`, thin scrollbars and text balancing (`style.css`).
 - style: planner map column stays in view while the long tool and control columns scroll (sticky, viewport-height stage); tool rows fill their width and the kind selects no longer overflow the column; the probe list is a grid instead of floats, so its empty state no longer wraps around the mini-map heading.

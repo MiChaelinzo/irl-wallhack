@@ -1,37 +1,51 @@
 # irl-wallhack
 
-A local WiFi sensing dashboard. It watches how your WiFi signal changes and shows **presence, motion, activity (still, walking, active), breathing rate, an experimental heart rate and a coarse zone** for the people in a room. Optional cheap sensors add **PM1/2.5/10, CO2, TVOC, formaldehyde, temperature, humidity, dew point, heat index, surface temperature and an air-quality rating with a US EPA AQI**. A **3D room view** shows signal activity per zone.
+**See how WiFi moves through your home, on your own machine.** Wallhack is a local, offline dashboard with two halves:
 
-![3D room view](docs/screenshot-3d.png)
+- **Sensing dashboard** (`/`): watches how your WiFi signal changes and estimates **presence, motion, activity, breathing rate, an experimental heart rate and a coarse zone**, with optional air-quality sensors. Without WiFi hardware it runs a clearly labelled simulator.
+- **RF planner** (`/planner`): draw a floor plan, drop access points and get a **model-based signal heat map** (a MODEL ESTIMATE, not a measurement), analytics, placement advice and PDF, PNG, CSV and JSON reports.
+
+![RF planner: floor plan with a signal heat map, quality bands and contours (model estimate)](docs/screenshot-planner.png)
+
+## Try it in a minute
+Needs Python 3.9+. No WiFi hardware or account is needed; after `make install` it runs offline.
+
+```
+make install      # Windows: install.bat
+make run          # Windows: run.bat  (opens the dashboard at http://127.0.0.1:8000)
+```
+Then open `/planner` for the RF planner, `/mobile` for the phone view and `/judge` for an honest list of what is built and what is not. To try it without the server, build the static simulated replay (needs numpy): `python3 tools/build_demo.py && python3 -m http.server -d dist` (details under [Hosted demo](#hosted-demo-vercel-or-any-static-host)).
+
+| Page | What you get | Honesty label on screen |
+|---|---|---|
+| `/` dashboard | presence, vitals, zones, 3D signal view, timeline, insights, router game | SIMULATED (simulator), EXPERIMENTAL (heart rate) |
+| `/planner` | floor-plan editor, heat map layers, analytics, smart planner, 3D view, lessons, exports | MODEL ESTIMATE, not a measurement |
+| `/mobile` | phone companion with occupancy, vitals and alerts | SIMULATED when simulated |
+| `/judge` | every capability with Built / Experimental / Future / Unsupported and its verification label | taken from the README table |
+
+Everything runs locally: floor plans and images stay in the browser, the server binds `127.0.0.1` unless you start it with `--lan`, and the pages load no external scripts, fonts or images. The hosted demo adds a strict content security policy (`vercel.json`); the local server does not send one.
 
 ## What it is not
-It does not make images and cannot literally see through walls. Bodies disturb radio signals, and that disturbance can be measured. Expect "someone is moving in the room", not a picture. Plain RSSI is coarse; richer data (ESP32 or Nexmon CSI) works better. **Breathing needs CSI-rate data** (4+ readings per second, not rounded to whole steps) and **heart rate needs 8+ readings per second** and a still person; it is experimental and low confidence. With Windows, macOS or `nmcli` signal readings (about 1 per second, coarse steps) breathing is switched off and the dashboard says so; presence and motion remain.
+It does not make images and cannot literally see through walls. Bodies disturb radio signals, and that disturbance can be measured. Expect "someone is moving in the room", not a picture. Plain RSSI is coarse; richer data (ESP32 or Nexmon CSI) works better. **Breathing needs CSI-rate data** (4+ readings per second, not rounded to whole steps) and **heart rate needs 8+ readings per second** and a still person; it is experimental and low confidence. With Windows, macOS or `nmcli` signal readings (about 1 per second, coarse steps) breathing is switched off and the dashboard says so; presence and motion remain. Mood, perspiration and through-wall imaging are not supported (see [Not built, on purpose](#not-built-on-purpose)).
 
-![Dashboard in simulator mode](docs/screenshot.png)
+![Dashboard in simulator mode, every simulated value labelled SIMULATED](docs/screenshot.png)
 
 ## Features
 - **Vitals from WiFi**: breathing (0.1-0.5 Hz) and heart rate (0.8-2.0 Hz, gated at 8 Hz or more raw sampling and a strong spectral peak, peak ratio 30). Activity badge: empty, still, walking, active. The walking cadence rule is a heuristic that has only been tried on the simulator.
 - **Environment tiles** (optional sensors, see below): PM, CO2, TVOC, HCHO, temperature, humidity, dew point, heat index, surface temperature, AQI ring and a worst-of air-quality rating with its drivers. Ratings are general guidance bands, not medical advice.
 - **3D room view**: plain canvas, own projection maths, drag to orbit, zoom, auto-rotate, a Low/Medium/High quality selector for Raspberry Pi class devices, and reduced-motion support. It is a schematic signal-activity visualisation, not imaging.
 - **Simulator**: every simulated value (vitals and environment) is marked SIMULATED. The simulated heartbeat is exaggerated so the demo shows it. With a real source and no sensors configured, environment tiles show "no sensor" and nothing is invented.
-
-![Mobile layout](docs/screenshot-mobile.png)
-
-- **Mobile companion and judge mode**: `/mobile` (occupancy, vitals, sensors, alerts; pair a phone by scanning the QR on the dashboard after starting with `--lan`) and `/judge` (every capability with its Built / Experimental / Future / Unsupported status). Premium glass UI and particle effects follow the quality selector and reduced-motion setting.
-
-![Judge mode](docs/screenshot-judge.png)
-
+- **Mobile companion and judge mode**: `/mobile` (occupancy, vitals, sensors, alerts; pair a phone by scanning the QR on the dashboard after starting with `--lan`) and `/judge` (every capability with its Built / Experimental / Future / Unsupported status). Glass UI and particle effects follow the quality selector and reduced-motion setting.
 - **RF planner**: `/planner` is a floor-plan editor with a model-based signal heat map (MODEL ESTIMATE, not a measurement): draw walls, place access points, import a floor-plan image and calibrate its scale, undo/redo, contours, dead zones, quality bands and hover readouts, plus an analytics dashboard, scenario comparison, a smart planner (AP placement, power and channel advice with confidence), PNG, CSV, JSON and PDF export, and mesh, capacity, IoT and enterprise planning modes. Details in `docs/rf-planner.md`, measured speed in `docs/perf-rf.md`.
+- **Comfort settings**: light and dark themes, a high-contrast mode (planner Contrast button or the system `prefers-contrast` setting), reduced motion and Low/Medium/High quality for slow devices.
 
-![RF planner](docs/screenshot-planner.png)
+| | |
+|---|---|
+| ![Planner SINR layer with the colour-blind safe viridis palette](docs/screenshot-planner-layers.png) | ![Planner analytics: coverage, dead zones and capacity estimates](docs/screenshot-planner-analytics.png) |
+| ![Planner, light theme](docs/screenshot-planner-light.png) | ![Judge mode: each capability with its status and verification label](docs/screenshot-judge.png) |
+| ![Planner on a phone](docs/screenshot-planner-mobile.png) | ![Dashboard on a phone](docs/screenshot-mobile.png) |
 
-![Planner analytics](docs/screenshot-planner-analytics.png)
-![Planner map layers: SINR beside wall attenuation, viridis palette](docs/screenshot-planner-layers.png)
-![Planner engineering dashboard](docs/screenshot-planner-dashboard.png)
-![Planner spectrum view](docs/screenshot-planner-spectrum.png)
-![Scenario comparison](docs/screenshot-planner-compare.png)
-![Planner, light theme](docs/screenshot-planner-light.png)
-![Planner on a phone](docs/screenshot-planner-mobile.png)
+More screenshots (spectrum, engineering dashboard, scenario comparison, 3D view, timeline, beams, lessons, advice, report) are in [`docs/`](docs/). They are produced by `tools/screenshot.py` and `tools/planner_smoke.py` in headless Chromium.
 
 Type check (dev only, needs `npx` and network once, nothing is installed into the repo): `make typecheck` runs `tsc` with `checkJs` over `rf-engine.js`, `rf-optimizer.js` and `planner-state.js`. The app itself has no build step and no Node dependency.
 
@@ -42,14 +56,8 @@ Type check (dev only, needs `npx` and network once, nothing is installed into th
 - **Through-wall "sights" / body images**: not possible with this hardware and software; the 3D view is schematic.
 - **Thermal camera image** (MLX90640, AMG8833): would need an image driver; only mentioned as future hardware in [docs/hardware.md](docs/hardware.md).
 
-## Quick start
-Needs Python 3.9+. No WiFi hardware required: without a usable source it runs a labelled simulator.
-
-```
-make install      # Windows: install.bat
-make run          # Windows: run.bat  (opens the dashboard at 127.0.0.1:8000)
-```
-Options: `python -m wallhack --source simulator|real|auto --no-browser`. Hardware notes: [docs/hardware.md](docs/hardware.md).
+## Run options
+`python -m wallhack --source simulator|real|auto --no-browser`. Hardware notes: [docs/hardware.md](docs/hardware.md).
 
 ## Environment sensors (optional)
 Supported parts: PMS5003 (PM, UART), SCD40/41 (CO2, temperature, humidity, I2C), ENS160 (TVOC, I2C), ZE08-CH2O (formaldehyde, UART), MLX90614 (surface temperature, I2C). Wiring and warm-up notes are in [docs/hardware.md](docs/hardware.md). All of it is UNVERIFIED on real devices.
