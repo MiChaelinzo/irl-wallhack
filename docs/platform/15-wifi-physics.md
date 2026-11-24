@@ -42,7 +42,7 @@ Full derivations and check values: `docs/rf-planner.md`. Tests: `tests/test_rfmo
 | 1 | No Fresnel zone clearance: a path is blocked or not by wall crossings only | Optimistic or pessimistic near obstacles within the first Fresnel zone, matters for long open rooms | Not modelled |
 | 2 | Single-slope exponent per band, no breakpoint | Over-estimates loss in large open areas, under-estimates in cluttered ones | Not modelled |
 | 3 | Fixed per-floor loss per band, independent of slab material | Wrong between floors by several dB either way | Open (flooring and roofing materials exist but are not wired in). Stairwells and atria: optional `voids` reduce it locally (a 2D approximation, UNVERIFIED against real buildings) |
-| 4 | 2D geometry: floors are stacked with a fixed loss, no ceiling height or vertical angle | No elevation patterns, no 3D reflection | Not modelled |
+| 4 | 2D geometry: no ceiling height or vertical angle | No elevation patterns, no 3D reflection | Partly modelled: optional `elevation_m` and `height_m` per floor scale the floor loss (see V2 data models), no vertical angle |
 | 5 | No polarisation | Cross-polar loss ignored | Not modelled |
 | 6 | No small-scale fading or shadowing statistics | Single value per cell, no margin | Not modelled |
 | 7 | First-order reflection only | Misses second-order paths in corridors | Not modelled |
@@ -53,7 +53,7 @@ Full derivations and check values: `docs/rf-planner.md`. Tests: `tests/test_rfmo
 | 12 | Wall loss is a typical single number per band per material | Real walls vary by tens of percent (ranges in [material-database.md](material-database.md)) | Ranges exist; the engine uses the typical value |
 | 13 | Interference assumes all interferers transmit all the time (`activity_factor` 1) | Pessimistic SINR | By design, configurable |
 | 14 | Serving AP is the strongest RSSI AP | Ignores client roaming stickiness | By design |
-| 15 | MAC efficiency is one factor, no OFDMA scheduling, MU-MIMO, beamforming, client mix | Throughput is a planning figure | By design |
+| 15 | MAC efficiency is one factor, no OFDMA scheduling, MU-MIMO, beamforming, client mix | Throughput is a planning figure | Partly modelled: simple OFDMA, MU-MIMO and beamforming CAPACITY MODELS and a Smart Home client mix (see V2 data models), no scheduler |
 | 16 | Adjacent-channel table is rounded, receiver selectivity ignored | SINR near channel edges is approximate | UNVERIFIED against radios |
 
 ## What FEAT-003 and FEAT-004 fixed or added in this change set
@@ -87,3 +87,17 @@ Every number in this section is a MODEL ESTIMATE. Constants live in `rf-config.j
 | Roaming map | per cell strongest AP, second AP, margin, zone (single, overlap, handoff) and blend (50 percent at zero margin to 100 percent at the roam margin) | uses `analytics.overlap_*` and `analytics.roam_*` thresholds. Client stickiness is not modelled |
 
 Limits: sources are point emitters with no antenna pattern; the SINR section (and so interference, reliability) exists only when an AP sets a `standard`; the spectrum analysis ignores distance; the void model has no slab geometry.
+
+## V2 data models (MODEL ESTIMATES, UNVERIFIED against measurements)
+
+Constants live in `wallhack/static/rf-config.json`, helpers in `wallhack/rfmodel.py` with a parity port in `wallhack/static/rf-engine.js`. Confidence of every numeric value below is low to medium. They are planning assumptions with the sources named in the config.
+
+| Block | Model | Simplification |
+|---|---|---|
+| Materials | Steel, aluminium, tiles, insulated wall, metal door and fire door with per-band attenuation, reflection loss, range, confidence and ITU-R P.2040 style notes. Derived fields `attenuation24GHz`, `attenuation5GHz`, `attenuation6GHz` (dB), `reflectionRate` and `penetrationRate` are linear power fractions, `10^(-dB/10)`, computed from the existing `reflection_loss_db` and `attenuation_db`, never stored, so saved projects are unchanged | One typical number per band, see [material-database.md](material-database.md) |
+| AP class profiles | Generic classes consumer, gaming, mesh, enterprise (not product names) with tx power per band kept within the ETSI EIRP limit (FCC is higher), antenna gain, standard, bands, streams and beamforming. Applying a profile overwrites the radio fields of an AP and keeps its position | Typical values, check local regulation |
+| Floor elevation | Optional `elevation_m` (negative for basements) and `height_m` per floor. When two floors both set `elevation_m`, the floor loss scales with `|elevation difference| / reference_height_m`, at least one floor | Floors without elevation behave as before. No vertical angle |
+| Client devices | Camera, TV, phone, console and IoT profiles with demand in Mbps and supported bands. Each client attaches to the strongest AP, and per AP the airtime load is compared with 1 | One demand figure per device, no traffic pattern |
+| OFDMA | CAPACITY MODEL: `1 + gain x min(1, (n - 1) / saturation_clients)`, 1 without OFDMA | Not a scheduler |
+| MU-MIMO | CAPACITY MODEL: users served together = min(clients, AP streams, standard maximum), gain `1 + (users - 1) x spatial_efficiency` | No channel sounding overhead |
+| Beamforming | CAPACITY MODEL: steered pattern gain towards a client, `min(max_gain_db, dB per doubling x log2(streams) x steering_efficiency)`, added to the client RSSI | Not a measured pattern |

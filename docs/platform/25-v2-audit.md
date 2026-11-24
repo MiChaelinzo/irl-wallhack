@@ -10,18 +10,18 @@ Status words:
 - **Partial**: a useful part exists, the missing part is named.
 - **Deferred**: not planned for V2.
 
-The "Planned in" column names the V2 feature that does the work. Nothing in "Extended" or "New" is built at the time of writing. Verification labels follow the README. All RF numbers are MODEL ESTIMATES.
+The "Planned in" column names the V2 feature that does the work. Rows marked Done were built by the named feature; the others are not built at the time of writing. Verification labels follow the README. All RF numbers are MODEL ESTIMATES.
 
 ## The 20 items
 
 | # | Item | Status | Evidence in the repository | Gap | Planned in |
 |---|---|---|---|---|---|
-| 1 | Wall materials: steel, aluminium, tiles, insulated wall, metal door, fire door | Extended | 14 materials with per-band attenuation, ranges, confidence and sources: `wallhack/static/rf-config.json` (`materials`), `docs/platform/material-database.md` (generated) | Steel, aluminium, tiles and the door types are missing. `metal`, `insulation`, `stone` exist and cover some of them | FEAT-002 |
-| 2 | Derived material fields (attenuation per band, reflection and penetration rate) | New | `rf-config.json` has `attenuation_db` per band and `reflection_loss_db` | No linear reflection or penetration fractions, no loss display in the material UI | FEAT-002 |
-| 3 | Router and AP class profiles (consumer, gaming, mesh, enterprise) | New | Per-AP tx power, standard, streams, band, channel, width in `wallhack/twin.py` and `wallhack/static/planner-state.js` | No named class profiles with limits and applying a profile | FEAT-002 |
-| 4 | Floor elevation and height model | New | `floor_loss_db`, stairwell and atrium `voids` in `rfmodel.py` and `rf-engine.js`; floors stack by index | No `elevation_m` or `height_m`, no basements | FEAT-002 |
-| 5 | Client device profiles for Smart Home capacity | Partial | IoT device placement and capacity planning in `wallhack/static/planner-modes.js`; `analytics` throughput in `rfmodel.py` | No camera, TV, phone, console profiles with demand and band capability feeding the capacity analysis | FEAT-002 |
-| 6 | WiFi 7 capacity models (OFDMA, MU-MIMO, beamforming gain) | Partial | Wi-Fi 4 to 7 PHY rates, MCS tables, MLO capacity model (`rf-config.json` `wifi_standards`, `mlo`; `tests/test_wifi_standards.py`) | No OFDMA efficiency, MU-MIMO sharing or steered pattern gain | FEAT-002 |
+| 1 | Wall materials: steel, aluminium, tiles, insulated wall, metal door, fire door | Done (MODEL) | 14 materials with per-band attenuation, ranges, confidence and sources: `wallhack/static/rf-config.json` (`materials`), `docs/platform/material-database.md` (generated) | Closed in FEAT-002, simplifications in `15-wifi-physics.md` | FEAT-002 |
+| 2 | Derived material fields (attenuation per band, reflection and penetration rate) | Done (MODEL) | `rf-config.json` has `attenuation_db` per band and `reflection_loss_db` | Closed in FEAT-002, simplifications in `15-wifi-physics.md` | FEAT-002 |
+| 3 | Router and AP class profiles (consumer, gaming, mesh, enterprise) | Done (MODEL) | Per-AP tx power, standard, streams, band, channel, width in `wallhack/twin.py` and `wallhack/static/planner-state.js` | Closed in FEAT-002, simplifications in `15-wifi-physics.md` | FEAT-002 |
+| 4 | Floor elevation and height model | Done (MODEL) | `floor_loss_db`, stairwell and atrium `voids` in `rfmodel.py` and `rf-engine.js`; floors stack by index | Closed in FEAT-002, simplifications in `15-wifi-physics.md` | FEAT-002 |
+| 5 | Client device profiles for Smart Home capacity | Done (MODEL) | IoT device placement and capacity planning in `wallhack/static/planner-modes.js`; `analytics` throughput in `rfmodel.py` | Closed in FEAT-002, simplifications in `15-wifi-physics.md` | FEAT-002 |
+| 6 | WiFi 7 capacity models (OFDMA, MU-MIMO, beamforming gain) | Done (MODEL) | Wi-Fi 4 to 7 PHY rates, MCS tables, MLO capacity model (`rf-config.json` `wifi_standards`, `mlo`; `tests/test_wifi_standards.py`) | Closed in FEAT-002, simplifications in `15-wifi-physics.md` | FEAT-002 |
 | 7 | Signal timeline along a walking path | New | Decay plot along one bearing (`signal_decay` in `rfmodel.py`); roaming map per cell (`roaming` block) | No path sampling over floors, no timeline chart | FEAT-003 |
 | 8 | Handoff events with hysteresis | Partial | Handoff and overlap zones from `analytics.roam_min_dbm` and `roam_margin_db` per cell (`tests/test_rf_lab.py`) | Not evaluated along a path, no hysteresis, no events | FEAT-003 |
 | 9 | What-if comparison (move AP, upgrade, remove wall, add mesh node, change channel) | Partial | Side by side compare mode and saved scenarios (`planner-panels.js`, `planner-modes.js`); AP move sensitivity in `rf-optimizer.js` | No before and after diff over analytics, no action catalogue | FEAT-003 |
