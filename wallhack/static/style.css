@@ -451,6 +451,7 @@ html[data-quality="low"] .stage, html[data-quality="low"] .room3d { background:v
 /* judge page: title left, status and verification chips together on the right; weaker evidence gets a dashed chip */
 .judge-head { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; }
 .judge-tags { display:flex; gap:6px; }
+.judge-item > div { flex:1; min-width:0; }
 @media (max-width:700px) { .judge-head { grid-template-columns:1fr; } }
 .chip.ver-partially-verified, .chip.ver-unverified, .chip.ver-not-built { border-style:dashed; color:var(--muted); }
 .judge-main > .card:nth-child(2) { align-self:start; }
