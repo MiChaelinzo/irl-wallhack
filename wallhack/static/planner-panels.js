@@ -366,9 +366,10 @@
       tools.appendChild(el("label", { class: "check" }, [rg, " Show roaming zones on the plan (exact cells: handoff strong, overlap light)"]));
       host.appendChild(tools);
 
-      var bars = el("div", { class: "bars", "aria-hidden": "true" });
+      // Each row is a list item whose text (band and share) is read out, so no duplicate table is needed.
+      var bars = el("div", { class: "bars", role: "list", "aria-label": "Signal quality distribution, share of floor per band" });
       th.quality_bands.forEach(function (b) {
-        var row = el("div", { class: "bar-row" }), fill = el("i");
+        var row = el("div", { class: "bar-row", role: "listitem" }), fill = el("i");
         fill.style.width = Math.max(0, Math.min(100, a.quality_pct[b.id])) + "%";
         var c = H.bandColor(app.paletteId || "classic", b.id); fill.style.background = "rgb(" + c.join(",") + ")";
         row.appendChild(el("span", { text: b.id })); row.appendChild(el("div", { class: "bar" }, [fill])); row.appendChild(el("span", { text: pct(a.quality_pct[b.id]) }));
@@ -376,7 +377,6 @@
       });
       host.appendChild(el("h3", { text: "Signal quality distribution" }));
       host.appendChild(bars);
-      host.appendChild(table("Signal quality distribution (text equivalent of the bars)", ["Band", "Share of floor"], th.quality_bands.map(function (b) { return [b.id, pct(a.quality_pct[b.id])]; })));
 
       host.appendChild(table("Per access point. Throughput, capacity and utilisation are " + ESTIMATE + "S.",
         ["AP", "Band / channel", "Served area", "Usable throughput " + ESTIMATE, "Client capacity " + ESTIMATE, "Expected clients", "Channel utilisation " + ESTIMATE, "Co-channel neighbours"],
