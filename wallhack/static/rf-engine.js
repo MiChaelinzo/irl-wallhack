@@ -1097,7 +1097,12 @@
     if (!Array.isArray(path) || !path.length) { throw new Error("path needs at least one waypoint"); }
     if (path.length > tl.max_waypoints) { throw new Error("path has more than " + tl.max_waypoints + " waypoints"); }
     if (!(step > 0)) { throw new Error("step_m must be positive"); }
-    path.forEach(function (w) { findFloor(project, w.floor); });
+    path.forEach(function (w) {
+      if (!w || typeof w !== "object" || typeof w.floor !== "string" || typeof w.x !== "number" || typeof w.y !== "number" || !isFinite(w.x) || !isFinite(w.y)) {
+        throw new Error("each waypoint needs a floor id and finite numeric x and y");
+      }
+      findFloor(project, w.floor);
+    });
     var points = [{ floor: path[0].floor, x: path[0].x, y: path[0].y, s: 0 }], travelled = 0;
     for (var n = 1; n < path.length; n++) {
       var a = path[n - 1], b = path[n];
@@ -1106,6 +1111,7 @@
       for (var k = 1; k * step < length - 1e-9; k++) {
         var d = k * step, t = d / length;
         points.push({ floor: a.floor, x: a.x + dx * t, y: a.y + dy * t, s: travelled + d });
+        if (points.length > tl.max_samples) { throw new Error("path needs more than " + tl.max_samples + " samples, use a larger step_m"); }
       }
       travelled += length;
       points.push({ floor: b.floor, x: b.x, y: b.y, s: travelled });

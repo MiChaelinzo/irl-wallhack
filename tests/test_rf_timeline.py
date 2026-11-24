@@ -142,3 +142,19 @@ def test_chart_model_places_events_inside_the_chart_and_lists_events():
     m = out["m"]
     assert len(m["line"]) == 57 and all(24 <= x <= 536 and 24 <= y <= 156 for x, y in m["line"])
     assert out["events"] == len(m["events"]) == len(out["lines"]) == 1 and out["lines"][0].startswith("Handoff from ap0")
+
+
+def test_sample_cap_is_enforced_while_sampling_a_segment():
+    """A huge segment must fail inside the sampling loop, not after allocating every sample."""
+    huge = [{"floor": "g", "x": 0.0, "y": 3.0}, {"floor": "g", "x": 1e12, "y": 3.0}]
+    with pytest.raises(ValueError, match="samples"):
+        rfmodel._path_points(corridor([(5.0, 3.0)]), huge, 1.0, 10)
+
+
+@pytest.mark.parametrize("bad", [
+    [None], ["g"], [{"floor": "g", "x": 1.0}], [{"x": 1.0, "y": 1.0}], [{"floor": 3, "x": 1.0, "y": 1.0}],
+    [{"floor": "g", "x": "1", "y": 1.0}], [{"floor": "g", "x": True, "y": 1.0}], [{"floor": "g", "x": float("nan"), "y": 1.0}],
+])
+def test_malformed_waypoints_raise_value_error(bad):
+    with pytest.raises(ValueError):
+        rfmodel.signal_timeline(corridor([(5.0, 3.0)]), bad)

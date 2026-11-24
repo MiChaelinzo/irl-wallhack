@@ -212,7 +212,14 @@ html[data-quality="low"] .card h2, html[data-quality="low"] .badge { text-shadow
 .judge-legend { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
 .judge-list { list-style:none; margin:0; padding:0; }
 .judge-item { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
-.judge-mark { font-family:"Segoe UI Symbol","Noto Sans Symbols","Noto Sans Symbols 2","DejaVu Sans",sans-serif; width:1.6em; font-size:1.2rem; text-align:center; flex:none; }
+.judge-mark { width:1.6em; flex:none; display:flex; justify-content:center; padding-top:2px; }
+.judge-icon { position:relative; display:inline-block; width:1em; height:1em; vertical-align:-.12em; flex:none; }
+.judge-icon.is-built::after { content:""; position:absolute; left:.33em; top:.08em; width:.28em; height:.55em; border:solid currentColor; border-width:0 .16em .16em 0; transform:rotate(45deg); }
+.judge-icon.is-experimental, .judge-icon.is-future { border:.14em solid currentColor; border-radius:50%; box-sizing:border-box; }
+.judge-icon.is-experimental { background:linear-gradient(90deg, transparent 50%, currentColor 50%); }
+.judge-icon.is-unsupported::before, .judge-icon.is-unsupported::after { content:""; position:absolute; left:.05em; top:.43em; width:.9em; height:.14em; background:currentColor; border-radius:.07em; transform:rotate(45deg); }
+.judge-icon.is-unsupported::after { transform:rotate(-45deg); }
+.chip .judge-icon { margin-right:4px; }
 .judge-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:2px; }
 .judge-head a { color:var(--accent); }
 .chip.st-built, .judge-item.st-built .judge-mark { color:var(--ok); }

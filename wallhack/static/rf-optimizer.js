@@ -613,8 +613,10 @@
     var current = metricsOf(runMetrics(ctx, project, ctx.env), ctx.config);
     var actions = candidateActions(project, floorId, ctx, o).map(function (c) {
       var w = whatIf(project, floorId, c.change, Object.assign({}, o, { floor: c.floor }));
-      return { id: c.id, kind: c.change.kind, floor: c.floor, text: c.text, change: c.change, before: w.before, after: w.after, delta: w.delta,
+      /** @type {Record<string, any>} */
+      var action = { id: c.id, kind: c.change.kind, floor: c.floor, text: c.text, change: c.change, before: w.before, after: w.after, delta: w.delta,
                confidence: w.confidence, perturbations: w.perturbations, stable_perturbations: w.stable_perturbations, reason: w.reason };
+      return action;
     }).filter(function (a) { return a.delta.score >= rc.min_score_gain; });
     actions.sort(function (a, b) { return (b.delta.score - a.delta.score) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });
     actions = actions.slice(0, rc.max_actions);
@@ -647,7 +649,9 @@
     var res = greedy(ctx0, maxAps, target);
     var cx = floor.width_m / 2, cy = floor.depth_m / 2;
     var aps = res.picks.map(function (p, i) {
-      return { id: "plan-ap" + (i + 1), x: round(p.x, 2), y: round(p.y, 2), tx_dbm: pc.default_tx_dbm, band: band, standard: band === "6" ? pc.sinr_default_standard_6ghz : rc.design.default_standard };
+      /** @type {Record<string, any>} */
+      var ap = { id: "plan-ap" + (i + 1), x: round(p.x, 2), y: round(p.y, 2), tx_dbm: pc.default_tx_dbm, band: band, standard: band === "6" ? pc.sinr_default_standard_6ghz : rc.design.default_standard };
+      return ap;
     });
     floor.aps = aps.map(function (a) { return Object.assign({}, a); });
     var po = { config: config, env: ctx0.env, band: o.band, mode: ctx0.mode, cellM: ctx0.cellM };

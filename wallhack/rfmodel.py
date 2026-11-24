@@ -1172,6 +1172,10 @@ def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) 
     if not step_m > 0:
         raise ValueError("step_m must be positive")
     for w in path:
+        if (not isinstance(w, dict) or not isinstance(w.get("floor"), str)
+                or not all(isinstance(w.get(k), (int, float)) and not isinstance(w.get(k), bool) and math.isfinite(w[k])
+                           for k in ("x", "y"))):
+            raise ValueError("each waypoint needs a floor id and finite numeric x and y")
         floor_by_id(twin, w["floor"])
     points = [{"floor": path[0]["floor"], "x": path[0]["x"], "y": path[0]["y"], "s": 0.0}]
     travelled = 0.0
@@ -1186,6 +1190,8 @@ def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) 
             d = k * step_m
             t = d / length
             points.append({"floor": a["floor"], "x": a["x"] + dx * t, "y": a["y"] + dy * t, "s": travelled + d})
+            if len(points) > max_samples:
+                raise ValueError(f"path needs more than {max_samples} samples, use a larger step_m")
             k += 1
         travelled += length
         points.append({"floor": b["floor"], "x": b["x"], "y": b["y"], "s": travelled})
