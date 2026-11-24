@@ -228,7 +228,9 @@ html[data-quality="low"] .card h2, html[data-quality="low"] .badge { text-shadow
 .chip.st-unsupported, .judge-item.st-unsupported .judge-mark { color:var(--bad); }
 
 /* ---- RF planner page ---- */
-.planner { display:grid; grid-template-columns:minmax(210px, 250px) minmax(0, 1fr) minmax(250px, 310px); max-width:1800px; align-items:start; }
+.planner { display:flex; flex-direction:column; max-width:1800px; }
+/* the work area is its own grid so the sticky map stops at the analysis card instead of sliding behind it */
+.planner-work { display:grid; grid-template-columns:minmax(210px, 250px) minmax(0, 1fr) minmax(250px, 310px); gap:inherit; align-items:start; min-width:0; }
 .p-side { display:flex; flex-direction:column; gap:16px; min-width:0; }
 .tool-row { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; align-items:center; }
 .tool-row button { padding:5px 10px; }
@@ -279,7 +281,7 @@ html[data-quality="low"] .card h2, html[data-quality="low"] .badge { text-shadow
 .dialog[hidden] { display:none; }
 .dialog th { text-align:left; padding:4px 12px 4px 0; white-space:nowrap; vertical-align:top; font-weight:600; }
 .dialog td { padding:4px 0; color:var(--muted); }
-@media (max-width:1100px) { .planner { grid-template-columns:minmax(0, 1fr); } .p-side { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); } .stage { height:60vh; } }
+@media (max-width:1100px) { .planner-work { grid-template-columns:minmax(0, 1fr); } .p-side { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); } .stage { height:60vh; } }
 
 
 /* ---- planner analysis panels ---- */
@@ -331,7 +333,7 @@ html[data-theme="light"] { color-scheme:light; }
 @media print {
   header, .p-tools, .p-side, footer, .tabs, #plannerNotice, .tool-row, .stage-bar .chip:not(#estimateLabel) { display:none !important; }
   body { background:#fff; color:#000; }
-  .planner { display:block; } .card { background:#fff; border:0; box-shadow:none; break-inside:avoid; }
+  .planner, .planner-work { display:block; } .card { background:#fff; border:0; box-shadow:none; break-inside:avoid; }
   .stage { height:70vh; border:1px solid #999; } .tabpanel[hidden] { display:block !important; }
   .dtable th, .dtable td { border-bottom:1px solid #999; }
 }
@@ -415,3 +417,40 @@ button:not(:disabled):hover { background:color-mix(in srgb, var(--card-solid) 80
 .dtable tbody tr:hover { background:var(--idle-bg); }
 html[data-quality="low"] .stage, html[data-quality="low"] .room3d { background:var(--bg); }
 @media print { .p-stage { position:static; } }
+
+/* planner: the long material palette folds away so the project actions stay in view */
+.mat-group { margin-top:14px; }
+.mat-group summary { cursor:pointer; font-size:1rem; font-weight:700; padding:4px 0; }
+.mat-group[open] summary { margin-bottom:4px; }
+
+/* header hierarchy: page links and toggles share one compact pill size; diagnostic chips step back */
+.hdr-right { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.hdr-right > button { font-size:.8rem; padding:4px 12px; border-radius:999px; min-height:28px; }
+.hdr-right .nav { margin-right:6px; }
+#rendererChip, #computeChip { border-color:transparent; background:none; color:var(--muted); font-variant-numeric:tabular-nums; }
+@media (max-width:700px) {
+  /* a wrapped header is three rows tall on a phone; it scrolls away instead of covering the plan */
+  :root { --header-h:0px; }
+  header { position:static; }
+  .hdr-right > button { flex:0 1 auto; min-height:36px; }
+  .hdr-right .nav { width:100%; margin-right:0; }
+}
+
+/* planner tabs read as navigation, not as action buttons: muted labels, an underline on the open tab,
+   and small gaps between the groups (analyse, plan, export, simulate, view and learn) */
+.tabs { gap:2px 4px; }
+.tabs button { background:none; border-color:transparent; border-radius:8px 8px 0 0; padding:6px 10px; color:var(--muted); font-size:.88rem; }
+.tabs button:not(:disabled):hover { background:none; color:var(--fg); box-shadow:inset 0 -2px 0 var(--line); }
+.tabs button[aria-selected="true"], .tabs button[aria-selected="true"]:hover { color:var(--accent); font-weight:600; box-shadow:inset 0 -2px 0 var(--accent); }
+#tab-scenarios, #tab-export, #tab-modes, #tab-view3d { margin-left:14px; }
+@media (max-width:700px) { #tab-scenarios, #tab-export, #tab-modes, #tab-view3d { margin-left:0; } }
+@media (forced-colors: active) { .tabs button[aria-selected="true"] { border-bottom:3px solid Highlight; } }
+:root[data-contrast="more"] .tabs button { box-shadow:inset 0 -1px 0 currentColor; }
+:root[data-contrast="more"] .tabs button[aria-selected="true"] { box-shadow:inset 0 -3px 0 var(--accent); }
+
+/* judge page: title left, status and verification chips together on the right; weaker evidence gets a dashed chip */
+.judge-head { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; }
+.judge-tags { display:flex; gap:6px; }
+@media (max-width:700px) { .judge-head { grid-template-columns:1fr; } }
+.chip.ver-partially-verified, .chip.ver-unverified, .chip.ver-not-built { border-style:dashed; color:var(--muted); }
+.judge-main > .card:nth-child(2) { align-self:start; }

@@ -24,6 +24,7 @@
 </div>
 <div id="plannerNotice" class="banner" role="status" hidden></div>
 <main class="planner">
+<div class="planner-work">
   <section class="card p-tools" aria-labelledby="pTools">
     <h2 id="pTools">Tools</h2>
     <div class="tool-row" role="toolbar" aria-label="Drawing tools">
@@ -54,9 +55,6 @@
       <button id="gridBtn" type="button" aria-pressed="true" title="Grid snapping (G)">Snap</button>
       <label class="inline">Grid <select id="gridStep" aria-label="Grid step"><option value="0.1">0.1 m</option><option value="0.25">0.25 m</option><option value="0.5" selected>0.5 m</option><option value="1">1 m</option></select></label>
     </div>
-    <h3>Materials</h3>
-    <p class="muted hint">Click to draw with a material, or drag one onto the plan.</p>
-    <div id="palette" class="palette"></div>
     <h3>Project</h3>
     <div class="tool-row">
       <label class="inline">Preset <select id="presetSel" aria-label="Scenario preset"></select></label>
@@ -75,6 +73,11 @@
     <input id="imageFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     <label class="field">Image opacity <input id="imageOpacity" type="range" min="0" max="1" step="0.05" value="0.5"></label>
     <p id="saveState" class="muted hint" role="status">Not saved yet</p>
+    <details class="mat-group" open>
+      <summary>Materials</summary>
+      <p class="muted hint">Click to draw with a material, or drag one onto the plan.</p>
+      <div id="palette" class="palette"></div>
+    </details>
   </section>
 
   <section class="card p-stage" aria-labelledby="pStage">
@@ -150,6 +153,7 @@
       <canvas id="minimap" class="minimap" width="240" height="160" tabindex="0" role="img" aria-label="Mini-map of the floor. Click or use arrow keys to move the view."></canvas>
     </section>
   </aside>
+</div>
   <section class="card p-bottom" aria-labelledby="pTabs">
     <h2 id="pTabs">Analysis and planning</h2>
     <div id="tabs" class="tabs" role="tablist" aria-label="Analysis panels"></div>

@@ -32,8 +32,10 @@
       var title = i.link ? el("a", "", i.title) : el("strong", "", i.title);
       if (i.link) { title.setAttribute("href", Common.href(i.link)); title.setAttribute("data-page", i.link); }
       head.appendChild(title);
-      head.appendChild(el("span", "chip st-" + i.status.toLowerCase(), i.status));
-      head.appendChild(el("span", "chip", i.verification));
+      var tags = el("span", "judge-tags", "");
+      tags.appendChild(el("span", "chip st-" + i.status.toLowerCase(), i.status));
+      tags.appendChild(el("span", "chip ver-" + i.verification.toLowerCase().replace(/ /g, "-"), i.verification));
+      head.appendChild(tags);
       body.appendChild(head); body.appendChild(el("div", "muted", i.detail));
       li.appendChild(body); items.appendChild(li);
       var target = $(VERIFICATION_LISTS[i.verification]);
