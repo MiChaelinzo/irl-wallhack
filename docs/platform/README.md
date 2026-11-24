@@ -36,6 +36,7 @@ Competitor statements in `19-competitive-analysis.md` come from general knowledg
 | 22 | [Top 10 hackathon features](22-top-10-hackathon-features.md) | With demo script |
 | 23 | [Hackathon pitch](23-hackathon-pitch.md) | Judge-facing narrative and caveats |
 | 24 | [RF lab status](24-rf-lab-status.md) | Complete, partial and deferred per mandate section |
+| 25 | [V2 audit](25-v2-audit.md) | The 20 V2 items and the WOW list against the code, plus defects fixed |
 | ADR | [Frontend stack ADR](adr-frontend-stack.md) | React, TypeScript, Three.js evaluation and decision |
 
 `tests/test_platform_docs.py` checks that these files exist, that the top 100 table has at least 100 ranked rows, and that every file named in a Done row exists.
