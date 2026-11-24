@@ -13,7 +13,7 @@ from collections import deque
 from contextvars import ContextVar
 
 REQUEST_ID_HEADER = "X-Request-ID"
-REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{8,64}$")   # a client may supply its own id, only if it is plain and short
+REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{8,64}")   # a client may supply its own id, only if it is plain and short
 ERROR_WINDOW_S = 3600.0
 ERROR_LOG_MAX = 500          # remembered error events; older ones are dropped
 TEXT_FORMAT = "%(asctime)s %(levelname)s %(message)s"
@@ -23,7 +23,7 @@ request_id_var: ContextVar = ContextVar("wallhack_request_id", default="-")
 
 def new_request_id(supplied=None) -> str:
     """The client's id when it is a safe token, else a fresh random one."""
-    if supplied and REQUEST_ID_PATTERN.match(supplied):
+    if supplied and REQUEST_ID_PATTERN.fullmatch(supplied):
         return supplied
     return uuid.uuid4().hex[:16]
 

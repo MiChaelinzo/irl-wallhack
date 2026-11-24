@@ -777,7 +777,7 @@
   }
 
   /** 4-connected regions of true cells (flood fill), ordered by first cell in a row-major scan. */
-  function regionsOf(cells, cols, rows, cellM, withBbox) {
+  function regionsOf(cells, cols, rows, cellM) {
     var seen = new Uint8Array(cells.length), out = [];
     for (var start = 0; start < cells.length; start++) {
       if (!cells[start] || seen[start]) { continue; }
@@ -795,10 +795,8 @@
       var rs = members.map(function (n) { return Math.floor(n / cols); }), cs = members.map(function (n) { return n % cols; });
       var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
       var region = { cells: members.length, area_m2: roundTo(members.length * cellM * cellM, 2) };
-      if (withBbox !== false) {
-        region.bbox = { x_min: roundTo(Math.min.apply(null, cs) * cellM, 2), y_min: roundTo(Math.min.apply(null, rs) * cellM, 2),
-                        x_max: roundTo((Math.max.apply(null, cs) + 1) * cellM, 2), y_max: roundTo((Math.max.apply(null, rs) + 1) * cellM, 2) };
-      }
+      region.bbox = { x_min: roundTo(Math.min.apply(null, cs) * cellM, 2), y_min: roundTo(Math.min.apply(null, rs) * cellM, 2),
+                      x_max: roundTo((Math.max.apply(null, cs) + 1) * cellM, 2), y_max: roundTo((Math.max.apply(null, rs) + 1) * cellM, 2) };
       region.centroid = { x: roundTo((sum(cs) / cs.length + 0.5) * cellM, 2), y: roundTo((sum(rs) / rs.length + 0.5) * cellM, 2) };
       out.push(region);
     }
@@ -900,7 +898,7 @@
       dead_zones: regionsOf(dead, cols, rows, cellM), best_ap: bestRows,
       overlap: { cells: overlapN, area_m2: roundTo(overlapN * area, 2), pct: pct(overlapN), pairs: pairList(pairCells) },
       roaming: { cells: roamN, area_m2: roundTo(roamN * area, 2), pct: pct(roamN), pairs: pairList(roamPairs),
-                 zones: regionsOf(roamCells, cols, rows, cellM, false),
+                 zones: regionsOf(roamCells, cols, rows, cellM),
                  map: { label: config.roaming.label, zone_ids: zoneIds, second_ap: secondRows, margin_db: marginRows, zone: zoneRows, blend_pct: blendRows } },
       throughput_mbps: rateRows,
       mean_throughput_mbps: total ? roundTo(rates.reduce(function (s, v) { return s + v; }, 0) / total, 1) : 0,

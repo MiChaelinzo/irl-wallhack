@@ -774,7 +774,7 @@ def floor_by_id(twin: dict, floor_id: str) -> dict:
     return floor
 
 
-def _regions(cells: List[bool], cols: int, rows: int, cell_m: float, with_bbox: bool = True) -> List[dict]:
+def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dict]:
     """4-connected regions of True cells (flood fill), ordered by their first cell in row-major scan."""
     seen = [False] * len(cells)
     regions = []
@@ -795,9 +795,8 @@ def _regions(cells: List[bool], cols: int, rows: int, cell_m: float, with_bbox: 
         rs = [n // cols for n in members]
         cs = [n % cols for n in members]
         region = {"cells": len(members), "area_m2": _round(len(members) * cell_m * cell_m, 2)}
-        if with_bbox:
-            region["bbox"] = {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
-                              "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)}
+        region["bbox"] = {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
+                          "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)}
         region["centroid"] = {"x": _round((sum(cs) / len(cs) + 0.5) * cell_m, 2), "y": _round((sum(rs) / len(rs) + 0.5) * cell_m, 2)}
         regions.append(region)
     return regions
@@ -903,7 +902,7 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
                     "pct": _round(100.0 * sum(overlap_cells) / total, 1), "pairs": pair_list(pair_cells)},
         "roaming": {"cells": sum(roam_cells), "area_m2": _round(sum(roam_cells) * area, 2),
                     "pct": _round(100.0 * sum(roam_cells) / total, 1), "pairs": pair_list(roam_pairs),
-                    "zones": _regions(roam_cells, cols, rows, cell_m, with_bbox=False),
+                    "zones": _regions(roam_cells, cols, rows, cell_m),
                     "map": {"label": config["roaming"]["label"], "zone_ids": zone_ids,
                             "second_ap": [second_ap[r * cols:(r + 1) * cols] for r in range(rows)],
                             "margin_db": [[None if v is None else _round(v, 1) for v in margin[r * cols:(r + 1) * cols]] for r in range(rows)],

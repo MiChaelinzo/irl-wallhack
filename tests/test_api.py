@@ -237,3 +237,9 @@ def test_error_log_window_expires_old_events():
     now["t"] = 20.0
     log_.record("b")
     assert log_.recent()["by_kind"] == {"b": 1} and log_.recent()["total_since_start"] == 2
+
+
+def test_request_id_rejects_trailing_newline():
+    assert new_request_id("client-id-12345\n") != "client-id-12345\n"
+    assert "\n" not in new_request_id("client-id-12345\n")
+    assert new_request_id("client-id-12345") == "client-id-12345"

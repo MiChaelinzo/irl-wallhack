@@ -108,3 +108,32 @@ def test_endpoint_with_mock_provider_and_consent(mock_server):  # noqa: F811
         seen = len(m.seen)
         assert c.post("/api/planner/explain", json=PAYLOAD).status_code == 409
         assert len(m.seen) == seen
+
+
+# ---- v2 regression tests: grounding must ignore list numbering and band units, NaN payloads rejected
+@pytest.mark.parametrize("reply", [
+    "1. Coverage is 82.5%.\n2. Move the router.",
+    "(1) Coverage is 82.5%\n(2) Move the router",
+    "Use the 5 GHz band for speed and 2.4 GHz for range, coverage is 82.5%.",
+    "A 6 GHz band and 160 MHz channels are not needed, coverage is 82.5%.",
+])
+def test_grounding_allows_list_numbers_and_band_units(reply):
+    assert llm.ungrounded_numbers(reply, llm.validate_planner_payload(PAYLOAD)) == []
+
+
+@pytest.mark.parametrize("reply,bad", [
+    ("1. Coverage is 91.3%.", ["91.3"]),
+    ("Coverage will be 77 percent.", ["77"]),
+    ("Use the 9 GHz band, coverage is 82.5%.", ["9"]),
+    ("2. Add 3 routers.", ["3"]),
+])
+def test_grounding_still_rejects_invented_numbers(reply, bad):
+    assert llm.ungrounded_numbers(reply, llm.validate_planner_payload(PAYLOAD)) == bad
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_planner_payload_rejects_non_finite_numbers(bad):
+    with pytest.raises(llm.LlmError):
+        llm.validate_planner_payload({"metrics": [{"label": "x", "value": bad}]})
+    with pytest.raises(llm.LlmError):
+        llm.validate_planner_payload({"recommendations": [{"text": "x", "confidence": bad}]})
