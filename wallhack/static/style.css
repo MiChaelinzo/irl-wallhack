@@ -259,7 +259,8 @@ html[data-quality="low"] .card h2, html[data-quality="low"] .badge { text-shadow
 .probe { margin:0 0 10px; font-size:.82rem; }
 .probe dt { color:var(--muted); float:left; clear:left; width:6.5em; }
 .probe dd { margin:0 0 2px 6.5em; }
-.minimap { width:100%; height:auto; border:1px solid var(--line); border-radius:8px; cursor:crosshair; }
+.minimap { width:100%; height:auto; border:1px solid var(--line); border-radius:8px; cursor:crosshair; background:var(--card-solid); box-shadow:inset 0 0 0 1px var(--idle-bg); transition:border-color var(--ease), box-shadow var(--ease); }
+.minimap:hover, .minimap:focus-visible { border-color:var(--accent); box-shadow:0 0 12px rgba(45,212,191,.25); }
 .ctxmenu { position:fixed; z-index:20; min-width:200px; max-height:80vh; overflow:auto; background:var(--card-solid); border:1px solid var(--line); border-radius:12px; padding:6px; box-shadow:var(--shadow); display:flex; flex-direction:column; animation:ctx-in .12s ease-out; }
 .ctxmenu button { text-align:left; border:0; background:transparent; border-radius:8px; padding:6px 10px; }
 .ctxmenu button:hover, .ctxmenu button:focus-visible { background:var(--idle-bg); box-shadow:none; }
@@ -317,7 +318,7 @@ html[data-theme="light"] { color-scheme:light; }
   .tabs button { flex:1 1 auto; }
   .p-tools .tool-row, .p-stage .stage-bar { gap:4px; }
 }
-@media (prefers-reduced-motion: reduce) { .tabpanel, .ctxmenu { animation:none !important; } .bar i, button { transition:none !important; } }
+@media (prefers-reduced-motion: reduce) { .tabpanel, .ctxmenu { animation:none !important; } .bar i, button, .minimap { transition:none !important; } }
 /* print fallback: the plan, the analytics and the estimate label, without controls */
 @media print {
   header, .p-tools, .p-side, footer, .tabs, #plannerNotice, .tool-row, .stage-bar .chip:not(#estimateLabel) { display:none !important; }
@@ -358,3 +359,13 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
   button[aria-pressed="true"] { outline:2px solid Highlight; }
 }
 :root[data-theme="light"] .ribbon, :root[data-theme="light"] #vitalsSim { color:#ffffff; }   /* white on the light theme's dark purple accent2 */
+
+/* 3D building view, beam polar plot and load bars */
+.view3d-canvas { display:block; width:100%; aspect-ratio:5 / 3; border:1px solid var(--line); border-radius:10px; background:var(--card-solid); touch-action:none; cursor:grab; }
+.view3d-canvas:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.view3d-text { margin-top:8px; font-size:.85rem; }
+.view3d-text p { margin:2px 0; }
+.beam-polar { display:block; max-width:100%; border:1px solid var(--line); border-radius:10px; background:var(--card-solid); }
+.load-bar { display:inline-block; width:90px; height:8px; vertical-align:middle; background:var(--idle-bg); border:1px solid var(--line); border-radius:4px; overflow:hidden; }
+.load-fill { display:block; height:100%; background:var(--ok); }
+.load-fill.over { background:var(--bad); }

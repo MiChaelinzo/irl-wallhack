@@ -1,6 +1,6 @@
 # ADR: Frontend stack (React, TypeScript, Three.js)
 
-Status: accepted. Decision owner: repository maintainers. **No rewrite was done.** This record evaluates options and keeps the current stack.
+Status: accepted. The three.js part is revisited with measurements in [adr-3d-view.md](adr-3d-view.md), which also keeps it out. Decision owner: repository maintainers. **No rewrite was done.** This record evaluates options and keeps the current stack.
 
 ## Context
 

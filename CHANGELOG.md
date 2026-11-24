@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Planner 3D view, beam and generation views, new lessons
+- docs: `docs/platform/adr-3d-view.md` records the decision with measurements: in-house WebGL plus canvas projection (42,755 B) instead of vendored three.js (670,681 B). `adr-frontend-stack.md` status line points to it. Pi 4 frame rate UNVERIFIED.
+- feat: `planner-3d.js` and the "3D view" tab: stacked floors from the elevation model (basements, slabs), orbit and fly-through camera (mouse, touch, keyboard), heat map per floor, access point and mesh markers, slicing plane and a signal volume of translucent slices. The volume is interpolated from per-floor 2D results (linear in dB), not a 3D simulation, and says so. WebGL with a canvas projection fallback (`?renderer=canvas2d`), text alternative, reduced motion respected. New `planner_3d` block in `rf-config.json`.
+- feat: tab "Beams and generations" in `planner-modes.js`: omnidirectional versus steered polar plot (animated, ILLUSTRATION), lobe on the plan, Wi-Fi 4 to 7 comparison table (speed, range, behind-wall rate, OFDMA, MU-MIMO, beamforming) with a per-floor run, mesh backhaul lines on the plan, load balance bars, animated coverage rings; minimap hover and focus polish in `style.css`.
+- feat: lessons on reflections, beamforming and 6 GHz in `learn-content.json`; checks `ap_standard` and `beamforming_gain_db`; `rssi_at` returns no value when the band is not allowed for the access point instead of throwing.
+- test: `tests/test_planner_3d.py`; `tools/planner_smoke.py` covers the 3D view and the new tab (live, demo, canvas 2D); `tools/perf_3d.py` measures the view.
+
 ### V2 timeline, what-if, recommendations and network design
 - feat: `rfmodel.signal_timeline` and `RFEngine.signalTimeline`: signal along a walking path with handoff events (hysteresis from `timeline.hysteresis_db`, thresholds from `analytics.roam_min_dbm` and `roam_margin_db`), sticky client samples and a summary. Python and JS output are identical (`tests/test_rf_timeline.py`).
 - feat: `rf-optimizer.js` gains `whatIf`, `applyChange`, `diffAnalytics`, `recommend` (coverage score out of 100 and ranked actions with measured deltas and confidence), `designNetwork`, `narratePlan` and `planPayload`; new config blocks `timeline` and `recommendations`.

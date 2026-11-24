@@ -38,5 +38,6 @@ Competitor statements in `19-competitive-analysis.md` come from general knowledg
 | 24 | [RF lab status](24-rf-lab-status.md) | Complete, partial and deferred per mandate section |
 | 25 | [V2 audit](25-v2-audit.md) | The 20 V2 items and the WOW list against the code, plus defects fixed |
 | ADR | [Frontend stack ADR](adr-frontend-stack.md) | React, TypeScript, Three.js evaluation and decision |
+| ADR | [Planner 3D view ADR](adr-3d-view.md) | In-house WebGL and canvas projection against vendored three.js, with measurements |
 
 `tests/test_platform_docs.py` checks that these files exist, that the top 100 table has at least 100 ranked rows, and that every file named in a Done row exists.

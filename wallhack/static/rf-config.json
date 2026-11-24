@@ -1906,5 +1906,24 @@
    "steering_efficiency": 0.5,
    "max_gain_db": 6.0
   }
- }
+ },
+ "planner_3d": {
+  "label": "MODEL ESTIMATE: the 3D view stacks the per-floor 2D results and interpolates between floors, it is not a 3D propagation simulation",
+  "source": "Floors sit at elevation_m, or at level times floor_elevation.reference_height_m when elevation_m is not set. A slice between two floors blends the two 2D RSSI grids linearly in dB with the height fraction. The per-floor grids already include the engine floor loss (floor_loss_db and floor_elevation), so the blend shows a plausible trend between floors and is not a computed field. Nothing is extrapolated above the top floor or below the lowest. The access point marker height and the steered beam width are drawing assumptions.",
+  "ap_height_m": 2.4,
+  "slab_thickness_m": 0.25,
+  "slices_per_gap": 3,
+  "texture_max_cells": 64,
+  "canvas_fallback_cells": 24,
+  "steered_beamwidth_deg": 40.0,
+  "beam_polar_step_deg": 5,
+  "compare": {
+   "label": "MODEL ESTIMATE: the generation table uses the engine path loss, noise floor and OFDM rate formulas for one reference link, it is not a product benchmark",
+   "tx_dbm": 18.0,
+   "distance_m": 10.0,
+   "sinr_db": [10.0, 25.0],
+   "walls": ["drywall", "brick", "reinforced_concrete"],
+   "clients": 8
+  }
+}
 }

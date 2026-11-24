@@ -189,6 +189,10 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | Sensor drivers on real hardware (UART, I2C, wiring, warm-up, calibration) | UNVERIFIED |
 | `/api/environment`, `/api/vitals`, simulated flag, real source without sensors gives `null` | VERIFIED (automated tests) |
 | 3D view projection helpers (`static/view3d.js`, run under node) | VERIFIED |
+| Planner 3D view maths (floor stack, camera and WebGL matrix, slicing, interpolated volume, scene), beam pattern, generation table, load balance under node (`tests/test_planner_3d.py`) | VERIFIED (automated tests) |
+| Planner 3D view and Beams and generations tab in headless Chromium (SwiftShader WebGL and canvas fallback, live and demo, no console errors) | PARTIALLY VERIFIED (software GL only, no touch device) |
+| Planner 3D view frame rate on a Raspberry Pi 4 | UNVERIFIED |
+| Signal volume between floors | MODEL ESTIMATE: interpolated from per-floor 2D maps, not a 3D propagation simulation |
 | 3D view and environment tiles in headless Chromium (simulator data: no JS errors, SIMULATED ribbons, non-blank canvas, three screenshots) | VERIFIED (one run in this sandbox, simulated data only; touch orbit on phones not tried) |
 | 3D upgrade (quality levels, reduced motion, seeded dust helpers) under node tests | VERIFIED (automated tests) |
 | Static demo build (`tools/build_demo.py`, deterministic output, tests) and playback in headless Chromium via `python3 -m http.server` (`docs/screenshot-demo.png`, no JS errors) | VERIFIED (one run in this sandbox, Chromium only) |

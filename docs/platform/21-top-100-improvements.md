@@ -52,7 +52,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 34 | Antenna gain, azimuth and sector pattern | 4 | 3 | 4 | 4 | 4 | 3 | 75.0 | Done | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py` |
 | 35 | Wi-Fi 7 MLO capacity model | 3 | 2 | 4 | 5 | 3 | 4 | 75.0 | Done | `wallhack/rfmodel.py`, `tests/test_wifi_standards.py`, `wallhack/static/planner-panels.js` |
 | 36 | Channel planning to reduce co-channel conflicts | 4 | 3 | 4 | 4 | 4 | 3 | 75.0 | Done | `wallhack/static/rf-optimizer.js` |
-| 37 | 3D building view with signal map | 4 | 4 | 4 | 5 | 4 | 3 | 75.0 | Done | `wallhack/static/view3d.js`, `tests/test_view3d.py` |
+| 37 | 3D building view with signal map | 4 | 4 | 4 | 5 | 4 | 3 | 75.0 | Done | `wallhack/static/view3d.js`, `wallhack/static/planner-3d.js`, `tests/test_view3d.py`, `tests/test_planner_3d.py` |
 | 38 | Measured 100,000 point benchmark | 4 | 3 | 5 | 5 | 2 | 3 | 75.0 | Done | `docs/perf-rf.md`, `tools/perf_rf.js` |
 | 39 | Deterministic rule-based insights | 4 | 3 | 4 | 4 | 4 | 3 | 75.0 | Done | `wallhack/insights.py`, `tests/test_insights.py` |
 | 40 | AP placement game with Python/JS score parity | 3 | 3 | 4 | 5 | 4 | 4 | 75.0 | Done | `wallhack/game.py`, `tests/test_game_parity.py` |
