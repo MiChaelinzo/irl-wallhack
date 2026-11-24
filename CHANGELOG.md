@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Design polish
+- style: form controls share one `:where()` rule, the focus ring is one token (`--ring`) instead of four duplicate rules, spacing and radius tokens added to `:root`, `accent-color`, thin scrollbars and text balancing (`style.css`).
+- style: planner map column stays in view while the long tool and control columns scroll (sticky, viewport-height stage); tool rows fill their width and the kind selects no longer overflow the column; the probe list is a grid instead of floats, so its empty state no longer wraps around the mini-map heading.
+- style: card headings get a divider; the RF intelligence card on the dashboard and the judge side card keep their own height instead of stretching into empty panels; score tiles fit five across.
+- docs: all screenshots in `docs/` regenerated. Verified: pytest (806), `tools/a11y_check.py` (0 serious or critical, live and demo), demo build. Looked at in headless Chromium only; the judge page status glyphs (check, half circle) rendered blank in this sandbox for lack of a symbol font, unchecked on real browsers.
+
 ### V2 reports, measurements, screenshots and accessibility
 - feat: PDF report gains network health, device recommendations and before and after what-if tables from the Timeline and what-if tab; CSV gains per-AP SINR rows (`planner-export.js`, `tests/test_planner_panels.py`).
 - fix: table scroll regions in the planner now have `tabindex`, `role=region` and a label (axe `scrollable-region-focusable`, found in the beams tab).
