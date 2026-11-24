@@ -477,6 +477,15 @@ def run_lab_features(page, problems, args):
     lab_idle(page)
     saved = app_eval(page, "return window.PlannerState.exportProjectJson(a.store.project)")
     app_eval(page, "return window.PlannerState.parseProjectJson(" + repr(saved) + ", a.validateOpts()) && 0")
+    # V2: class profile, beamforming and a Smart Home client with CAPACITY MODEL results
+    ap_select(page, "ap1", "Class").select_option("enterprise")
+    got_profile = app_eval(page, "const x = a.store.project.floors[0].aps[0]; return [x.profile, x.standard, x.spatial_streams, x.beamforming, x.band, x.tx_dbm]")
+    if got_profile != ["enterprise", "wifi7", 4, True, "5", 19.0]:
+        problems.append("class profile did not set the AP fields: %r" % (got_profile,))
+    page.select_option("#clientKind", "phone"); page.click("#clientAdd"); wait_idle(page); lab_idle(page)
+    page.wait_for_function("() => document.querySelector('#clientList li p') && /CAPACITY MODEL/.test(document.querySelector('#clientList li p').textContent)", timeout=30000)
+    if app_eval(page, "return (a.store.project.floors[0].clients || []).length") != 1:
+        problems.append("Add client did not add one client")
     # floors: up and down buttons, Page Up, floor stack
     if app_eval(page, "return a.store.floorId") != "g" or not page.locator("#floorDown").is_disabled():
         problems.append("floor down should be disabled on the lowest floor")

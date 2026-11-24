@@ -990,7 +990,7 @@
       Object.keys(o.materials).forEach(function (id) {
         var b = doc.createElement("button"), sw = doc.createElement("i"), label = o.materials[id].label || id;
         b.type = "button"; b.draggable = true; b.dataset.material = id; b.className = "mat";
-        b.setAttribute("aria-pressed", String(id === st.material)); b.title = label + ": click to draw with it, or drag onto the plan";
+        b.setAttribute("aria-pressed", String(id === st.material)); b.title = label + (o.materials[id].info ? ". " + o.materials[id].info : "") + ": click to draw with it, or drag onto the plan";
         sw.style.background = materialColor(id); sw.setAttribute("aria-hidden", "true");
         b.appendChild(sw); b.appendChild(doc.createTextNode(label));
         b.addEventListener("click", function () { self.setMaterial(id); self.setTool("wall"); });

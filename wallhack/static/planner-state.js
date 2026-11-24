@@ -453,7 +453,7 @@
   // ------------------------------------------------------------------ operations
   // An operation is plain data. applyOp mutates the project, invertOp returns the operation that
   // undoes it. Builders (below) capture everything an inverse needs, so no operation reads state later.
-  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices", opening: "openings", void: "voids" };
+  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices", client: "clients", opening: "openings", void: "voids" };
 
   function setProps(target, props) {
     Object.keys(props).forEach(function (k) { if (props[k] === undefined || props[k] === null) { delete target[k]; } else { target[k] = clone(props[k]); } });
