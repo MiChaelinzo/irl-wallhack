@@ -56,7 +56,6 @@
       project.floors.forEach(function (f) { f.aps.forEach(function (a) { list.push({ ap: a, floor: f }); }); });
       return list;
     }
-    function levelOfFloor(id) { return State.findFloor(project, id).level; }
 
     function entrySig(e, floor, cellM) {
       var a = e.ap;

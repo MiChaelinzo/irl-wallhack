@@ -1161,6 +1161,16 @@ def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] 
 TIMELINE_LABEL = TIMELINE["label"]
 
 
+def _is_finite_number(v):
+    """True for a real int or float (not bool) that is finite as a float; huge ints that overflow float are rejected."""
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return False
+    try:
+        return math.isfinite(float(v))
+    except OverflowError:
+        return False
+
+
 def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) -> List[dict]:
     """Sample points of a polyline: the first waypoint, every step_m along each same-floor segment, every later waypoint.
 
@@ -1172,6 +1182,9 @@ def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) 
     if not step_m > 0:
         raise ValueError("step_m must be positive")
     for w in path:
+        if (not isinstance(w, dict) or not isinstance(w.get("floor"), str)
+                or not all(_is_finite_number(w.get(k)) for k in ("x", "y"))):
+            raise ValueError("each waypoint needs a floor id and finite numeric x and y")
         floor_by_id(twin, w["floor"])
     points = [{"floor": path[0]["floor"], "x": path[0]["x"], "y": path[0]["y"], "s": 0.0}]
     travelled = 0.0
@@ -1186,6 +1199,8 @@ def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) 
             d = k * step_m
             t = d / length
             points.append({"floor": a["floor"], "x": a["x"] + dx * t, "y": a["y"] + dy * t, "s": travelled + d})
+            if len(points) > max_samples:
+                raise ValueError(f"path needs more than {max_samples} samples, use a larger step_m")
             k += 1
         travelled += length
         points.append({"floor": b["floor"], "x": b["x"], "y": b["y"], "s": travelled})
