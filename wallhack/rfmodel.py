@@ -68,6 +68,7 @@ ANTENNA = CONFIG["antenna"]
 EXTERNAL = CONFIG["external_sources"]
 RELIABILITY = CONFIG["reliability"]
 VOIDS = CONFIG["voids"]
+WALL_THICKNESS = CONFIG["wall_thickness"]
 SPECTRUM = CONFIG["spectrum"]
 DECAY = CONFIG["decay"]
 ROAMING = CONFIG["roaming"]
@@ -96,6 +97,16 @@ def wall_material(wall: dict, materials: Dict[str, dict]) -> dict:
     if name not in materials:
         raise ValueError(f"unknown material {name!r} on wall {wall.get('id')!r}")
     return materials[name]
+
+
+def thickness_factor(wall: dict, material_name: str, config: dict = CONFIG) -> float:
+    """Loss multiplier of a wall from its optional `thickness_cm`: min(thickness / reference, max_factor), where the
+    reference is the thickness the material's attenuation_db belongs to (config wall_thickness). 1.0 without thickness."""
+    cfg = config["wall_thickness"]
+    t = wall.get("thickness_cm")
+    if t is None:
+        return 1.0
+    return min(t / cfg["reference_cm"].get(material_name, cfg["default_reference_cm"]), cfg["max_factor"])
 
 
 def _cross(ax: float, ay: float, bx: float, by: float) -> float:
@@ -141,6 +152,8 @@ def wall_crossings(floor: dict, px: float, py: float, qx: float, qy: float, band
         if along is None:
             continue
         loss = wall_material(wall, materials)["attenuation_db"][band]
+        if "thickness_cm" in wall:
+            loss = loss * thickness_factor(wall, _wall_material_name(wall))
         through = None
         for o in openings.get(wall["id"], ()):
             if o["pos"] <= along <= o["pos"] + o["width"]:
@@ -1353,6 +1366,8 @@ def _explain(twin: dict, floor: dict, ap: dict, ap_floor: dict, x: float, y: flo
         name = _wall_material_name(wall)
         walls.append({"wall": wall["id"], "material": name, "material_label": materials[name]["label"],
                       "through": opening["kind"] if opening else "wall", "loss_db": _round(loss, 2)})
+        if "thickness_cm" in wall and not opening:
+            walls[-1]["thickness_cm"] = wall["thickness_cm"]
     walls_db = sum(w["loss_db"] for w in walls)
     floor_full = CONFIG["floor_loss_db"][band] * floors_crossed(ap_floor, floor, apart)
     floor_db = floor_penetration_db(ap, ap_floor, floor, x, y, apart, band)
@@ -1385,7 +1400,8 @@ def _explain(twin: dict, floor: dict, ap: dict, ap_floor: dict, x: float, y: flo
              f"Path loss {_f1(path)} dB at {_f1(d)} m (log-distance, exponent {BANDS[band]['path_loss_exponent']:g})."]
     for w in walls:
         what = f"{w['through']} in wall {w['wall']}" if w["through"] != "wall" else f"wall {w['wall']}"
-        lines.append(f"Crosses {what} ({w['material_label']}): {_f1(w['loss_db'])} dB.")
+        thick = f", {w['thickness_cm']:g} cm" if "thickness_cm" in w else ""
+        lines.append(f"Crosses {what} ({w['material_label']}{thick}): {_f1(w['loss_db'])} dB.")
     if not walls:
         lines.append("Crosses no walls.")
     if apart:

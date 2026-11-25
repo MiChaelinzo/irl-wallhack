@@ -305,7 +305,7 @@ LAB = {"name": "Lab plan", "floors": [
     {"id": "u", "name": "Upper", "level": 1, "width_m": 30, "depth_m": 20, "walls": [], "aps": [{"id": "ap3", "x": 10, "y": 10, "tx_dbm": 17}]}]}
 
 HEAT_LAYERS = ["rssi", "snr", "sinr", "quality", "bandwidth", "latency", "loss", "wall_loss", "interference", "utilisation", "capacity", "combined"]
-PALETTES = ["classic", "cvd", "viridis", "cividis"]
+PALETTES = ["classic", "aurora", "cvd", "viridis", "cividis"]
 
 
 def ap_select(page, ap_id, label):
@@ -480,6 +480,32 @@ def run_lab_features(page, problems, args):
     if voids() != "stairwell:4x4":
         problems.append("floor opening tool did not add a 4 x 4 m stairwell: %r" % voids())
     page.click("[data-tool=select]")
+    # object tool: a fridge is four wall segments that undo, delete and change thickness as one group
+    n_walls = lambda: app_eval(page, "return a.store.project.floors[0].walls.length")  # noqa: E731
+    w0 = n_walls()
+    page.select_option("#objectKind", "fridge")
+    click_world(page, 22.0, 14.0)
+    wait_idle(page)
+    if n_walls() != w0 + 4 or app_eval(page, "return a.store.project.floors[0].walls.filter(w => w.object).length") != 4:
+        problems.append("object tool did not add four tagged wall segments: %r" % n_walls())
+    page.keyboard.press("Control+z")
+    if n_walls() != w0:
+        problems.append("one undo did not remove the whole object")
+    page.keyboard.press("Control+Shift+z")
+    page.click("[data-tool=select]")
+    click_world(page, 21.65, 14.0)   # the left edge of the fridge selects the whole object
+    if app_eval(page, "return a.store.selection.walls.length") != 4:
+        problems.append("clicking one edge did not select the whole object: %r" % app_eval(page, "return a.store.selection.walls.length"))
+    page.locator("#wallThickness").fill("2"); page.locator("#wallThickness").dispatch_event("change")
+    if app_eval(page, "return a.store.project.floors[0].walls.filter(w => w.object && w.thickness_cm === 2).length") != 4:
+        problems.append("thickness input did not apply to the whole object")
+    page.focus("#cEdit"); page.keyboard.press("Delete")
+    if n_walls() != w0:
+        problems.append("deleting one edge did not delete the whole object")
+    page.select_option("#paletteSel", "aurora"); wait_idle(page)
+    if app_eval(page, "return a.paletteId") != "aurora":
+        problems.append("aurora palette was not applied")
+    page.select_option("#paletteSel", "classic")
     tab(page, "environment")
     page.click("#envAddVoid")
     if len((app_eval(page, "return a.store.project.floors[0].voids") or [])) != 2:
@@ -650,8 +676,8 @@ def run_learn_features(page, problems, args):
     docs = docs_dir(args)
     page.set_viewport_size({"width": 1400, "height": 1100})
     ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
-    if len(ids) != 10:
-        problems.append("preset picker lists %d scenarios instead of 10" % len(ids))
+    if len(ids) != 14:
+        problems.append("preset picker lists %d scenarios instead of 14" % len(ids))
     for pid in ids:
         page.select_option("#presetSel", pid); page.click("#presetLoad")
         page.wait_for_function("(n) => window.PlannerApp.store.project.name === n", arg=page.evaluate("(id) => window.PlannerApp.learn.presets.find(p => p.id === id).project.name", pid), timeout=5000)
@@ -754,6 +780,10 @@ def main() -> int:
             page.on("response", lambda r: errors.append("HTTP %d %s" % (r.status, r.url)) if r.status >= 400 else None)
             try:
                 run(page, "http://127.0.0.1:%d/" % PORT, problems, args) if not query else run_query(page, query, problems, args)
+            except Exception:
+                for msg in errors:   # a failed step is easier to read next to the page errors that preceded it
+                    print("PAGE ERROR BEFORE FAILURE:", msg, file=sys.stderr)
+                raise
             finally:
                 browser.close()
         for msg in errors + problems:

@@ -97,3 +97,11 @@ def test_layer_grids_flip_bad_is_low_layers_and_report_missing_sinr():
     assert r["q"][0] > r["q"][1] and r["uGrid"][0] > r["uGrid"][1] == -100
     assert r["comb"][0] > r["comb"][1] and r["good"][0] == 1 and r["good"][1] == 1 and r["good"][2] is None
     assert "worst" in r["ends"][0] and "best" in r["ends"][1]
+
+
+def test_aurora_palette_maps_quality_bands_to_emerald_cyan_amber_crimson():
+    r = run_js("out({ids: Object.keys(H.PALETTES), label: H.PALETTE_LABELS.aurora, strong: H.bandColor('aurora', 'excellent'), good: H.bandColor('aurora', 'good'),"
+               " fair: H.bandColor('aurora', 'fair'), poor: H.bandColor('aurora', 'poor'), lut: H.buildLut('aurora').length})")
+    assert r["ids"].index("classic") == 0 and "aurora" in r["ids"] and "Aurora" in r["label"]
+    assert r["strong"] == [0x10, 0xb9, 0x81] and r["good"] == [0x22, 0xd3, 0xee] and r["fair"] == [0xf5, 0x9e, 0x0b] and r["poor"] == [0xdc, 0x26, 0x26]
+    assert r["lut"] == 256 * 4

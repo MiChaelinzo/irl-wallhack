@@ -40,10 +40,12 @@
       <button type="button" data-tool="door" aria-pressed="false" title="Place a door on a wall (D)">Door</button>
       <button type="button" data-tool="window" aria-pressed="false" title="Place a window on a wall (O)">Window</button>
       <button type="button" data-tool="void" aria-pressed="false" title="Draw a stairwell, atrium or shaft opening in the floor (S)">Floor opening</button>
+      <button type="button" data-tool="object" aria-pressed="false" title="Place furniture or a metal object, drawn as wall segments (B)">Object</button>
       <button type="button" data-tool="interferer" aria-pressed="false" title="Place a non-WiFi or neighbour interference source (X)">Interference</button>
     </div>
     <div class="tool-row">
       <label class="inline">Opening kind <select id="voidKind" aria-label="Kind of floor opening"></select></label>
+      <label class="inline">Object kind <select id="objectKind" aria-label="Kind of object"></select></label>
       <label class="inline">Source kind <select id="sourceKind" aria-label="Kind of interference source"></select></label>
     </div>
     <div class="tool-row">
@@ -143,6 +145,7 @@
       <div id="inspector" hidden>
         <h3>Selected walls</h3>
         <label class="field">Material <select id="wallMaterial"></select></label>
+        <label class="field">Thickness (cm) <input id="wallThickness" type="number" step="0.5" inputmode="decimal" placeholder="default" aria-label="Wall thickness in centimetres, empty for the material default"></label>
         <p id="wallInfo" class="muted hint"></p>
       </div>
     </section>
@@ -164,7 +167,7 @@
   <h2 id="helpTitle">Keyboard shortcuts</h2>
   <table>
     <tr><th>V / W / A / L / C / H</th><td>Select, wall, access point, label, calibrate, pan</td></tr>
-    <tr><th>D / O / S / X</th><td>Door, window, floor opening (stairwell), interference source</td></tr>
+    <tr><th>D / O / S / X / B</th><td>Door, window, floor opening (stairwell), interference source, object</td></tr>
     <tr><th>Page Up / Page Down</th><td>Floor above, floor below</td></tr>
     <tr><th>Space (hold)</th><td>Pan with the pointer</td></tr>
     <tr><th>Delete</th><td>Delete selection</td></tr>

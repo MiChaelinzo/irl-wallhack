@@ -168,6 +168,8 @@
           wall.material = w.material;
         }
         if (w.name !== undefined) { wall.name = nameText(w, "name", q, maxText); }
+        if (w.thickness_cm !== undefined) { wall.thickness_cm = num(w.thickness_cm, q + ".thickness_cm", cfg.wall_thickness.min_cm, cfg.wall_thickness.max_cm); }
+        if (w.object !== undefined) { wall.object = text(w, "object", q, maxText); }
         floor.walls.push(wall);
       });
       var wallIds = floor.walls.map(function (w) { return w.id; });

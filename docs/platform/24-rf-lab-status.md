@@ -42,6 +42,12 @@ Verification labels follow the README (VERIFIED, PARTIALLY VERIFIED, UNVERIFIED)
 | Screen readers, real GPU, touch, low-end devices | Only headless Chromium on SwiftShader was available. |
 | Real LLM providers and Vercel deployment | Mock servers and local builds only. |
 
+## Round 5 additions (wall architect)
+
+| Item | Status | What exists (files) | What is missing or unverified |
+|---|---|---|---|
+| Wall thickness, objects, four more presets, aurora palette | Complete | `thickness_cm` rule in `wallhack/rfmodel.py` and `wallhack/static/rf-engine.js`, `wall_thickness` and `objects` in `wallhack/static/rf-config.json`, Object tool in `wallhack/static/planner-editor.js`, presets in `tools/make_scenarios.py`, palette in `wallhack/static/planner-heat.js`, tests `tests/test_rf_parity.py`, `tests/test_rfmodel.py`, `tests/test_scenarios.py` | Reference thicknesses and the linear rule are planning assumptions, not measurements. Objects ignore height and diffraction. |
+
 ## Reading guide
 
 The consolidated table of what was verified and how is the README "Verification status" section. The ranked backlog with status is [21-top-100-improvements.md](21-top-100-improvements.md), and what to do next is [20-roadmap.md](20-roadmap.md).

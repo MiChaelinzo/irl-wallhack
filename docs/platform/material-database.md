@@ -230,3 +230,47 @@ Tiles or sheet over timber, no metal foil. Foil-backed or metal roofing is much 
 ## Floors and roofing
 
 The 2D engine applies floors as a fixed `floor_loss_db` per floor crossed (`rf-config.json`). It has no slab or roof geometry. `flooring` and `roofing` are reference values for that figure and for a future 3D model. They can be picked as a wall material, which then models a thin partition, not a slab.
+
+## Wall thickness
+
+MODEL ESTIMATE: wall loss scales linearly with thickness, a planning approximation, not a measurement.
+
+Rule: `loss = attenuation_db x min(thickness_cm / reference_cm, 4)`. A wall without `thickness_cm` loses exactly `attenuation_db`. Allowed thickness is 0.5 to 100 cm. Custom materials use a reference of 10 cm. Source note: The sourced attenuation_db of a material is the loss of a wall of that material at its reference thickness (reference_cm: a typical built thickness, a planning assumption). A wall with thickness_cm t loses attenuation_db x min(t / reference_cm, max_factor). Loss grows roughly linearly with the length of the path through a homogeneous material (ITU-R P.2040 models a slab by its attenuation per unit thickness), so the rule is linear; max_factor caps it because the straight-path model does not hold for very thick masses. A wall without thickness_cm loses exactly attenuation_db. Custom materials use default_reference_cm. Openings (doors, windows) keep their own loss and ignore thickness.
+
+| Material | Reference thickness (cm) |
+|---|---|
+| Glass (`glass`) | 1 |
+| Drywall (`drywall`) | 10 |
+| Wood (`wood`) | 5 |
+| Brick (`brick`) | 10 |
+| Concrete (`concrete`) | 15 |
+| Metal (`metal`) | 1 |
+| Reinforced concrete (`reinforced_concrete`) | 20 |
+| Stone (`stone`) | 20 |
+| Plaster (`plaster`) | 10 |
+| Insulation (`insulation`) | 10 |
+| Office partition (`office_partition`) | 8 |
+| Industrial wall (`industrial_wall`) | 20 |
+| Steel (`steel`) | 1 |
+| Aluminium (`aluminium`) | 1 |
+| Tiles (`tiles`) | 2 |
+| Insulated wall (`insulated_wall`) | 20 |
+| Metal door (`metal_door`) | 4 |
+| Fire door (`fire_door`) | 4 |
+| Flooring (`flooring`) | 5 |
+| Roofing (`roofing`) | 15 |
+
+## Comparison with common quick-estimate figures
+
+Many quick guides quote one round number per material (drywall 3 dB, wood 4, glass 5, brick 9, concrete 18, metal 30). The sourced database values are kept as they are. The table shows how the two compare, so a user who knows the quick figure can see which band and thickness it corresponds to. MODEL ESTIMATE: both columns are planning values, not measurements.
+
+| Material | Quick figure (dB) | Database 2.4 GHz (dB) | Database 5 GHz (dB) | Database 6 GHz (dB) |
+|---|---|---|---|---|
+| Drywall (`drywall`) | 3 | 4 | 5 | 5.5 |
+| Wood (`wood`) | 4 | 5 | 6.5 | 7 |
+| Glass (`glass`) | 5 | 3 | 4 | 4.5 |
+| Brick (`brick`) | 9 | 9 | 11 | 12 |
+| Concrete (`concrete`) | 18 | 13 | 17 | 19 |
+| Metal (`metal`) | 30 | 26 | 30 | 32 |
+
+At 2.4 GHz the database is above the quick figure for drywall and wood, equal for brick, and below it for glass, concrete and metal. A quick figure names neither a band nor a thickness. Set `thickness_cm` rather than editing a database value: concrete at twice its reference thickness doubles the loss.

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### WiFi architect: thickness, objects, templates, aurora palette
+- feat: optional wall `thickness_cm` with a per-material reference thickness (`wall_thickness` in `rf-config.json`, schema updated). Loss is `attenuation_db x min(thickness / reference, max_factor)`; walls without thickness are unchanged and the legacy golden fixture passes untouched. Mirrored in `rf-engine.js`, validated in `twin.py` and `planner-state.js`, shown in explain text, parity tested (`tests/test_rf_parity.py`, `tests/test_rfmodel.py`).
+- feat: Object tool (B): furniture and metal obstacles drawn as four wall segments with one `object` id (sofa, fridge, cabinet, mirror, bookshelf), undoable as one step, deleted as a group. They reuse the wall loss path (`docs/rf-planner.md`).
+- feat: inspector thickness input with a tooltip of the resulting dB at the current band.
+- feat: four new presets (studio apartment, two bedroom condo, three story house with stairwell voids, small office), 14 in total; every floor of every preset has named rooms.
+- feat: `aurora` heat map palette (emerald, cyan, amber, crimson) next to classic, used by the WebGL and canvas paths.
+- docs: `material-database.md` gains the thickness rule and a comparison with quick figures (drywall 3, wood 4, glass 5, brick 9, concrete 18, metal 30 dB); database values are unchanged.
+- Verification: VERIFIED by pytest (828 passed, 3 skipped), `make typecheck`, `node --check`, `tools/planner_smoke.py` (live, `--demo`, `--canvas2d`: object tool, group select, thickness input, delete and aurora palette driven in headless Chromium) and `tools/a11y_check.py` (0 serious or critical). UNVERIFIED: real devices and touch for the Object tool; the reference thicknesses are planning assumptions.
+- test: `tools/planner_smoke.py` prints the page errors seen before a failed step.
+
 ### Polish pass 2: hierarchy, honesty checks, lighter screenshots
 - fix: timeline samples are capped inside the segment loop and waypoints are validated (`ValueError` in `rfmodel.signal_timeline`, matching JS); judge page status marks are CSS shapes (check, half circle, ring, cross) instead of symbol-font glyphs that rendered blank without the font; `make typecheck` fixes (commit dc5e378).
 - fix: the sticky planner map was constrained by the whole planner grid, so with the page scrolled to the analysis card it stayed pinned behind that card and clicks meant for the plan landed on the card. The tools, map and side columns now sit in their own `.planner-work` grid, so the map stops at the analysis card. This was the cause of the intermittent "no handoff" failure in `tools/planner_smoke.py`.

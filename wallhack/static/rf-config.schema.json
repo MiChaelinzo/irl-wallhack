@@ -26,6 +26,31 @@
       "additionalProperties": {"type": "string", "minLength": 1}
     },
     "floor_loss_db": {"$ref": "#/$defs/perBandNumber"},
+    "wall_thickness": {
+      "type": "object",
+      "required": ["label", "source", "min_cm", "max_cm", "max_factor", "default_reference_cm", "reference_cm"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "min_cm": {"type": "number", "exclusiveMinimum": 0},
+        "max_cm": {"type": "number", "exclusiveMinimum": 0},
+        "max_factor": {"type": "number", "minimum": 1},
+        "default_reference_cm": {"type": "number", "exclusiveMinimum": 0},
+        "reference_cm": {"type": "object", "additionalProperties": {"type": "number", "exclusiveMinimum": 0}}
+      }
+    },
+    "objects": {
+      "type": "object",
+      "required": ["label", "source", "kinds"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "kinds": {"type": "object", "minProperties": 1, "additionalProperties": {
+          "type": "object", "required": ["label", "material", "thickness_cm", "w_m", "d_m"],
+          "properties": {"label": {"type": "string"}, "material": {"type": "string"}, "thickness_cm": {"type": "number", "exclusiveMinimum": 0},
+                         "w_m": {"type": "number", "exclusiveMinimum": 0}, "d_m": {"type": "number", "exclusiveMinimum": 0}}}}
+      }
+    },
     "floor_elevation": {
       "type": "object",
       "required": ["label", "source", "reference_height_m", "elevation_m_range"],

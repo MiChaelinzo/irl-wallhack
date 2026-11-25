@@ -72,6 +72,12 @@
            (Math.abs(w.x2 - pt[0]) <= eps && Math.abs(w.y2 - pt[1]) <= eps);
   }
 
+  /** Loss multiplier of a wall of `thicknessCm`: min(thickness / reference, max_factor) (rfmodel.thickness_factor). */
+  function thicknessFactor(cfg, materialName, thicknessCm) {
+    var t = cfg.wall_thickness, ref = has(t.reference_cm, materialName) ? t.reference_cm[materialName] : t.default_reference_cm;
+    return Math.min(thicknessCm / ref, t.max_factor);
+  }
+
   // ---------------------------------------------------------------- floor preparation + spatial index
   /**
    * Walls of one floor with their losses at `band`, plus a uniform grid index over the wall
@@ -90,8 +96,10 @@
       var mat = env.materials[name];
       if (!mat) { throw new Error("unknown material '" + name + "' on wall '" + w.id + "'"); }
       maxX = Math.max(maxX, w.x1, w.x2); maxY = Math.max(maxY, w.y1, w.y2);
+      var loss = mat.attenuation_db[band];
+      if (w.thickness_cm !== undefined && w.thickness_cm !== null) { loss = loss * thicknessFactor(cfg, name, w.thickness_cm); }
       return { id: w.id, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, len: Math.hypot(w.x2 - w.x1, w.y2 - w.y1),
-               loss: mat.attenuation_db[band], refl: mat.reflection_loss_db[band], openings: byWall[w.id] || [],
+               thickness_cm: w.thickness_cm, loss: loss, refl: mat.reflection_loss_db[band], openings: byWall[w.id] || [],
                material: name, label: mat.label };
     });
     var prep = { walls: walls, band: band, index: null, seen: new Int32Array(walls.length), stamp: 0, scratch: [], hits: [], hitLosses: [] };
@@ -1233,7 +1241,9 @@
       for (var k = 0; k < w.openings.length; k++) {
         if (w.openings[k].from <= along && along <= w.openings[k].to) { loss = w.openings[k].loss; through = w.openings[k].kind; break; }
       }
-      walls.push({ wall: w.id, material: w.material, material_label: w.label, through: through, loss_db: roundTo(loss, 2) });
+      var entry = { wall: w.id, material: w.material, material_label: w.label, through: through, loss_db: roundTo(loss, 2) };
+      if (w.thickness_cm !== undefined && w.thickness_cm !== null && through === "wall") { entry.thickness_cm = w.thickness_cm; }
+      walls.push(entry);
     });
     var wallsDb = walls.reduce(function (sum, w) { return sum + w.loss_db; }, 0);
     var floorFull = cfg.floor_loss_db[band] * floorsCrossed(cfg, apFloor, floor, apart), floorDb = floorPenetrationDb(cfg, ap, apFloor, floor, x, y, apart, band);
@@ -1268,7 +1278,7 @@
                  "Transmit " + f1(ap.tx_dbm) + " dBm plus antenna gain " + f1(gain) + " dB gives " + f1(ap.tx_dbm + gain) + " dBm EIRP.",
                  "Path loss " + f1(path) + " dB at " + f1(d) + " m (log-distance, exponent " + cfg.bands[band].path_loss_exponent + ")."];
     walls.forEach(function (w) {
-      lines.push("Crosses " + (w.through !== "wall" ? w.through + " in wall " + w.wall : "wall " + w.wall) + " (" + w.material_label + "): " + f1(w.loss_db) + " dB.");
+      lines.push("Crosses " + (w.through !== "wall" ? w.through + " in wall " + w.wall : "wall " + w.wall) + " (" + w.material_label + (w.thickness_cm !== undefined ? ", " + w.thickness_cm + " cm" : "") + "): " + f1(w.loss_db) + " dB.");
     });
     if (!walls.length) { lines.push("Crosses no walls."); }
     if (apart) {
@@ -1421,7 +1431,7 @@
   }
 
   var api = { makeEnv: makeEnv, registerMode: registerMode, registerMaterials: registerMaterials, modeIds: modeIds,
-              prepareFloor: prepareFloor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid, computeApRegion: computeApRegion,
+              prepareFloor: prepareFloor, thicknessFactor: thicknessFactor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid, computeApRegion: computeApRegion,
               mergeBest: mergeBest, coverageGrid: coverageGrid, apGrids: apGrids, analytics: analytics,
               analyzeFloor: analyzeFloor, analyzeFloorWithGrid: analyzeFloorWithGrid, probeAt: probeAt, signalTimeline: signalTimeline, scoreAnalytics: scoreAnalytics,
               compareScenarios: compareScenarios, phyRateMbps: phyRateMbps, throughputMbps: throughputMbps,

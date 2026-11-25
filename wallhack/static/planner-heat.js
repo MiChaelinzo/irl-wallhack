@@ -12,14 +12,15 @@
   var CONTOUR_LABEL_MIN_PX = 60;
   var BAND_NAMES = { excellent: "Excellent", good: "Good", fair: "Fair", poor: "Poor", none: "No coverage" };
   // Professional RF scales: weak is warm/dark, strong is cool, so a printed or screen-shot map still reads.
-  // "classic" follows site-survey tools; "cvd" is a colour-blind safe (viridis like) ramp.
+  // "classic" follows site-survey tools; "aurora" maps the quality bands to emerald, cyan, amber and crimson; "cvd" is a colour-blind safe (viridis like) ramp.
   var PALETTES = {
     classic: [[-100, "#2b0a3d"], [-90, "#7a1230"], [-85, "#c0392b"], [-75, "#f39c12"], [-65, "#f1e05a"], [-55, "#4cc36b"], [-45, "#1fb5b0"], [-30, "#3b82f6"]],
+    aurora: [[-100, "#450a0a"], [-90, "#991b1b"], [-80, "#dc2626"], [-70, "#f59e0b"], [-60, "#22d3ee"], [-48, "#10b981"], [-30, "#059669"]],
     cvd: [[-100, "#fde725"], [-85, "#b5de2b"], [-75, "#6ece58"], [-65, "#35b779"], [-55, "#21918c"], [-45, "#31688e"], [-30, "#440154"]],
     viridis: evenStops(["#440154", "#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#fde725"]),
     cividis: evenStops(["#00204d", "#31446b", "#666970", "#958f78", "#cbba69", "#ffea46"])
   };
-  var PALETTE_LABELS = { classic: "Classic RF", cvd: "Colour-blind safe (inverted viridis)", viridis: "Viridis (colour-blind safe)", cividis: "Cividis (colour-blind safe)" };
+  var PALETTE_LABELS = { classic: "Classic RF", aurora: "Aurora (emerald, cyan, amber, crimson)", cvd: "Colour-blind safe (inverted viridis)", viridis: "Viridis (colour-blind safe)", cividis: "Cividis (colour-blind safe)" };
   var BAND_SAMPLE_DBM = { excellent: -48, good: -60, fair: -70, poor: -80, none: -95 };
   var MAX_CONTOUR_CELLS = 400000;
 

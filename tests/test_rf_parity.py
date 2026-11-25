@@ -41,7 +41,7 @@ def run_node(jobs):
     return json.loads(res.stdout)
 
 
-def random_project(seed, n_walls, width=24.0, depth=16.0, grid=0.5):
+def random_project(seed, n_walls, width=24.0, depth=16.0, grid=0.5, thickness=False):
     """Seeded layout on two floors with mixed materials, openings and per-AP bands."""
     rng = random.Random(seed)
 
@@ -62,6 +62,10 @@ def random_project(seed, n_walls, width=24.0, depth=16.0, grid=0.5):
             else:
                 walls.append({"id": f"{fid}-w{i}", "x1": x1, "y1": y1, "x2": x2, "y2": y2,
                               "kind": rng.choice(("interior", "exterior"))})
+        if thickness:   # about half the walls get a thickness, the rest keep the material default
+            for w in walls:
+                if rng.random() < 0.5:
+                    w["thickness_cm"] = round(rng.uniform(0.5, 60.0), 1)
         openings = []
         for i, w in enumerate(walls[: n_walls // 5]):
             length = ((w["x2"] - w["x1"]) ** 2 + (w["y2"] - w["y1"]) ** 2) ** 0.5
@@ -136,3 +140,44 @@ def test_js_diffraction_matches_python_on_knife_edge_geometry():
     expected = rfmodel.rssi_from_ap(f["aps"][0], f, f, 22.5, 7.5, mode="enhanced")
     grid = run_node([{"kind": "grid", "project": project, "floor": "f", "cell_m": 1.0, "band": "2.4", "mode": "enhanced"}])[0]
     assert grid["rssi"][7][22] == pytest.approx(expected, abs=TOLERANCE_DB)
+
+
+def test_random_layouts_with_wall_thickness_match_python_on_every_band_and_mode():
+    projects = [random_project(11, 30, thickness=True), random_project(12, 60, thickness=True)]
+    combos = [(b, m) for b in BANDS for m in MODES]
+    check(projects, 2.0, combos)
+
+
+def test_concrete_wall_at_double_reference_thickness_doubles_the_loss_in_python_and_js():
+    ref = rfmodel.WALL_THICKNESS["reference_cm"]["concrete"]
+    base = {"id": "w", "x1": 12.0, "y1": 0.0, "x2": 12.0, "y2": 24.0, "kind": "interior", "material": "concrete"}
+
+    def project(wall):
+        f = {"id": "f", "name": "F", "level": 0, "width_m": 24.0, "depth_m": 24.0, "rooms": [], "furniture": [], "sensors": [],
+             "openings": [], "aps": [{"id": "a", "x": 2.0, "y": 12.0, "tx_dbm": 20.0}], "walls": [wall]}
+        return {"name": "thick", "units": "m", "floors": [f]}
+
+    plain, double = project(base), project(dict(base, thickness_cm=2 * ref))
+    for band in BANDS:
+        job = lambda p: {"kind": "grid", "project": p, "floor": "f", "cell_m": 1.0, "band": band, "mode": "basic"}
+        js_plain, js_double = run_node([job(plain), job(double)])
+        wall = rfmodel.CONFIG["materials"]["concrete"]["attenuation_db"][band]
+        # cell (row 12, col 20) sits behind the wall; the extra loss is exactly one more wall loss
+        assert js_plain["rssi"][12][20] - js_double["rssi"][12][20] == pytest.approx(wall, abs=0.1 + 1e-9)
+        py_plain, py_double = (rfmodel.coverage_grid(p, "f", 1.0, band=band, mode="basic") for p in (plain, double))
+        assert py_plain["rssi"][12][20] - py_double["rssi"][12][20] == pytest.approx(wall, abs=0.1 + 1e-9)
+
+
+def test_js_explain_matches_python_for_a_thick_wall():
+    wall = {"id": "w", "x1": 5.0, "y1": 0.0, "x2": 5.0, "y2": 10.0, "kind": "interior", "material": "concrete", "thickness_cm": 30}
+    f = {"id": "f", "name": "F", "level": 0, "width_m": 10.0, "depth_m": 10.0, "rooms": [], "furniture": [], "sensors": [], "openings": [],
+         "aps": [{"id": "a", "x": 1.0, "y": 5.0, "tx_dbm": 20.0}], "walls": [wall]}
+    project = {"name": "t", "units": "m", "floors": [f]}
+    py = rfmodel.probe_at(project, "f", 9.0, 5.0, explain=True)["explain"]
+    script = ("const E = require(process.argv[1]); const {config, project} = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+              "console.log(JSON.stringify(E.probeAt(project, 'f', 9.0, 5.0, {config, explain: true}).explain));")
+    res = subprocess.run(["node", "-e", script, str(STATIC / "rf-engine.js")], capture_output=True, text=True,
+                         input=json.dumps({"config": rfmodel.CONFIG, "project": project}))
+    assert res.returncode == 0, res.stderr
+    js = json.loads(res.stdout)
+    assert js["walls"] == py["walls"] and js["text"] == py["text"] and "(Concrete, 30 cm)" in "\n".join(js["text"])

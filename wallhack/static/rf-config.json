@@ -1383,6 +1383,78 @@
   "open_end_reduction": 0.5,
   "max_points": 32
  },
+ "wall_thickness": {
+  "label": "MODEL ESTIMATE: wall loss scales linearly with thickness, a planning approximation, not a measurement",
+  "source": "The sourced attenuation_db of a material is the loss of a wall of that material at its reference thickness (reference_cm: a typical built thickness, a planning assumption). A wall with thickness_cm t loses attenuation_db x min(t / reference_cm, max_factor). Loss grows roughly linearly with the length of the path through a homogeneous material (ITU-R P.2040 models a slab by its attenuation per unit thickness), so the rule is linear; max_factor caps it because the straight-path model does not hold for very thick masses. A wall without thickness_cm loses exactly attenuation_db. Custom materials use default_reference_cm. Openings (doors, windows) keep their own loss and ignore thickness.",
+  "min_cm": 0.5,
+  "max_cm": 100,
+  "max_factor": 4,
+  "default_reference_cm": 10,
+  "reference_cm": {
+   "glass": 1,
+   "drywall": 10,
+   "wood": 5,
+   "brick": 10,
+   "concrete": 15,
+   "metal": 1,
+   "reinforced_concrete": 20,
+   "stone": 20,
+   "plaster": 10,
+   "insulation": 10,
+   "office_partition": 8,
+   "industrial_wall": 20,
+   "steel": 1,
+   "aluminium": 1,
+   "tiles": 2,
+   "insulated_wall": 20,
+   "metal_door": 4,
+   "fire_door": 4,
+   "flooring": 5,
+   "roofing": 15
+  }
+ },
+ "objects": {
+  "label": "MODEL ESTIMATE: furniture and metal objects are drawn as four wall segments, so a path through one crosses two edges",
+  "source": "An object is a rectangle of wall segments (kind interior, tagged with an object id) that reuses the wall loss pipeline, so no second loss path exists. Each edge carries the loss of its material at thickness_cm. A straight path through the rectangle crosses two edges, so the loss through an object is twice the edge loss. The default thickness_cm per kind is a planning assumption for the edge thickness, not the real depth of the furniture. Objects only attenuate paths that cross them in the 2D model and do not change the 3D heights.",
+  "min_drag_m": 0.3,
+  "kinds": {
+   "sofa": {
+    "label": "Sofa",
+    "material": "wood",
+    "thickness_cm": 5,
+    "w_m": 2.0,
+    "d_m": 0.9
+   },
+   "fridge": {
+    "label": "Fridge",
+    "material": "metal",
+    "thickness_cm": 1,
+    "w_m": 0.7,
+    "d_m": 0.7
+   },
+   "cabinet": {
+    "label": "Cabinet",
+    "material": "wood",
+    "thickness_cm": 4,
+    "w_m": 1.0,
+    "d_m": 0.5
+   },
+   "mirror": {
+    "label": "Mirror",
+    "material": "glass",
+    "thickness_cm": 1,
+    "w_m": 1.0,
+    "d_m": 0.1
+   },
+   "bookshelf": {
+    "label": "Bookshelf",
+    "material": "wood",
+    "thickness_cm": 5,
+    "w_m": 1.0,
+    "d_m": 0.35
+   }
+  }
+ },
  "spectrum": {
   "label": "ESTIMATE: channel congestion from the access points and sources of the project, a planning aid, not a scan of the air",
   "source": "Congestion of a channel is the sum over every AP and source in the project of coupling x duty cycle, where coupling is the share of the source power that lands in the candidate channel (interference.rejection_table for WiFi, spectral overlap for non-WiFi sources). It ignores distance, so it counts every source as if heard. APs use interference.activity_factor as duty cycle. Levels are thresholds on the congestion value, planning assumptions. On 2.4 GHz only the non-overlapping channels in preferred_channels are suggested.",
