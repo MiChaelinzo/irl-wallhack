@@ -10,6 +10,8 @@
   "max_custom_materials": 20,
   "material_db_range": [0.0, 80.0],
   "max_background_chars": 600000,
+  "twin_json_bytes_per_item": 300,
+  "twin_body_overhead_bytes": 65536,
   "max_text_chars": 64,
   "furniture_kinds": ["sofa", "bed", "table", "desk", "wardrobe", "counter", "other"],
   "sensor_kinds": ["air", "presence", "rssi"]
@@ -149,7 +151,32 @@
     "2.4": 10.0,
     "5": 9.0,
     "6": 9.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 2.0,
+     "typical": 3.0,
+     "max": 6.0
+    },
+    "5": {
+     "min": 3.0,
+     "typical": 4.0,
+     "max": 8.0
+    },
+    "6": {
+     "min": 3.0,
+     "typical": 4.5,
+     "max": 9.0
+    }
+   },
+   "frequency_exponent": 0.41,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Plain single or double glazing. Low-emissivity or metal-coated glass can exceed 20 dB and is not covered, add it as a custom material."
   },
   "drywall": {
    "label": "Drywall",
@@ -162,7 +189,32 @@
     "2.4": 12.0,
     "5": 11.0,
     "6": 11.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 2.0,
+     "typical": 4.0,
+     "max": 6.0
+    },
+    "5": {
+     "min": 3.0,
+     "typical": 5.0,
+     "max": 8.0
+    },
+    "6": {
+     "min": 3.0,
+     "typical": 5.5,
+     "max": 9.0
+    }
+   },
+   "frequency_exponent": 0.32,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Single or double plasterboard on studs. Insulation or foil backing raises the loss."
   },
   "wood": {
    "label": "Wood",
@@ -175,7 +227,32 @@
     "2.4": 11.0,
     "5": 10.0,
     "6": 10.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 3.0,
+     "typical": 5.0,
+     "max": 8.0
+    },
+    "5": {
+     "min": 4.0,
+     "typical": 6.5,
+     "max": 10.0
+    },
+    "6": {
+     "min": 4.0,
+     "typical": 7.0,
+     "max": 11.0
+    }
+   },
+   "frequency_exponent": 0.34,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Solid timber or timber stud partitions. Thickness and moisture content change the loss."
   },
   "brick": {
    "label": "Brick",
@@ -188,7 +265,32 @@
     "2.4": 8.0,
     "5": 7.0,
     "6": 7.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 5.0,
+     "typical": 9.0,
+     "max": 14.0
+    },
+    "5": {
+     "min": 6.0,
+     "typical": 11.0,
+     "max": 18.0
+    },
+    "6": {
+     "min": 7.0,
+     "typical": 12.0,
+     "max": 20.0
+    }
+   },
+   "frequency_exponent": 0.29,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Single-leaf brick or block wall. Plaster, cavities and thickness move the loss within the range."
   },
   "concrete": {
    "label": "Concrete",
@@ -201,7 +303,32 @@
     "2.4": 6.0,
     "5": 5.0,
     "6": 5.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 8.0,
+     "typical": 13.0,
+     "max": 20.0
+    },
+    "5": {
+     "min": 10.0,
+     "typical": 17.0,
+     "max": 28.0
+    },
+    "6": {
+     "min": 11.0,
+     "typical": 19.0,
+     "max": 32.0
+    }
+   },
+   "frequency_exponent": 0.38,
+   "confidence": "medium",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Plain concrete or dense block wall without dense reinforcement."
   },
   "metal": {
    "label": "Metal",
@@ -214,7 +341,186 @@
     "2.4": 1.0,
     "5": 1.0,
     "6": 1.0
-   }
+   },
+   "range_db": {
+    "2.4": {
+     "min": 15.0,
+     "typical": 26.0,
+     "max": 40.0
+    },
+    "5": {
+     "min": 18.0,
+     "typical": 30.0,
+     "max": 45.0
+    },
+    "6": {
+     "min": 20.0,
+     "typical": 32.0,
+     "max": 48.0
+    }
+   },
+   "frequency_exponent": 0.21,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Sheet metal, lift shafts, foil-backed panels. Close to total blockage, the measured loss is set by leakage at gaps and edges."
+  },
+  "reinforced_concrete": {
+   "label": "Reinforced concrete",
+   "attenuation_db": {
+    "2.4": 20.0,
+    "5": 26.0,
+    "6": 29.0
+   },
+   "reflection_loss_db": {
+    "2.4": 4.0,
+    "5": 3.0,
+    "6": 3.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 15.0,
+     "typical": 20.0,
+     "max": 32.0
+    },
+    "5": {
+     "min": 19.0,
+     "typical": 26.0,
+     "max": 40.0
+    },
+    "6": {
+     "min": 21.0,
+     "typical": 29.0,
+     "max": 45.0
+    }
+   },
+   "frequency_exponent": 0.37,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Concrete with steel reinforcement. The rebar mesh spacing relative to the wavelength dominates and varies a lot, so the range is wide."
+  },
+  "stone": {
+   "label": "Stone",
+   "attenuation_db": {
+    "2.4": 12.0,
+    "5": 15.0,
+    "6": 17.0
+   },
+   "reflection_loss_db": {
+    "2.4": 7.0,
+    "5": 6.0,
+    "6": 6.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 8.0,
+     "typical": 12.0,
+     "max": 20.0
+    },
+    "5": {
+     "min": 10.0,
+     "typical": 15.0,
+     "max": 25.0
+    },
+    "6": {
+     "min": 11.0,
+     "typical": 17.0,
+     "max": 28.0
+    }
+   },
+   "frequency_exponent": 0.35,
+   "confidence": "low",
+   "simulation_cost": "wall_segment",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values"
+   ],
+   "notes": "Natural stone masonry. Thickness and porosity vary widely."
+  },
+  "flooring": {
+   "label": "Flooring",
+   "attenuation_db": {
+    "2.4": 6.0,
+    "5": 8.0,
+    "6": 9.0
+   },
+   "reflection_loss_db": {
+    "2.4": 10.0,
+    "5": 9.0,
+    "6": 9.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 3.0,
+     "typical": 6.0,
+     "max": 12.0
+    },
+    "5": {
+     "min": 4.0,
+     "typical": 8.0,
+     "max": 15.0
+    },
+    "6": {
+     "min": 4.0,
+     "typical": 9.0,
+     "max": 17.0
+    }
+   },
+   "frequency_exponent": 0.41,
+   "confidence": "low",
+   "simulation_cost": "reference_slab",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values",
+    "ITU-R P.1238 (indoor propagation, floor penetration loss) for the floor-loss context"
+   ],
+   "notes": "Light timber or composite floor build-up. The 2D engine applies floors as a fixed floor_loss_db per floor crossed, this entry is a reference for that value and for a future 3D model. Selecting it for a wall models a thin partition."
+  },
+  "roofing": {
+   "label": "Roofing",
+   "attenuation_db": {
+    "2.4": 8.0,
+    "5": 10.0,
+    "6": 11.0
+   },
+   "reflection_loss_db": {
+    "2.4": 9.0,
+    "5": 8.0,
+    "6": 8.0
+   },
+   "range_db": {
+    "2.4": {
+     "min": 4.0,
+     "typical": 8.0,
+     "max": 16.0
+    },
+    "5": {
+     "min": 5.0,
+     "typical": 10.0,
+     "max": 20.0
+    },
+    "6": {
+     "min": 6.0,
+     "typical": 11.0,
+     "max": 22.0
+    }
+   },
+   "frequency_exponent": 0.32,
+   "confidence": "low",
+   "simulation_cost": "reference_slab",
+   "sources": [
+    "ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)",
+    "Published indoor measurements and vendor site-survey guides, summarised as rounded typical values",
+    "ITU-R P.1238 (indoor propagation, floor penetration loss) for the floor-loss context"
+   ],
+   "notes": "Tiles or sheet over timber, no metal foil. Foil-backed or metal roofing is much higher. The 2D engine has no roof, this entry is a reference for a future 3D model. Selecting it for a wall models a thin partition."
   }
  },
  "kind_defaults": {
@@ -543,6 +849,98 @@
      "phy_mbps": 600
     }
    ]
+  }
+ },
+ "wifi_standards": {
+  "label": "MODEL ESTIMATE: PHY rates follow the IEEE 802.11 OFDM formula, minimum-SNR values are typical planning figures",
+  "source": "PHY rate = data subcarriers x bits per subcarrier x coding rate x spatial streams / symbol time (IEEE 802.11n-2009 clause 20, 802.11ac-2013 clause 21, 802.11ax-2021 clause 27, 802.11be-2024 clause 36). Data subcarrier counts and symbol times are the per-standard OFDM numerology of those clauses. Minimum-SNR per MCS are rounded typical planning figures (the standards normative receiver minimum sensitivity is a dBm value per MCS, not an SNR), not vendor guarantees. 802.11ac MCS 9 is not defined for every width and stream count, this model ignores that restriction.",
+  "default_streams": 2,
+  "default_guard_interval_us": 0.8,
+  "mcs": [
+   {"index": 0, "modulation": "BPSK", "bits_per_subcarrier": 1, "coding_rate": [1, 2], "min_snr_db": 5.0},
+   {"index": 1, "modulation": "QPSK", "bits_per_subcarrier": 2, "coding_rate": [1, 2], "min_snr_db": 8.0},
+   {"index": 2, "modulation": "QPSK", "bits_per_subcarrier": 2, "coding_rate": [3, 4], "min_snr_db": 11.0},
+   {"index": 3, "modulation": "16-QAM", "bits_per_subcarrier": 4, "coding_rate": [1, 2], "min_snr_db": 14.0},
+   {"index": 4, "modulation": "16-QAM", "bits_per_subcarrier": 4, "coding_rate": [3, 4], "min_snr_db": 18.0},
+   {"index": 5, "modulation": "64-QAM", "bits_per_subcarrier": 6, "coding_rate": [2, 3], "min_snr_db": 22.0},
+   {"index": 6, "modulation": "64-QAM", "bits_per_subcarrier": 6, "coding_rate": [3, 4], "min_snr_db": 24.0},
+   {"index": 7, "modulation": "64-QAM", "bits_per_subcarrier": 6, "coding_rate": [5, 6], "min_snr_db": 26.0},
+   {"index": 8, "modulation": "256-QAM", "bits_per_subcarrier": 8, "coding_rate": [3, 4], "min_snr_db": 30.0},
+   {"index": 9, "modulation": "256-QAM", "bits_per_subcarrier": 8, "coding_rate": [5, 6], "min_snr_db": 32.0},
+   {"index": 10, "modulation": "1024-QAM", "bits_per_subcarrier": 10, "coding_rate": [3, 4], "min_snr_db": 35.0},
+   {"index": 11, "modulation": "1024-QAM", "bits_per_subcarrier": 10, "coding_rate": [5, 6], "min_snr_db": 37.0},
+   {"index": 12, "modulation": "4096-QAM", "bits_per_subcarrier": 12, "coding_rate": [3, 4], "min_snr_db": 40.0},
+   {"index": 13, "modulation": "4096-QAM", "bits_per_subcarrier": 12, "coding_rate": [5, 6], "min_snr_db": 42.0}
+  ],
+  "standards": {
+   "wifi4": {
+    "label": "Wi-Fi 4 (802.11n)", "ieee": "802.11n", "max_streams": 4, "max_mcs": 7,
+    "symbol_us": 3.2, "guard_intervals_us": [0.8, 0.4],
+    "data_subcarriers": {"20": 52, "40": 108},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40]}
+   },
+   "wifi5": {
+    "label": "Wi-Fi 5 (802.11ac)", "ieee": "802.11ac", "max_streams": 8, "max_mcs": 9,
+    "symbol_us": 3.2, "guard_intervals_us": [0.8, 0.4],
+    "data_subcarriers": {"20": 52, "40": 108, "80": 234, "160": 468},
+    "widths_mhz_by_band": {"5": [20, 40, 80, 160]}
+   },
+   "wifi6": {
+    "label": "Wi-Fi 6 (802.11ax)", "ieee": "802.11ax", "max_streams": 8, "max_mcs": 11,
+    "symbol_us": 12.8, "guard_intervals_us": [0.8, 1.6, 3.2],
+    "data_subcarriers": {"20": 234, "40": 468, "80": 980, "160": 1960},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40, 80, 160]}
+   },
+   "wifi6e": {
+    "label": "Wi-Fi 6E (802.11ax in 6 GHz)", "ieee": "802.11ax", "max_streams": 8, "max_mcs": 11,
+    "symbol_us": 12.8, "guard_intervals_us": [0.8, 1.6, 3.2],
+    "data_subcarriers": {"20": 234, "40": 468, "80": 980, "160": 1960},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40, 80, 160], "6": [20, 40, 80, 160]}
+   },
+   "wifi7": {
+    "label": "Wi-Fi 7 (802.11be)", "ieee": "802.11be", "max_streams": 16, "max_mcs": 13,
+    "symbol_us": 12.8, "guard_intervals_us": [0.8, 1.6, 3.2],
+    "data_subcarriers": {"20": 234, "40": 468, "80": 980, "160": 1960, "320": 3920},
+    "widths_mhz_by_band": {"2.4": [20, 40], "5": [20, 40, 80, 160], "6": [20, 40, 80, 160, 320]}
+   }
+  },
+  "mlo": {
+   "standards": ["wifi7"],
+   "label": "CAPACITY MODEL, not a measurement: Multi-Link Operation (IEEE 802.11be-2024) aggregates the rates of the links, real gains depend on the client, the MLO mode and the traffic",
+   "max_links": 3
+  }
+ },
+ "interference": {
+  "label": "MODEL ESTIMATE: SINR from co-channel and adjacent-channel interference, a planning aid",
+  "source": "Thermal noise density -174 dBm/Hz at 290 K (kT, Johnson-Nyquist). Channel centres follow the IEEE 802.11 channel numbering (centre MHz = base + 5 x channel). The adjacent-channel rejection table is rounded from the IEEE 802.11 OFDM transmit spectrum mask for 20 MHz (about -20 dBr at 11 MHz, -28 dBr at 20 MHz and -40 dBr at 30 MHz from the centre), applied to the gap between the edges of the two occupied bandwidths. The noise figure and the activity factor are planning assumptions.",
+  "thermal_noise_dbm_per_hz": -174.0,
+  "noise_figure_db": 6.0,
+  "activity_factor": 1.0,
+  "channel_base_mhz": {"2.4": 2407, "5": 5000, "6": 5950},
+  "channel_step_mhz": 5,
+  "rejection_table": [
+   {"min_gap_mhz": 0, "rejection_db": 20.0},
+   {"min_gap_mhz": 10, "rejection_db": 28.0},
+   {"min_gap_mhz": 20, "rejection_db": 40.0}
+  ],
+  "negligible_gap_mhz": 40,
+  "fallback_standard": {"2.4": "wifi4", "5": "wifi5", "6": "wifi6e"}
+ },
+ "antenna": {
+  "label": "MODEL ESTIMATE: horizontal antenna pattern in the plan plane, no elevation, polarisation or near-field effects",
+  "source": "The sector pattern is the 3GPP TR 36.814 horizontal pattern A(phi) = -min(12 (phi / phi_3dB)^2, A_m), phi_3dB the 3 dB beamwidth and A_m the front-to-back ratio. Azimuth 0 points along +x (east) and increases towards +y (south, clockwise on the plan).",
+  "gain_dbi_range": [-10.0, 20.0],
+  "azimuth_deg_range": [0.0, 360.0],
+  "parabolic_coefficient": 12.0,
+  "patterns": {
+   "omni": {"label": "Omnidirectional"},
+   "sector": {
+    "label": "Sector",
+    "default_beamwidth_deg": 70.0,
+    "default_front_to_back_db": 25.0,
+    "beamwidth_deg_range": [10.0, 360.0],
+    "front_to_back_db_range": [0.0, 60.0]
+   }
   }
  },
  "scoring": {

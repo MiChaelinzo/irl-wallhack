@@ -28,12 +28,13 @@ MAX_OPENINGS_PER_FLOOR = rfmodel.LIMITS["max_openings_per_floor"]
 # Walls and openings have their own, larger limits (large plans); every other list uses MAX_ITEMS_PER_LIST.
 ITEM_LIMITS = {"walls": MAX_WALLS_PER_FLOOR, "openings": MAX_OPENINGS_PER_FLOOR}
 MAX_TEXT_CHARS = rfmodel.LIMITS["max_text_chars"]
+DEFAULT_NAME = "Untitled"
 TX_DBM_RANGE = (0.0, 30.0)
 MAX_CUSTOM_MATERIALS = rfmodel.LIMITS["max_custom_materials"]
 MATERIAL_DB_RANGE = tuple(rfmodel.LIMITS["material_db_range"])
 THICKNESS_M_RANGE = (0.01, 2.0)
 SCALE_M_PER_PX_RANGE = (0.0001, 100.0)
-MAX_BACKGROUND_CHARS = rfmodel.LIMITS["max_background_chars"]     # a data URL; keeps the whole twin under the 1 MB request limit
+MAX_BACKGROUND_CHARS = rfmodel.LIMITS["max_background_chars"]     # a data URL; PUT /api/twin has its own body limit derived from the limits (app.MAX_TWIN_BODY_BYTES)
 BACKGROUND_PATTERN = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
 
 
@@ -114,6 +115,55 @@ def _optional_text(item: dict, key: str, path: str, out: dict) -> None:
         out[key] = _text(item, key, path)
 
 
+def _whole(value: Any, path: str, lo: int, hi: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        raise TwinError(f"{path}: must be a whole number from {lo} to {hi}")
+    return value
+
+
+def _ap_model_fields(a: dict, ap: dict, q: str) -> None:
+    """Validate the optional standard, width, streams, MLO and antenna fields of an AP into `ap`."""
+    band = ap.get("band", rfmodel.DEFAULT_BAND)
+    standard = None
+    if "standard" in a:
+        standard = _choice(a, "standard", tuple(rfmodel.WIFI["standards"]), q)
+        try:
+            rfmodel.check_standard_radio(standard, band)
+        except ValueError as exc:
+            raise TwinError(f"{q}.standard: {exc}")
+        ap["standard"] = standard
+    if "width_mhz" in a:
+        widths = rfmodel.standard_widths(standard, band) if standard else rfmodel.BANDS[band]["widths_mhz"]
+        if isinstance(a["width_mhz"], bool) or a["width_mhz"] not in widths:
+            raise TwinError(f"{q}.width_mhz: must be one of {widths} for this band and standard")
+        ap["width_mhz"] = int(a["width_mhz"])
+    if "spatial_streams" in a:
+        if standard is None:
+            raise TwinError(f"{q}.spatial_streams: needs a standard")
+        ap["spatial_streams"] = _whole(a["spatial_streams"], f"{q}.spatial_streams", 1, rfmodel.standard_spec(standard)["max_streams"])
+    if "mlo_bands" in a:
+        mlo, bands = rfmodel.WIFI["mlo"], a["mlo_bands"]
+        if standard not in mlo["standards"]:
+            raise TwinError(f"{q}.mlo_bands: needs one of the standards {mlo['standards']}")
+        if (not isinstance(bands, list) or any(not isinstance(b, str) for b in bands)
+                or len(bands) > mlo["max_links"] - 1 or len(set(bands)) != len(bands)
+                or any(b == band or b not in rfmodel.standard_spec(standard)["widths_mhz_by_band"] for b in bands)):
+            raise TwinError(f"{q}.mlo_bands: must be up to {mlo['max_links'] - 1} different other bands the standard allows")
+        ap["mlo_bands"] = list(bands)
+    antenna = rfmodel.ANTENNA
+    if "antenna_gain_dbi" in a:
+        ap["antenna_gain_dbi"] = _num(a["antenna_gain_dbi"], f"{q}.antenna_gain_dbi", *antenna["gain_dbi_range"])
+    if "azimuth_deg" in a:
+        ap["azimuth_deg"] = _num(a["azimuth_deg"], f"{q}.azimuth_deg", *antenna["azimuth_deg_range"])
+    if "pattern" in a:
+        ap["pattern"] = _choice(a, "pattern", tuple(antenna["patterns"]), q)
+    sector = antenna["patterns"]["sector"]
+    if "beamwidth_deg" in a:
+        ap["beamwidth_deg"] = _num(a["beamwidth_deg"], f"{q}.beamwidth_deg", *sector["beamwidth_deg_range"])
+    if "front_to_back_db" in a:
+        ap["front_to_back_db"] = _num(a["front_to_back_db"], f"{q}.front_to_back_db", *sector["front_to_back_db_range"])
+
+
 def _custom_materials(data: Any) -> Dict[str, dict]:
     """Project-defined materials: {id: {label, attenuation_db{band}, reflection_loss_db{band}}}."""
     if not isinstance(data, dict) or len(data) > MAX_CUSTOM_MATERIALS:
@@ -159,7 +209,10 @@ def validate_twin(data: Any) -> dict:
     floors_in = data.get("floors")
     if not isinstance(floors_in, list) or not 1 <= len(floors_in) <= MAX_FLOORS:
         raise TwinError(f"floors: must be a list of 1 to {MAX_FLOORS} floors")
-    out: Dict[str, Any] = {"name": _text(data, "name", "twin"), "units": "m",
+    name = data.get("name")
+    # Older projects may have a blank name; they load under a default instead of failing.
+    name = name[:MAX_TEXT_CHARS] if isinstance(name, str) and name.strip() else DEFAULT_NAME
+    out: Dict[str, Any] = {"name": name, "units": "m",
                            "sample": bool(data.get("sample", False)), "floors": []}
     if "materials" in data:
         out["materials"] = _custom_materials(data["materials"])
@@ -249,6 +302,7 @@ def validate_twin(data: Any) -> dict:
                 if isinstance(a["channel"], bool) or a["channel"] not in channels:
                     raise TwinError(f"{q}.channel: must be one of {channels} for this band")
                 ap["channel"] = a["channel"]
+            _ap_model_fields(a, ap, q)
             floor["aps"].append(ap)
         for key in ("rooms", "walls", "openings", "furniture", "sensors", "aps"):
             _unique([i["id"] for i in floor[key]], f"{p}.{key}")

@@ -103,7 +103,7 @@ New endpoints, all local and simulated unless real sensors are attached:
 | `GET /api/pair` | LAN mode only, from the host machine only: the pairing URL for a phone and its QR code as module rows. |
 | `GET /api/judge` | Judge page items with status and verification label (kept consistent with the table below by a test). |
 
-**LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. In LAN mode requests from the host machine are trusted only when the Host header is `localhost`, `127.0.0.1`, `::1`, the LAN address or the configured host (blocks DNS rebinding). Cloud LLM use needs the `confirm_off_device` flag in the request, which is a consent prompt for the owner and is not enforced against a paired phone. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
+**LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. In LAN mode requests from the host machine are trusted only when the Host header is `localhost`, `127.0.0.1`, `::1`, the LAN address or the configured host (blocks DNS rebinding). Cloud LLM use needs the `confirm_off_device` flag in the request, which is a consent prompt for the owner and is not enforced against a paired phone. `PUT /api/twin` accepts bodies up to about 23 MB and the server does not cap concurrent requests, so a paired device on the LAN can make the host hold several such buffers at once. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
 
 ## How to run each mode
 All modes start from `make run` (or `python -m wallhack`) and open `http://127.0.0.1:8000`. Add `--source simulator` to avoid needing hardware.
@@ -144,6 +144,9 @@ Off by default (`llm_provider` empty). Set it with `--config`/`config.json` or `
 | Premium UI | Complete | PARTIALLY VERIFIED; no Pi 4 frame-rate measurement. |
 | RF intelligence scores | Complete | Model constants are textbook values, UNVERIFIED against real buildings. |
 | Judge mode | Complete | Statuses are checked against this README by a test. |
+
+## Platform documentation
+The audit and design set is in [docs/platform/README.md](docs/platform/README.md): repository audit with evidence-based scores, technical debt, architecture, security review, Wi-Fi physics and inaccuracy report, material database, rendering measurements, the frontend stack decision ([ADR](docs/platform/adr-frontend-stack.md), no rewrite done), roadmap, a ranked top 100 list with Done / Partial / Not started status, a top 10 demo script and a hackathon pitch with caveats.
 
 ## Privacy and consent
 Use it only in your own space, and only on people who know about it. The dashboard listens on localhost only and rejects requests whose Host or WebSocket Origin is not local, so other web pages in your browser cannot read it. Do not expose it to a network. If you open the UDP receiver to your LAN for an ESP32, set `--udp-token` so spoofed packets are ignored. The tool never uploads anything unless you enable an OpenAI or Azure LLM provider, which sends finding text (not raw signals) to that cloud service after a per-request confirmation. `--lan` exposes the dashboard to your network behind a pairing token; use it only on a network you trust. Sensing people without their knowledge may be illegal where you live.
@@ -187,6 +190,11 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | RF coverage numbers versus a real building | UNVERIFIED (textbook constants, never compared with measurements) |
 | RF planner basic-mode engine maths and Python/JavaScript parity | VERIFIED (golden fixture of the legacy numbers, hand-computed cases and parity tests within 0.1 dB) |
 | RF planner enhanced and multipath modes (single reflection, knife-edge diffraction `v = sqrt(4 delta / lambda)`) | PARTIALLY VERIFIED (knife-edge value checked against a hand-computed Fresnel case; reflection and diffraction totals not compared with an independent reference) |
+| WiFi 4-7 PHY-rate formula, noise floor, SINR with co-channel and adjacent-channel coupling, antenna pattern, MLO capacity, AP field validation, Python/JavaScript parity (`tests/test_wifi_standards.py`) | VERIFIED (hand-computed values and parity tests; legacy output unchanged) |
+| WiFi standards SINR throughput, adjacent-channel rejection table, per-MCS minimum SNR, antenna and MLO numbers against real radios | UNVERIFIED (rounded planning figures, never compared with measurements) |
+| Material database (ten families, ranges, confidence, schema, generated doc `docs/platform/material-database.md`) structure and consistency | VERIFIED (schema and doc-sync tests, legacy values unchanged) |
+| Material attenuation and reflection figures, including reinforced concrete, stone, flooring and roofing, against real buildings | UNVERIFIED (rounded typical values within ITU-R P.2040 style ranges, low confidence for the new entries) |
+| AP panel controls for standard, width, antenna pattern and azimuth | PARTIALLY VERIFIED (JavaScript syntax check only; not clicked in a browser) |
 | RF planner propagation accuracy against real buildings, throughput and capacity numbers | UNVERIFIED (planning estimates only) |
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |
@@ -212,6 +220,9 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | nexmon build and firmware install, monitor-mode config, tcpdump capture, real CSI decoding with real frames, real breathing accuracy, systemd unit | UNVERIFIED (no Pi 4 in the sandbox) |
 | ESP32 CSI over UDP: packets, token (collector and `Runtime` wiring) and timestamps over a local socket | VERIFIED |
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
+| 100,000 point RF benchmark (100,489 points, 1000 walls, 4 APs: worker final about 1.9 s node and 2.1 s headless Chromium, first frame about 145 ms; quadtree measured slower than the grid and not adopted) | VERIFIED on the benchmark machine (`docs/perf-rf.md`); UNVERIFIED on a Raspberry Pi 4 and on a real GPU |
+| Platform documentation set (`docs/platform/`: audit, architecture, security review, physics, roadmap, top 100, pitch) and `tests/test_platform_docs.py` | VERIFIED for existence, ranking and cited files (automated test); scores and competitor statements are judgements, competitor statements are general knowledge and not freshly researched |
+| Educational mode, AR and computer vision, floor-plan extraction, planner LLM explain endpoint, campus and smart-city planning | NOT BUILT (design only in `docs/platform/`) |
 
 ## Tests
 The QR tests decode codes with OpenCV and are skipped without it (`pip install opencv-python-headless`; CI installs it).

@@ -421,7 +421,7 @@ def test_unknown_band_is_a_project_error_without_band_list():
       d.floors[0].aps[0].band = '60'; d.floors[0].aps[0].channel = 1;
       try { S.validateProject(d, {}); out({err: null}); } catch (e) { out({err: e.name, msg: e.message}); }
     """)
-    assert r["err"] == "ProjectError" and "unknown band" in r["msg"]
+    assert r["err"] == "ProjectError" and "aps[0].band: must be one of" in r["msg"]
 
 
 def test_validator_has_no_module_level_text_limit():
@@ -435,3 +435,20 @@ def test_validator_has_no_module_level_text_limit():
       out({small, normal});
     """)
     assert r == {"small": "abcde", "normal": "abcdefgh"}
+
+
+def test_unknown_band_is_rejected_without_a_band_list():
+    _rejects("d.floors[0].aps[0].band = '60'", "aps[0].band")
+
+
+@pytest.mark.parametrize("name", ["", "   ", "\\t\\n"])
+def test_blank_project_name_loads_as_default_in_js_and_python(name):
+    r = run_js("""
+      const d = JSON.parse(JSON.stringify(input.twin));
+      d.name = '%s';
+      out(S.validateProject(d).name);
+    """ % name)
+    assert r == "Untitled"
+    d = twin.sample_twin()
+    d["name"] = name.encode().decode("unicode_escape")
+    assert twin.validate_twin(d)["name"] == "Untitled"
