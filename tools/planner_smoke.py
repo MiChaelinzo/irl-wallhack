@@ -128,6 +128,8 @@ def run(page, base, problems, args):
     page.click("#tgBands"); page.click("#tgBands")
     wait_idle(page)
     run_features(page, problems)
+    run_lab_features(page, problems, args)
+    run_learn_features(page, problems, args)
     if not args.no_screenshot:
         page.screenshot(path=str(ROOT / "docs" / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
 
@@ -280,6 +282,304 @@ def run_features(page, problems):
         problems.append("page scrolls horizontally at 390 px width")
     page.set_viewport_size(VIEWPORT)
     print("feature checks done")
+
+
+LAB = {"name": "Lab plan", "floors": [
+    {"id": "g", "name": "Ground", "level": 0, "width_m": 30, "depth_m": 20,
+     "rooms": [{"id": "west", "name": "West", "x": 0, "y": 0, "w": 15, "d": 20}, {"id": "east", "name": "East", "x": 15, "y": 0, "w": 15, "d": 20}],
+     "walls": [{"id": "w1", "x1": 15, "y1": 0, "x2": 15, "y2": 20, "kind": "exterior", "material": "brick"},
+               {"id": "w2", "x1": 0, "y1": 10, "x2": 15, "y2": 10, "kind": "interior", "material": "drywall"}],
+     "aps": [{"id": "ap1", "x": 5, "y": 5, "tx_dbm": 17, "band": "5", "channel": 36}, {"id": "ap2", "x": 25, "y": 15, "tx_dbm": 17, "band": "5", "channel": 36}]},
+    {"id": "u", "name": "Upper", "level": 1, "width_m": 30, "depth_m": 20, "walls": [], "aps": [{"id": "ap3", "x": 10, "y": 10, "tx_dbm": 17}]}]}
+
+HEAT_LAYERS = ["rssi", "snr", "sinr", "quality", "bandwidth", "latency", "loss", "wall_loss", "interference", "utilisation", "capacity", "combined"]
+PALETTES = ["classic", "cvd", "viridis", "cividis"]
+
+
+def ap_select(page, ap_id, label):
+    return page.locator("#apList li[data-id=%s] label:has-text('%s') select" % (ap_id, label)).first
+
+
+def lab_idle(page):
+    """Wait for the analysis of the current floor, with all layers the view needs."""
+    page.wait_for_function("""() => { const a = window.PlannerApp, s = a.panels.state.analysis;
+        return s && s.floor === a.store.floorId && s.layers && a.neededLayers().every(id => s.layers[id]); }""", timeout=60000)
+
+
+def click_world(page, x, y, **kw):
+    page.focus("#cEdit")   # focusing scrolls the plan into view, so do it before measuring where to click
+    page.wait_for_timeout(100)
+    page.mouse.move(*screen_of(page, x, y)); page.wait_for_timeout(150)   # the layout can shift when the pointer first enters the plan
+    page.mouse.click(*screen_of(page, x, y), **kw)
+
+
+def run_lab_features(page, problems, args):
+    """Heat map layers, AP WiFi controls, spectrum, dashboard, interferers, doors, floor openings, floors, view persistence."""
+    page.evaluate("(p) => window.PlannerApp.loadProject(p)", LAB)
+    wait_idle(page)
+    lab_idle(page)
+    # AP panel WiFi controls, exercised through the page like a user
+    ap_select(page, "ap1", "Standard").select_option("wifi6")
+    ap_select(page, "ap1", "Width").select_option("80")
+    ap_select(page, "ap1", "Streams").select_option("2")
+    got = app_eval(page, "const x = a.store.project.floors[0].aps[0]; return [x.standard, x.width_mhz, x.spatial_streams]")
+    if got != ["wifi6", 80, 2]:
+        problems.append("AP panel controls did not set standard, width and streams: %r" % got)
+    ap_select(page, "ap2", "Standard").select_option("wifi7")
+    ap_select(page, "ap2", "Width").select_option("80")
+    if page.locator("#apList li[data-id=ap2] .mlo-box input").count() != 2:
+        problems.append("a Wi-Fi 7 access point on 5 GHz should offer two MLO links")
+    else:
+        page.locator("#apList li[data-id=ap2] .mlo-box input").first.check()
+    mlo = app_eval(page, "return a.store.project.floors[0].aps[1].mlo_bands")
+    if not mlo or len(mlo) != 1:
+        problems.append("MLO checkbox did not set mlo_bands: %r" % mlo)
+    lab_idle(page)
+    page.wait_for_function("() => /Mean SINR/.test(document.querySelector('[data-ap-result=ap1]').textContent)", timeout=30000)
+    if "MLO over" not in page.inner_text("[data-ap-result=ap2]"):
+        problems.append("AP panel shows no MLO result: " + page.inner_text("[data-ap-result=ap2]"))
+    app_eval(page, "a.store.undo(); a.store.undo(); return 0")
+    if app_eval(page, "return a.store.project.floors[0].aps[1].mlo_bands") is not None and app_eval(page, "return a.store.project.floors[0].aps[1].mlo_bands !== undefined"):
+        problems.append("undo of the MLO change did not remove mlo_bands")
+    app_eval(page, "a.store.redo(); a.store.redo(); return 0")
+    lab_idle(page)
+    # every heat mode, on every palette
+    for layer in HEAT_LAYERS:
+        page.select_option("#layerSel", layer)
+        page.wait_for_function("""(id) => { const a = window.PlannerApp; return a.view.layer === id && (id === 'rssi' || (a.layerInfo && a.layerInfo.id === id)); }""", arg=layer, timeout=60000)
+        info = app_eval(page, "return a.layerInfo ? {stats: !!a.layerInfo.stats, reason: a.layerInfo.reason, mode: a.renderer.layerMode} : {mode: false}")
+        legend = page.inner_text("#legend")
+        if layer != "rssi" and (not info["stats"] or not info["mode"]):
+            problems.append("layer %s drew nothing: %r" % (layer, info))
+        if layer != "rssi" and "Floor: min" not in legend:
+            problems.append("legend of layer %s lacks its statistics: %r" % (layer, legend))
+        if layer == "rssi" and "Excellent" not in legend:
+            problems.append("RSSI legend lost the quality bands")
+        page.wait_for_timeout(60)
+    for pal in PALETTES:
+        page.select_option("#paletteSel", pal)
+        if app_eval(page, "return a.view.palette") != pal or app_eval(page, "return a.renderer.opts.palette") != pal:
+            problems.append("palette %s was not applied to the renderer" % pal)
+    page.select_option("#layerSel", "snr")
+    page.select_option("#paletteSel", "viridis")
+    page.wait_for_function("() => window.PlannerApp.layerInfo && window.PlannerApp.layerInfo.id === 'snr'", timeout=30000)
+    if "linear-gradient" not in page.evaluate("() => document.querySelector('#legend .ramp').style.background"):
+        problems.append("layer legend has no gradient bar")
+    # view survives a reload through the URL
+    url = page.url
+    if "layer=snr" not in url or "palette=viridis" not in url:
+        problems.append("view is not mirrored in the URL: " + url)
+    page.reload()
+    page.wait_for_function("window.PlannerApp && window.PlannerApp.ready", timeout=15000)
+    if app_eval(page, "return [a.view.layer, a.view.palette]") != ["snr", "viridis"]:
+        problems.append("view did not survive a reload")
+    page.evaluate("(p) => window.PlannerApp.loadProject(p)", LAB)
+    wait_idle(page)
+    ap_select(page, "ap1", "Standard").select_option("wifi6")
+    # layers tab: combined map, overlays, side by side
+    tab(page, "layers")
+    page.select_option("#cmpLayerB", "wall_loss")
+    lab_idle(page)
+    page.wait_for_selector("#sideA, #sideBySide canvas", timeout=15000)
+    if page.locator("#sideBySide canvas").count() != 2:
+        problems.append("side by side compare did not draw two maps")
+    page.locator("#combineList input[data-layer=sinr]").check()
+    page.click("#showCombined")
+    page.wait_for_function("() => window.PlannerApp.layerInfo && window.PlannerApp.layerInfo.id === 'combined' && window.PlannerApp.layerInfo.stats", timeout=30000)
+    for ov in ("roaming", "strongest", "blend"):
+        page.locator("#ov-" + ov).check()
+        lab_idle(page)
+        app_eval(page, "a.editor.drawNow(); return 0")
+    if "Handoff area" not in page.inner_text("#panel-layers"):
+        problems.append("layers panel lacks the roaming figures")
+    if page.locator("#apColourLegend li").count() < 3:
+        problems.append("strongest AP colour legend is missing")
+    for ov in ("roaming", "strongest", "blend"):
+        page.locator("#ov-" + ov).uncheck()
+    page.select_option("#layerSel", "rssi")
+    # dashboard
+    tab(page, "dashboard")
+    lab_idle(page)
+    page.wait_for_selector("#dashHist", timeout=10000)
+    text = page.inner_text("#panel-dashboard").lower()
+    page.wait_for_timeout(300)
+    for word in ("Average coverage", "Edge coverage", "Efficiency score", "Weakest zones", "Strongest zones", "Signal distribution"):
+        if word.lower() not in text:
+            problems.append("dashboard lacks %r" % word)
+    if not page.evaluate("() => { const c = document.getElementById('dashHist'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) { if (d[i]) { return true; } } return false; }"):
+        problems.append("dashboard histogram is blank")
+    # spectrum
+    tab(page, "spectrum")
+    page.select_option("#specBand", "2.4")
+    page.wait_for_timeout(200)
+    page.wait_for_selector("#specCanvas")
+    if "Least congested" not in page.inner_text("#specSuggest"):
+        problems.append("spectrum view gives no channel suggestion: " + page.inner_text("#specSuggest"))
+    if not page.evaluate("() => { const c = document.getElementById('specCanvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) { if (d[i]) { n++; } } return n > 500; }"):
+        problems.append("spectrum canvas is blank")
+    # interference source: place with the tool, it appears in the spectrum and the environment panel
+    page.click("[data-tool=interferer]")
+    click_world(page, 20.0, 5.0)
+    if app_eval(page, "return (a.store.project.interferers || []).length") != 1:
+        problems.append("interference tool did not add a source")
+    page.wait_for_function("() => /src1/.test(document.getElementById('panel-spectrum').innerText)", timeout=5000)
+    tab(page, "environment")
+    if page.locator("#panel-environment select[aria-label='Kind of src1']").count() != 1:
+        problems.append("environment panel does not list the new source")
+    page.select_option("#sourceKind", "bluetooth")
+    page.click("#envAddSource")
+    if app_eval(page, "return a.store.project.interferers.map(s => s.kind).join()") != "microwave,bluetooth":
+        problems.append("source kind select or Add source button failed")
+    page.locator("#panel-environment input[aria-label='Duty cycle of src1 (percent)']").fill("20")
+    page.locator("#panel-environment input[aria-label='Duty cycle of src1 (percent)']").dispatch_event("change")
+    if abs(app_eval(page, "return a.store.project.interferers[0].duty_cycle") - 0.2) > 1e-9:
+        problems.append("duty cycle edit did not reach the project")
+    lab_idle(page)
+    app_eval(page, "a.store.undo(); a.store.undo(); a.store.undo(); return 0")
+    if app_eval(page, "return a.store.project.interferers.length") != 0:
+        problems.append("undo did not remove the sources")
+    # door and window on a wall
+    page.click("[data-tool=door]")
+    click_world(page, 7.5, 10.0)
+    ops = lambda: app_eval(page, "return a.store.project.floors[0].openings.map(o => o.kind + ':' + o.wall).join()")  # noqa: E731
+    if ops() != "door:w2":
+        problems.append("door tool did not add a door to w2: %r" % ops())
+    page.click("[data-tool=window]")
+    click_world(page, 3.0, 10.0)
+    if ops() != "door:w2,window:w2":
+        problems.append("window tool did not add a window: %r" % ops())
+    page.click("[data-tool=door]")
+    click_world(page, 20.0, 3.0)   # nowhere near a wall
+    if len(ops().split(",")) != 2:
+        problems.append("door tool added a door away from any wall")
+    wait_idle(page)
+    page.click("[data-tool=select]")
+    wait_idle(page); lab_idle(page)
+    click_world(page, 11.0, 10.0, button="right")
+    page.locator(".ctxmenu button:has-text('Add door here')").click()
+    if len(ops().split(",")) != 3:
+        problems.append("context menu did not add a door")
+    app_eval(page, "a.store.undo(); return 0")
+    # floor opening (stairwell) by dragging a rectangle
+    page.click("[data-tool=void]")
+    a, b = screen_of(page, 22.0, 2.0), screen_of(page, 26.0, 6.0)
+    page.mouse.move(*a); page.mouse.down(); page.mouse.move(*b, steps=5); page.mouse.up()
+    voids = lambda: app_eval(page, "return (a.store.project.floors[0].voids || []).map(v => v.kind + ':' + v.w + 'x' + v.d).join()")  # noqa: E731
+    if voids() != "stairwell:4x4":
+        problems.append("floor opening tool did not add a 4 x 4 m stairwell: %r" % voids())
+    page.click("[data-tool=select]")
+    tab(page, "environment")
+    page.click("#envAddVoid")
+    if len((app_eval(page, "return a.store.project.floors[0].voids") or [])) != 2:
+        problems.append("Add stairwell button did not add a second opening")
+    # the engine accepts what the editor wrote, and the worker recomputes after each edit
+    wait_idle(page)
+    lab_idle(page)
+    saved = app_eval(page, "return window.PlannerState.exportProjectJson(a.store.project)")
+    app_eval(page, "return window.PlannerState.parseProjectJson(" + repr(saved) + ", a.validateOpts()) && 0")
+    # floors: up and down buttons, Page Up, floor stack
+    if app_eval(page, "return a.store.floorId") != "g" or not page.locator("#floorDown").is_disabled():
+        problems.append("floor down should be disabled on the lowest floor")
+    page.click("#floorUp")
+    if app_eval(page, "return a.store.floorId") != "u":
+        problems.append("Floor up did not switch to the upper floor")
+    page.focus("#cEdit"); page.keyboard.press("PageDown")
+    if app_eval(page, "return a.store.floorId") != "g":
+        problems.append("Page Down did not switch back")
+    page.click("#floorUp"); wait_idle(page)
+    page.select_option("#layerSel", "snr")
+    lab_idle(page)
+    page.click("#floorDown"); wait_idle(page); lab_idle(page)
+    page.select_option("#layerSel", "rssi")
+    print("lab feature checks done")
+    if not args.no_screenshot:
+        suffix = "-demo" if args.demo else ""
+        docs = ROOT / "docs"
+        page.set_viewport_size({"width": 1400, "height": 1100})
+        page.select_option("#layerSel", "sinr"); page.select_option("#paletteSel", "viridis")
+        lab_idle(page); page.wait_for_timeout(300)
+        tab(page, "layers")
+        page.evaluate("window.scrollTo(0, 0)")
+        page.screenshot(path=str(docs / ("screenshot-planner-layers%s.png" % suffix)), full_page=True)
+        page.select_option("#layerSel", "rssi"); page.select_option("#paletteSel", "classic")
+        for name in ("dashboard", "spectrum"):
+            tab(page, name)
+            page.locator("#panel-" + name).scroll_into_view_if_needed()
+            page.locator("#panel-" + name).screenshot(path=str(docs / ("screenshot-planner-%s%s.png" % (name, suffix))))
+        page.set_viewport_size(VIEWPORT)
+
+
+def run_learn_features(page, problems, args):
+    """Scenario presets, educational mode, lessons, probe explanation, plan explanation and the report sections."""
+    suffix = "-demo" if args.demo else ""
+    docs = ROOT / "docs"
+    page.set_viewport_size({"width": 1400, "height": 1100})
+    ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
+    if len(ids) != 7:
+        problems.append("preset picker lists %d scenarios instead of 7" % len(ids))
+    for pid in ids:
+        page.select_option("#presetSel", pid); page.click("#presetLoad")
+        page.wait_for_function("(n) => window.PlannerApp.store.project.name === n", arg=page.evaluate("(id) => window.PlannerApp.learn.presets.find(p => p.id === id).project.name", pid), timeout=5000)
+        wait_idle(page)
+    page.select_option("#presetSel", "office_floor"); page.click("#presetLoad"); wait_idle(page)
+    if not args.no_screenshot:
+        page.evaluate("window.scrollTo(0, 0)")
+        page.locator(".p-tools").screenshot(path=str(docs / ("screenshot-planner-presets%s.png" % suffix)))
+    # educational mode
+    page.click("#learnBtn")
+    if page.get_attribute("#learnBtn", "aria-pressed") != "true":
+        problems.append("Learn toggle did not switch on")
+    page.focus("#bandSel")
+    if "frequencies" not in page.inner_text("#learnContext").lower():
+        problems.append("contextual panel did not show the frequencies topic for the band control")
+    tab(page, "learn")
+    page.select_option("#lessonSel", "walls"); wait_idle(page)
+    if "Not yet" not in page.inner_text("#lessonBox"):
+        problems.append("lesson should start unsolved")
+    page.click("#whyBtn")
+    if "Where the signal went" not in page.inner_text("#whyOut"):
+        problems.append("probe explanation did not render")
+    page.click("#lessonShow"); wait_idle(page)
+    page.wait_for_function("() => /Lesson complete/.test(document.getElementById('lessonBox').innerText)", timeout=15000)
+    page.select_option("#lessonSel", "channels"); wait_idle(page)
+    page.click("#lessonShow"); wait_idle(page)
+    page.wait_for_function("() => /Lesson complete/.test(document.getElementById('lessonBox').innerText)", timeout=15000)
+    if not args.no_screenshot:
+        page.evaluate("window.scrollTo(0, 0)")
+        page.screenshot(path=str(docs / ("screenshot-planner-learn%s.png" % suffix)), full_page=True)
+    page.click("#learnBtn")
+    # plan, recommendations and explanation
+    page.select_option("#presetSel", "hotel_floor"); page.click("#presetLoad"); wait_idle(page)
+    tab(page, "smart")
+    page.click("#planRun")
+    page.wait_for_selector("#recList li", timeout=120000)
+    kinds = page.evaluate("() => Array.from(document.querySelectorAll('#recList .rec-main strong')).map(e => e.textContent)")
+    if "dead zone fix" not in kinds or "add ap" not in kinds:
+        problems.append("recommendation panel lacks dead-zone or placement entries: %s" % kinds)
+    if "Confidence:" not in page.inner_text("#recList"):
+        problems.append("recommendations show no confidence")
+    if args.demo:
+        if page.locator("#explainBtn").count():
+            problems.append("the explain button must be hidden in the static demo")
+    else:
+        page.click("#explainBtn")
+        page.wait_for_function("() => /MODEL ESTIMATE/.test(document.getElementById('explainOut').innerText)", timeout=15000)
+        if "Rule-based text" not in page.inner_text("#explainOut"):
+            problems.append("explanation should be rule-based when no LLM is configured")
+    if not args.no_screenshot:
+        page.locator("#panel-smart").screenshot(path=str(docs / ("screenshot-planner-advice%s.png" % suffix)))
+    # report
+    tab(page, "export")
+    with page.expect_download(timeout=30000) as d:
+        page.click("[data-export=pdf]")
+    pdf = Path(d.value.path()).read_bytes()
+    for text in (b"Floor overview", b"Coverage maps per propagation mode", b"Access point locations", b"Spectrum summary", b"Performance of this analysis", b"Text summary", b"MODEL ESTIMATE"):
+        if text not in pdf:
+            problems.append("PDF report lacks the section %r" % text.decode())
+    if not args.no_screenshot:
+        page.locator("#panel-export").screenshot(path=str(docs / ("screenshot-planner-report%s.png" % suffix)))
+    page.set_viewport_size(VIEWPORT)
+    print("learn feature checks done")
 
 
 def main() -> int:

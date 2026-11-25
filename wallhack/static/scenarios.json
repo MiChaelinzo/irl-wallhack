@@ -1,0 +1,1642 @@
+{
+ "label": "Illustrative layouts for planning practice. Not real buildings. Coverage from them is a MODEL ESTIMATE.",
+ "scenarios": [
+  {
+   "description": "One router in the corner of a 48 m2 flat. The bedroom is the far end.",
+   "id": "small_apartment",
+   "learn": "Distance and two concrete partitions between router and bedroom. Move the router toward the middle.",
+   "name": "Small apartment",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 0.8,
+        "y": 5.2
+       }
+      ],
+      "depth_m": 6.0,
+      "furniture": [],
+      "height_m": 2.5,
+      "id": "main",
+      "level": 0,
+      "name": "Apartment",
+      "openings": [
+       {
+        "id": "main-i1-door",
+        "kind": "door",
+        "pos": 2.5,
+        "wall": "main-i1",
+        "width": 0.9
+       },
+       {
+        "id": "main-i2-door",
+        "kind": "door",
+        "pos": 1.0,
+        "wall": "main-i2",
+        "width": 0.9
+       },
+       {
+        "id": "main-win2",
+        "kind": "window",
+        "pos": 2.0,
+        "wall": "main-x0",
+        "width": 1.6
+       },
+       {
+        "id": "main-win3",
+        "kind": "window",
+        "pos": 1.5,
+        "wall": "main-x1",
+        "width": 1.6
+       }
+      ],
+      "rooms": [
+       {
+        "d": 6,
+        "id": "living",
+        "name": "Living room",
+        "w": 4,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 3,
+        "id": "kitchen",
+        "name": "Kitchen",
+        "w": 4,
+        "x": 4,
+        "y": 0
+       },
+       {
+        "d": 3,
+        "id": "bedroom",
+        "name": "Bedroom",
+        "w": 4,
+        "x": 4,
+        "y": 3
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "main-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "main-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "main-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 8.0,
+        "x2": 0,
+        "y1": 6.0,
+        "y2": 6.0
+       },
+       {
+        "id": "main-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 6.0,
+        "y2": 0
+       },
+       {
+        "id": "main-i1",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 4.0,
+        "x2": 4.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "main-i2",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 4.0,
+        "x2": 8.0,
+        "y1": 3.0,
+        "y2": 3.0
+       }
+      ],
+      "width_m": 8.0
+     }
+    ],
+    "interferers": [
+     {
+      "floor": "main",
+      "id": "microwave",
+      "kind": "microwave",
+      "x": 7.0,
+      "y": 0.8
+     }
+    ],
+    "name": "Small apartment",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Two floors with one router in a downstairs corner. The upper floor and the far side are weak.",
+   "id": "large_home",
+   "learn": "A floor slab adds loss. Add an AP on the upper floor and compare coverage.",
+   "name": "Large home",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 2.0,
+        "y": 2.0
+       }
+      ],
+      "depth_m": 10.0,
+      "furniture": [],
+      "height_m": 2.7,
+      "id": "ground",
+      "level": 0,
+      "name": "Ground floor",
+      "openings": [
+       {
+        "id": "ground-i1-door",
+        "kind": "door",
+        "pos": 5.0,
+        "wall": "ground-i1",
+        "width": 0.9
+       },
+       {
+        "id": "ground-i2-door",
+        "kind": "door",
+        "pos": 3.0,
+        "wall": "ground-i2",
+        "width": 0.9
+       },
+       {
+        "id": "ground-i3-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "ground-i3",
+        "width": 0.9
+       },
+       {
+        "id": "ground-win3",
+        "kind": "window",
+        "pos": 4.0,
+        "wall": "ground-x0",
+        "width": 1.6
+       },
+       {
+        "id": "ground-win4",
+        "kind": "window",
+        "pos": 12.0,
+        "wall": "ground-x0",
+        "width": 1.6
+       },
+       {
+        "id": "ground-win5",
+        "kind": "window",
+        "pos": 6.0,
+        "wall": "ground-x2",
+        "width": 1.6
+       }
+      ],
+      "rooms": [
+       {
+        "d": 5,
+        "id": "lounge",
+        "name": "Lounge",
+        "w": 8,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 5,
+        "id": "dining",
+        "name": "Dining",
+        "w": 8,
+        "x": 0,
+        "y": 5
+       },
+       {
+        "d": 6,
+        "id": "kitchen",
+        "name": "Kitchen",
+        "w": 8,
+        "x": 8,
+        "y": 0
+       },
+       {
+        "d": 4,
+        "id": "study",
+        "name": "Study",
+        "w": 8,
+        "x": 8,
+        "y": 6
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "ground-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 16.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "ground-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 16.0,
+        "x2": 16.0,
+        "y1": 0,
+        "y2": 10.0
+       },
+       {
+        "id": "ground-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 16.0,
+        "x2": 0,
+        "y1": 10.0,
+        "y2": 10.0
+       },
+       {
+        "id": "ground-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 10.0,
+        "y2": 0
+       },
+       {
+        "id": "ground-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 10.0
+       },
+       {
+        "id": "ground-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 8.0,
+        "y1": 5.0,
+        "y2": 5.0
+       },
+       {
+        "id": "ground-i3",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 16.0,
+        "y1": 6.0,
+        "y2": 6.0
+       }
+      ],
+      "width_m": 16.0
+     },
+     {
+      "aps": [],
+      "depth_m": 10.0,
+      "furniture": [],
+      "height_m": 2.7,
+      "id": "upper",
+      "level": 1,
+      "name": "Upper floor",
+      "openings": [
+       {
+        "id": "upper-i1-door",
+        "kind": "door",
+        "pos": 5.0,
+        "wall": "upper-i1",
+        "width": 0.9
+       },
+       {
+        "id": "upper-i2-door",
+        "kind": "door",
+        "pos": 5.0,
+        "wall": "upper-i2",
+        "width": 0.9
+       },
+       {
+        "id": "upper-i3-door",
+        "kind": "door",
+        "pos": 8.0,
+        "wall": "upper-i3",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 10,
+        "id": "bed1",
+        "name": "Bedroom 1",
+        "w": 5,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 5,
+        "id": "bed2",
+        "name": "Bedroom 2",
+        "w": 6,
+        "x": 5,
+        "y": 0
+       },
+       {
+        "d": 5,
+        "id": "bed3",
+        "name": "Bedroom 3",
+        "w": 6,
+        "x": 5,
+        "y": 5
+       },
+       {
+        "d": 10,
+        "id": "bath",
+        "name": "Bathroom",
+        "w": 5,
+        "x": 11,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "upper-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 16.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "upper-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 16.0,
+        "x2": 16.0,
+        "y1": 0,
+        "y2": 10.0
+       },
+       {
+        "id": "upper-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 16.0,
+        "x2": 0,
+        "y1": 10.0,
+        "y2": 10.0
+       },
+       {
+        "id": "upper-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 10.0,
+        "y2": 0
+       },
+       {
+        "id": "upper-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 5.0,
+        "y1": 0,
+        "y2": 10.0
+       },
+       {
+        "id": "upper-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 11.0,
+        "x2": 11.0,
+        "y1": 0,
+        "y2": 10.0
+       },
+       {
+        "id": "upper-i3",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 16.0,
+        "y1": 5.0,
+        "y2": 5.0
+       }
+      ],
+      "width_m": 16.0
+     }
+    ],
+    "name": "Large home",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Three APs that all sit on channel 1 along a corridor, plus a neighbouring network on channel 6.",
+   "id": "office_floor",
+   "learn": "Co-channel interference: APs on the same channel share airtime. Run the channel plan.",
+   "name": "Office floor",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "2.4",
+        "channel": 1,
+        "id": "ap-west",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 5.0,
+        "y": 9.0
+       },
+       {
+        "band": "2.4",
+        "channel": 1,
+        "id": "ap-mid",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 15.0,
+        "y": 9.0
+       },
+       {
+        "band": "2.4",
+        "channel": 1,
+        "id": "ap-east",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 25.0,
+        "y": 9.0
+       }
+      ],
+      "depth_m": 18.0,
+      "furniture": [],
+      "height_m": 2.7,
+      "id": "office",
+      "level": 0,
+      "name": "Office floor",
+      "openings": [
+       {
+        "id": "office-i1-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "office-i1",
+        "width": 0.9
+       },
+       {
+        "id": "office-i2-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "office-i2",
+        "width": 0.9
+       },
+       {
+        "id": "office-i3-door",
+        "kind": "door",
+        "pos": 5.0,
+        "wall": "office-i3",
+        "width": 0.9
+       },
+       {
+        "id": "office-i4-door",
+        "kind": "door",
+        "pos": 25.0,
+        "wall": "office-i4",
+        "width": 0.9
+       },
+       {
+        "id": "office-i5-door",
+        "kind": "door",
+        "pos": 3.5,
+        "wall": "office-i5",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 7,
+        "id": "meet1",
+        "name": "Meeting 1",
+        "w": 10,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 7,
+        "id": "meet2",
+        "name": "Meeting 2",
+        "w": 10,
+        "x": 10,
+        "y": 0
+       },
+       {
+        "d": 7,
+        "id": "meet3",
+        "name": "Meeting 3",
+        "w": 10,
+        "x": 20,
+        "y": 0
+       },
+       {
+        "d": 4,
+        "id": "corridor",
+        "name": "Corridor",
+        "w": 30,
+        "x": 0,
+        "y": 7
+       },
+       {
+        "d": 7,
+        "id": "open",
+        "name": "Open plan",
+        "w": 18,
+        "x": 12,
+        "y": 11
+       },
+       {
+        "d": 7,
+        "id": "core",
+        "name": "Service core",
+        "w": 12,
+        "x": 0,
+        "y": 11
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "office-x0",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 0,
+        "x2": 30.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "office-x1",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 30.0,
+        "x2": 30.0,
+        "y1": 0,
+        "y2": 18.0
+       },
+       {
+        "id": "office-x2",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 30.0,
+        "x2": 0,
+        "y1": 18.0,
+        "y2": 18.0
+       },
+       {
+        "id": "office-x3",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 0,
+        "x2": 0,
+        "y1": 18.0,
+        "y2": 0
+       },
+       {
+        "id": "office-i1",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 10.0,
+        "x2": 10.0,
+        "y1": 0,
+        "y2": 7.0
+       },
+       {
+        "id": "office-i2",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 20.0,
+        "x2": 20.0,
+        "y1": 0,
+        "y2": 7.0
+       },
+       {
+        "id": "office-i3",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 0,
+        "x2": 30.0,
+        "y1": 7.0,
+        "y2": 7.0
+       },
+       {
+        "id": "office-i4",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 0,
+        "x2": 30.0,
+        "y1": 11.0,
+        "y2": 11.0
+       },
+       {
+        "id": "office-i5",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 11.0,
+        "y2": 18.0
+       }
+      ],
+      "width_m": 30.0
+     }
+    ],
+    "interferers": [
+     {
+      "band": "2.4",
+      "channel": 6,
+      "floor": "office",
+      "id": "neighbour-tower",
+      "kind": "neighbour_wifi",
+      "x": 29.0,
+      "y": 16.0
+     }
+    ],
+    "name": "Office floor",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Brick classrooms on both sides of a corridor with three corridor APs at 5 GHz.",
+   "id": "school_building",
+   "learn": "Brick walls cost far more than drywall. Corridor APs reach classrooms only through the doors.",
+   "name": "School building",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "5",
+        "id": "ap-1",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 5.0,
+        "y": 10.0
+       },
+       {
+        "band": "5",
+        "id": "ap-2",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 20.0,
+        "y": 10.0
+       },
+       {
+        "band": "5",
+        "id": "ap-3",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 35.0,
+        "y": 10.0
+       }
+      ],
+      "depth_m": 20.0,
+      "furniture": [],
+      "height_m": 2.7,
+      "id": "school",
+      "level": 0,
+      "name": "School floor",
+      "openings": [
+       {
+        "id": "school-i1-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i1",
+        "width": 0.9
+       },
+       {
+        "id": "school-i2-door",
+        "kind": "door",
+        "pos": 36.0,
+        "wall": "school-i2",
+        "width": 0.9
+       },
+       {
+        "id": "school-i3-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i3",
+        "width": 0.9
+       },
+       {
+        "id": "school-i4-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i4",
+        "width": 0.9
+       },
+       {
+        "id": "school-i5-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i5",
+        "width": 0.9
+       },
+       {
+        "id": "school-i6-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i6",
+        "width": 0.9
+       },
+       {
+        "id": "school-i7-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i7",
+        "width": 0.9
+       },
+       {
+        "id": "school-i8-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "school-i8",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 8,
+        "id": "n0",
+        "name": "Classroom N1",
+        "w": 10,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "s0",
+        "name": "Classroom S1",
+        "w": 10,
+        "x": 0,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "n1",
+        "name": "Classroom N2",
+        "w": 10,
+        "x": 10,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "s1",
+        "name": "Classroom S2",
+        "w": 10,
+        "x": 10,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "n2",
+        "name": "Classroom N3",
+        "w": 10,
+        "x": 20,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "s2",
+        "name": "Classroom S3",
+        "w": 10,
+        "x": 20,
+        "y": 12
+       },
+       {
+        "d": 8,
+        "id": "n3",
+        "name": "Classroom N4",
+        "w": 10,
+        "x": 30,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "s3",
+        "name": "Classroom S4",
+        "w": 10,
+        "x": 30,
+        "y": 12
+       },
+       {
+        "d": 4,
+        "id": "corridor",
+        "name": "Corridor",
+        "w": 40,
+        "x": 0,
+        "y": 8
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "school-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "school-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 40.0,
+        "x2": 40.0,
+        "y1": 0,
+        "y2": 20.0
+       },
+       {
+        "id": "school-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 40.0,
+        "x2": 0,
+        "y1": 20.0,
+        "y2": 20.0
+       },
+       {
+        "id": "school-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 20.0,
+        "y2": 0
+       },
+       {
+        "id": "school-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 8.0,
+        "y2": 8.0
+       },
+       {
+        "id": "school-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 12.0,
+        "y2": 12.0
+       },
+       {
+        "id": "school-i3",
+        "kind": "interior",
+        "material": "brick",
+        "x1": 10.0,
+        "x2": 10.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "school-i4",
+        "kind": "interior",
+        "material": "brick",
+        "x1": 10.0,
+        "x2": 10.0,
+        "y1": 12.0,
+        "y2": 20.0
+       },
+       {
+        "id": "school-i5",
+        "kind": "interior",
+        "material": "brick",
+        "x1": 20.0,
+        "x2": 20.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "school-i6",
+        "kind": "interior",
+        "material": "brick",
+        "x1": 20.0,
+        "x2": 20.0,
+        "y1": 12.0,
+        "y2": 20.0
+       },
+       {
+        "id": "school-i7",
+        "kind": "interior",
+        "material": "brick",
+        "x1": 30.0,
+        "x2": 30.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "school-i8",
+        "kind": "interior",
+        "material": "brick",
+        "x1": 30.0,
+        "x2": 30.0,
+        "y1": 12.0,
+        "y2": 20.0
+       }
+      ],
+      "width_m": 40.0
+     }
+    ],
+    "name": "School building",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Metal racking forms long aisles. One AP in the office and one at the far end.",
+   "id": "warehouse",
+   "learn": "Metal blocks signal almost completely. Aisles between racks act like corridors.",
+   "name": "Warehouse",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "2.4",
+        "id": "ap-dock",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 3.0,
+        "y": 2.0
+       },
+       {
+        "band": "2.4",
+        "id": "ap-hall",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 38.0,
+        "y": 12.0
+       }
+      ],
+      "depth_m": 25.0,
+      "furniture": [],
+      "height_m": 6.0,
+      "id": "hall",
+      "level": 0,
+      "name": "Warehouse",
+      "openings": [
+       {
+        "id": "hall-i4-door",
+        "kind": "door",
+        "pos": 3.0,
+        "wall": "hall-i4",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 17,
+        "id": "racks",
+        "name": "Rack aisles",
+        "w": 40,
+        "x": 0,
+        "y": 4
+       },
+       {
+        "d": 4,
+        "id": "dock",
+        "name": "Loading dock",
+        "w": 40,
+        "x": 0,
+        "y": 21
+       },
+       {
+        "d": 4,
+        "id": "office",
+        "name": "Office",
+        "w": 6,
+        "x": 0,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "hall-x0",
+        "kind": "exterior",
+        "material": "industrial_wall",
+        "x1": 0,
+        "x2": 40.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "hall-x1",
+        "kind": "exterior",
+        "material": "industrial_wall",
+        "x1": 40.0,
+        "x2": 40.0,
+        "y1": 0,
+        "y2": 25.0
+       },
+       {
+        "id": "hall-x2",
+        "kind": "exterior",
+        "material": "industrial_wall",
+        "x1": 40.0,
+        "x2": 0,
+        "y1": 25.0,
+        "y2": 25.0
+       },
+       {
+        "id": "hall-x3",
+        "kind": "exterior",
+        "material": "industrial_wall",
+        "x1": 0,
+        "x2": 0,
+        "y1": 25.0,
+        "y2": 0
+       },
+       {
+        "id": "hall-i1",
+        "kind": "interior",
+        "material": "metal",
+        "x1": 10.0,
+        "x2": 10.0,
+        "y1": 4.0,
+        "y2": 21.0
+       },
+       {
+        "id": "hall-i2",
+        "kind": "interior",
+        "material": "metal",
+        "x1": 20.0,
+        "x2": 20.0,
+        "y1": 4.0,
+        "y2": 21.0
+       },
+       {
+        "id": "hall-i3",
+        "kind": "interior",
+        "material": "metal",
+        "x1": 30.0,
+        "x2": 30.0,
+        "y1": 4.0,
+        "y2": 21.0
+       },
+       {
+        "id": "hall-i4",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 6.0,
+        "y1": 4.0,
+        "y2": 4.0
+       }
+      ],
+      "width_m": 40.0
+     }
+    ],
+    "name": "Warehouse",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Concrete guest rooms along a corridor with two corridor APs.",
+   "id": "hotel_floor",
+   "learn": "Concrete room walls leave the corridor APs reaching only nearby rooms. Consider one AP per few rooms.",
+   "name": "Hotel floor",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "5",
+        "id": "ap-west",
+        "standard": "wifi6",
+        "tx_dbm": 17.0,
+        "x": 6.0,
+        "y": 7.0
+       },
+       {
+        "band": "5",
+        "id": "ap-east",
+        "standard": "wifi6",
+        "tx_dbm": 17.0,
+        "x": 30.0,
+        "y": 7.0
+       }
+      ],
+      "depth_m": 14.0,
+      "furniture": [],
+      "height_m": 2.8,
+      "id": "hotel",
+      "level": 0,
+      "name": "Guest floor",
+      "openings": [
+       {
+        "id": "hotel-i3-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i3",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i4-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i4",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i5-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i5",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i6-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i6",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i7-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i7",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i8-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i8",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i9-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i9",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i10-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i10",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i11-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i11",
+        "width": 0.9
+       },
+       {
+        "id": "hotel-i12-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "hotel-i12",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 6,
+        "id": "a0",
+        "name": "Room 101",
+        "w": 6,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 6,
+        "id": "b0",
+        "name": "Room 111",
+        "w": 6,
+        "x": 0,
+        "y": 8
+       },
+       {
+        "d": 6,
+        "id": "a1",
+        "name": "Room 102",
+        "w": 6,
+        "x": 6,
+        "y": 0
+       },
+       {
+        "d": 6,
+        "id": "b1",
+        "name": "Room 112",
+        "w": 6,
+        "x": 6,
+        "y": 8
+       },
+       {
+        "d": 6,
+        "id": "a2",
+        "name": "Room 103",
+        "w": 6,
+        "x": 12,
+        "y": 0
+       },
+       {
+        "d": 6,
+        "id": "b2",
+        "name": "Room 113",
+        "w": 6,
+        "x": 12,
+        "y": 8
+       },
+       {
+        "d": 6,
+        "id": "a3",
+        "name": "Room 104",
+        "w": 6,
+        "x": 18,
+        "y": 0
+       },
+       {
+        "d": 6,
+        "id": "b3",
+        "name": "Room 114",
+        "w": 6,
+        "x": 18,
+        "y": 8
+       },
+       {
+        "d": 6,
+        "id": "a4",
+        "name": "Room 105",
+        "w": 6,
+        "x": 24,
+        "y": 0
+       },
+       {
+        "d": 6,
+        "id": "b4",
+        "name": "Room 115",
+        "w": 6,
+        "x": 24,
+        "y": 8
+       },
+       {
+        "d": 6,
+        "id": "a5",
+        "name": "Room 106",
+        "w": 6,
+        "x": 30,
+        "y": 0
+       },
+       {
+        "d": 6,
+        "id": "b5",
+        "name": "Room 116",
+        "w": 6,
+        "x": 30,
+        "y": 8
+       },
+       {
+        "d": 2,
+        "id": "corridor",
+        "name": "Corridor",
+        "w": 36,
+        "x": 0,
+        "y": 6
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "hotel-x0",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 0,
+        "x2": 36.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "hotel-x1",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 36.0,
+        "x2": 36.0,
+        "y1": 0,
+        "y2": 14.0
+       },
+       {
+        "id": "hotel-x2",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 36.0,
+        "x2": 0,
+        "y1": 14.0,
+        "y2": 14.0
+       },
+       {
+        "id": "hotel-x3",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 0,
+        "x2": 0,
+        "y1": 14.0,
+        "y2": 0
+       },
+       {
+        "id": "hotel-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 36.0,
+        "y1": 6.0,
+        "y2": 6.0
+       },
+       {
+        "id": "hotel-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 36.0,
+        "y1": 8.0,
+        "y2": 8.0
+       },
+       {
+        "id": "hotel-i3",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 6.0,
+        "x2": 6.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "hotel-i4",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 6.0,
+        "x2": 6.0,
+        "y1": 8.0,
+        "y2": 14.0
+       },
+       {
+        "id": "hotel-i5",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "hotel-i6",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 8.0,
+        "y2": 14.0
+       },
+       {
+        "id": "hotel-i7",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 18.0,
+        "x2": 18.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "hotel-i8",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 18.0,
+        "x2": 18.0,
+        "y1": 8.0,
+        "y2": 14.0
+       },
+       {
+        "id": "hotel-i9",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 24.0,
+        "x2": 24.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "hotel-i10",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 24.0,
+        "x2": 24.0,
+        "y1": 8.0,
+        "y2": 14.0
+       },
+       {
+        "id": "hotel-i11",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 30.0,
+        "x2": 30.0,
+        "y1": 0,
+        "y2": 6.0
+       },
+       {
+        "id": "hotel-i12",
+        "kind": "interior",
+        "material": "concrete",
+        "x1": 30.0,
+        "x2": 30.0,
+        "y1": 8.0,
+        "y2": 14.0
+       }
+      ],
+      "width_m": 36.0
+     }
+    ],
+    "name": "Hotel floor",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Open seating with the router behind the bar. A microwave and Bluetooth speaker share the 2.4 GHz band.",
+   "id": "coffee_shop",
+   "learn": "Interference sources raise the noise floor and lower SINR even when RSSI looks fine.",
+   "name": "Coffee shop",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "id": "ap-shop",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 10.0,
+        "y": 4.0
+       }
+      ],
+      "depth_m": 8.0,
+      "furniture": [],
+      "height_m": 3.0,
+      "id": "shop",
+      "level": 0,
+      "name": "Coffee shop",
+      "openings": [
+       {
+        "id": "shop-i1-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "shop-i1",
+        "width": 0.9
+       },
+       {
+        "id": "shop-win1",
+        "kind": "window",
+        "pos": 4.0,
+        "wall": "shop-x0",
+        "width": 3.0
+       },
+       {
+        "id": "shop-win2",
+        "kind": "window",
+        "pos": 6.0,
+        "wall": "shop-x2",
+        "width": 3.0
+       }
+      ],
+      "rooms": [
+       {
+        "d": 8,
+        "id": "seating",
+        "name": "Seating",
+        "w": 8,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 8,
+        "id": "bar",
+        "name": "Bar and kitchen",
+        "w": 4,
+        "x": 8,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "shop-x0",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "shop-x1",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "shop-x2",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 12.0,
+        "x2": 0,
+        "y1": 8.0,
+        "y2": 8.0
+       },
+       {
+        "id": "shop-x3",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 0,
+        "x2": 0,
+        "y1": 8.0,
+        "y2": 0
+       },
+       {
+        "id": "shop-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 8.0
+       }
+      ],
+      "width_m": 12.0
+     }
+    ],
+    "interferers": [
+     {
+      "floor": "shop",
+      "id": "microwave",
+      "kind": "microwave",
+      "x": 11.0,
+      "y": 1.0
+     },
+     {
+      "floor": "shop",
+      "id": "speaker",
+      "kind": "bluetooth",
+      "x": 3.0,
+      "y": 4.0
+     }
+    ],
+    "name": "Coffee shop",
+    "sample": true,
+    "units": "m"
+   }
+  }
+ ],
+ "schema_version": 1
+}

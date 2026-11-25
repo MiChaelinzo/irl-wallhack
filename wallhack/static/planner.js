@@ -9,12 +9,12 @@
   var CELL_CHOICES = [0.25, 0.5, 1, 2], MAX_AUTO_CELLS = 90000;
   var AUTOSAVE_MS = 600, PROBE_STEP_M = 0.5, PROBE_BIG_STEP_M = 2.5, MAX_IMPORT_BYTES = 12 * 1024 * 1024;
   var DEFAULT_FLOOR = { w: 20, d: 12 };
-  var THEME_KEY = "wallhack.theme";
+  var THEME_KEY = "wallhack.theme", CONTRAST_KEY = "wallhack.contrast";
   var BAND_CHOICES = ["2.4", "5", "6"];
 
   function $(id) { return document.getElementById(id); }
   var app = { store: null, editor: null, renderer: null, config: null, env: null, backend: null, latestId: 0, waiters: [],
-              lastResult: null, probe: null, settings: { band: null, mode: "basic", cell: null }, saveTimer: 0, perf: {} };
+              lastResult: null, probe: null, settings: { band: null, mode: "basic", cell: null }, saveTimer: 0, perf: {}, view: null, rssiGrid: null, layerInfo: null };
   window.PlannerApp = app;
   app.base = BASE;
 
@@ -76,8 +76,9 @@
       }
       if (m.type === "cancelled") { return; }
       if (m.id !== app.latestId) { return; }   // stale
-      var g = { rssi: m.grid, cols: m.cols, rows: m.rows, cellM: m.cell_m };
-      app.renderer.setGrid(g);
+      var g = { rssi: m.grid, cols: m.cols, rows: m.rows, cellM: m.cell_m, floor: m.floor };
+      app.rssiGrid = g;
+      if (app.view.layer === "rssi") { app.renderer.setGrid(g); }
       app.editor.invalidate();
       if (m.type === "progress") {
         $("computeChip").textContent = m.stage === "coarse" ? "coarse pass, refining" : "refining " + Math.round(100 * m.done / m.total) + "%";
@@ -150,8 +151,8 @@
 
   // ---------------------------------------------------------------- store events
   function onStoreEvent(ev) {
-    if (ev.source === "load") { rebuildEnv(); sendProject(); fillFloors(); syncPanels(); requestCompute(); schedulePersist(); return; }
-    if (ev.source === "floor") { fillFloors(); syncPanels(); requestCompute(); return; }
+    if (ev.source === "load") { rebuildEnv(); sendProject(); fillFloors(); syncPanels(); dropLayerGrid(); requestCompute(); schedulePersist(); return; }
+    if (ev.source === "floor") { fillFloors(); syncPanels(); dropLayerGrid(); requestCompute(); return; }
     if (ev.source === "select") { syncSelection(); return; }
     if (ev.source === "meta") { schedulePersist(); return; }
     if (ev.ops && ev.ops.length && ev.ops.some(function (o) { return o.t.indexOf("floors.") === 0; })) {
@@ -163,7 +164,7 @@
       var kinds = ev.ops.map(function (o) { return o.t; });
       var moveOnly = kinds.every(function (k) { return k === "wall.set" || k === "ap.set" || k === "label.set"; }) &&
         ev.ops.every(function (o) { return !("tx_dbm" in o.after || "band" in o.after || "channel" in o.after || "name" in o.after ||
-          "standard" in o.after || "width_mhz" in o.after || "pattern" in o.after); });
+          "standard" in o.after || "width_mhz" in o.after || "pattern" in o.after || "spatial_streams" in o.after || "mlo_bands" in o.after); });
       if (!moveOnly) { fillApList(); }
       if (kinds.some(function (k) { return k === "floor.set"; })) { syncFloorPanel(); }
       if (!kinds.every(function (k) { return k.indexOf("label.") === 0 || k.indexOf("annotation.") === 0 || k.indexOf("device.") === 0; }) && !kinds.every(function (k) { return k === "floor.set" && !("width_m" in ev.ops[0].after || "depth_m" in ev.ops[0].after); })) { requestCompute(); }
@@ -199,6 +200,16 @@
     sel.textContent = "";
     st.project.floors.forEach(function (f) { sel.appendChild(option(f.id, f.name + " (level " + f.level + ")")); });
     sel.value = st.floorId;
+    var order = floorsByLevel(), at = order.indexOf(st.floorId);
+    $("floorDown").disabled = at <= 0; $("floorUp").disabled = at < 0 || at >= order.length - 1;
+  }
+  /** Floor ids from the lowest level to the highest. */
+  function floorsByLevel() { return app.store.project.floors.slice().sort(function (a, b) { return a.level - b.level; }).map(function (f) { return f.id; }); }
+  function stepFloor(delta) {
+    var order = floorsByLevel(), next = order[order.indexOf(app.store.floorId) + delta];
+    if (next === undefined) { say(delta > 0 ? "This is the top floor" : "This is the bottom floor"); return; }
+    app.store.setFloor(next); app.editor.fit();
+    say("Floor " + currentFloor().name + " (level " + currentFloor().level + ")");
   }
   function syncFloorPanel() {
     var f = currentFloor();
@@ -271,13 +282,57 @@
         var v = parseFloat(azimuth.value);
         if (isFinite(v) && v >= range[0] && v <= range[1]) { apSet({ azimuth_deg: v }, "Change antenna azimuth"); } else { azimuth.value = ap.azimuth_deg === undefined ? 0 : ap.azimuth_deg; say("Azimuth must be " + range[0] + " to " + range[1] + " degrees"); }
       });
-      [["TX dBm", tx], ["Band", bandSelect], ["Channel", chan], ["Standard", std], ["Width", width], ["Antenna", pattern], ["Azimuth", azimuth]].forEach(function (p) {
+      var streams = document.createElement("select"), spec = ap.standard ? standards[ap.standard] : null;
+      streams.title = "MODEL ESTIMATE: spatial streams set the PHY rate, the standard default applies when empty";
+      streams.appendChild(option("", spec ? "default (" + app.config.wifi_standards.default_streams + ")" : "needs a standard"));
+      if (spec) { for (var n = 1; n <= spec.max_streams; n++) { streams.appendChild(option(String(n), String(n))); } }
+      streams.disabled = !spec;
+      streams.value = ap.spatial_streams === undefined ? "" : String(ap.spatial_streams);
+      streams.addEventListener("change", function () { apSet({ spatial_streams: streams.value ? parseInt(streams.value, 10) : undefined }, "Change spatial streams"); });
+      [["TX dBm", tx], ["Band", bandSelect], ["Channel", chan], ["Standard", std], ["Width", width], ["Streams", streams], ["Antenna", pattern], ["Azimuth", azimuth]].forEach(function (p) {
         var l = document.createElement("label"); l.appendChild(document.createTextNode(p[0])); l.appendChild(p[1]); fields.appendChild(l);
       });
-      li.appendChild(head); li.appendChild(fields); list.appendChild(li);
+      // Multi-Link Operation: extra bands the AP aggregates, only for the standards that have it
+      var mlo = app.config.wifi_standards.mlo;
+      if (ap.standard && mlo.standards.indexOf(ap.standard) >= 0) {
+        var box = document.createElement("fieldset"), legend = document.createElement("legend"), chosen = ap.mlo_bands || [];
+        box.className = "mlo-box"; legend.textContent = "MLO links (aggregate more bands, CAPACITY MODEL)"; box.appendChild(legend);
+        Object.keys(standards[ap.standard].widths_mhz_by_band).filter(function (b) { return b !== effectiveBand; }).forEach(function (b) {
+          var cb = document.createElement("input"), lab = document.createElement("label");
+          cb.type = "checkbox"; cb.checked = chosen.indexOf(b) >= 0; cb.setAttribute("aria-label", "MLO link on the " + b + " GHz band for " + (ap.name || ap.id));
+          cb.addEventListener("change", function () {
+            var next = Object.keys(standards[ap.standard].widths_mhz_by_band).filter(function (x) { return x !== effectiveBand && (x === b ? cb.checked : (ap.mlo_bands || []).indexOf(x) >= 0); });
+            if (next.length > mlo.max_links - 1) { cb.checked = false; say("MLO allows at most " + mlo.max_links + " links including the main band"); return; }
+            apSet({ mlo_bands: next.length ? next : undefined }, "Change MLO links");
+          });
+          lab.className = "check"; lab.appendChild(cb); lab.appendChild(document.createTextNode(" " + b + " GHz")); box.appendChild(lab);
+        });
+        fields.appendChild(box);
+      }
+      var result = document.createElement("p");
+      result.className = "ap-result muted hint"; result.dataset.apResult = ap.id; result.textContent = apResultText(ap.id);
+      li.appendChild(head); li.appendChild(fields); li.appendChild(result); list.appendChild(li);
     });
     if (!f.aps.length) { var li0 = document.createElement("li"); li0.textContent = "No access points on this floor. Use the AP tool."; list.appendChild(li0); }
   }
+
+  /** SINR, reliability and MLO figures of one AP from the latest analysis (ESTIMATES), or a hint to set a standard. */
+  function apResultText(apId) {
+    var an = app.panels && app.panels.state.analysis;
+    if (!an || !an.analytics.sinr) { return "No SINR results yet. Choose a WiFi standard to get SINR, throughput and reliability estimates."; }
+    var e = an.analytics.sinr.aps.filter(function (x) { return x.id === apId; })[0];
+    if (!e) { return "No SINR results for this access point on this floor."; }
+    var f1 = function (v) { return v === null ? "-" : v.toFixed(1); };
+    var text = "ESTIMATE: " + e.standard + ", " + e.width_mhz + " MHz, " + e.streams + " streams. Mean SINR " + f1(e.mean_sinr_db) + " dB, mean throughput " + f1(e.mean_throughput_mbps) +
+      " Mbps, packet loss " + f1(e.reliability.mean_loss_pct) + "%, latency " + f1(e.reliability.mean_latency_ms) + " ms.";
+    if (e.interferers.length || e.external_sources.length) { text += " Interfered by " + e.interferers.concat(e.external_sources).join(", ") + "."; }
+    if (e.mlo) { text += " MLO over " + e.mlo.links.join(" + ") + " GHz: mean capacity " + f1(e.mlo.mean_capacity_mbps) + " Mbps."; }
+    return text;
+  }
+  /** Refresh only the result lines of the access point list (after an analysis), without rebuilding the controls. */
+  app.refreshApResults = function () {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-ap-result]"), function (p) { p.textContent = apResultText(p.dataset.apResult); });
+  };
 
   function syncSelection() {
     var st = app.store, f = currentFloor(), n = st.selection.walls.length;
@@ -354,6 +409,84 @@
   var minimap = null;
   function drawMinimap() { if (minimap) { minimap.draw(); } }
 
+  // ---------------------------------------------------------------- map layers and view settings
+  var VIEW_PARAMS = ["layer", "palette", "compare", "combine", "overlays"];
+  function paletteIds() { return Object.keys(H.PALETTES); }
+  function storage() { try { return window.localStorage; } catch (e) { return { getItem: function () { return null; }, setItem: function () { throw e; } }; } }
+  /** Keep the view in browser storage and in the page URL (other query parameters such as renderer=canvas2d stay). */
+  function persistView() {
+    S.saveView(storage(), app.view);
+    try {
+      var keep = location.search.replace(/^\?/, "").split("&").filter(function (p) { return p && VIEW_PARAMS.indexOf(p.split("=")[0]) < 0; });
+      window.history.replaceState(null, "", "?" + keep.concat([S.viewToSearch(app.view)]).join("&") + location.hash);
+    } catch (e) { /* history API unavailable (sandboxed frame): the view is still in storage */ }
+  }
+  function applyHeatOptions() {
+    app.paletteId = app.view.palette;
+    app.renderer.setOptions({ palette: app.view.palette, opacity: $("tgHeat").checked ? parseFloat($("heatOpacity").value) : 0, banded: $("tgBands").checked,
+                              contours: $("tgContours").checked, deadZones: $("tgDead").checked });
+    app.editor.invalidate(); drawMinimap();
+  }
+  /** Layers the analysis job must return: the active one, the compare one, the members of a combination and the two the dashboard needs. */
+  app.neededLayers = function () {
+    var v = app.view, ids = ["rssi", "bandwidth", v.compare];
+    if (v.layer === H.COMBINED_ID) { ids = ids.concat(v.combine); } else { ids.push(v.layer); }
+    return ids.filter(function (id, i) { return ids.indexOf(id) === i; });
+  };
+  function layerAnalysis() {
+    var an = app.panels && app.panels.state.analysis, v = app.view;
+    if (!an || an.floor !== app.store.floorId || !an.layers) { return null; }
+    var need = v.layer === H.COMBINED_ID ? v.combine : [v.layer];
+    return need.every(function (id) { return an.layers[id]; }) ? an : null;
+  }
+  function dropLayerGrid() { if (app.view.layer !== "rssi") { app.layerInfo = null; app.renderer.clearGrid(); } }
+  /** Draw the selected map layer: the live RSSI grid, or a layer from the latest analysis (requested if it is missing). */
+  app.applyLayer = function () {
+    var v = app.view, spec = H.layerSpec(app.config, v.layer), list = $("legend");
+    $("layerSel").value = v.layer; $("paletteSel").value = v.palette;
+    $("legendTitle").textContent = v.layer === "rssi" ? "Signal quality (RSSI)" : spec.label;
+    applyHeatOptions();
+    if (v.layer === "rssi") {
+      app.layerInfo = null; H.fillLegend(list, app.config, v.palette); $("layerNote").textContent = "";
+      if (app.rssiGrid) { app.renderer.setGrid(app.rssiGrid); }
+      app.editor.invalidate(); drawMinimap();
+      return;
+    }
+    var an = layerAnalysis();
+    if (!an) {
+      H.fillLayerLegend(list, app.config, v.layer, v.palette, null); $("layerNote").textContent = "Computing layer...";
+      if (app.requestAnalysis) { app.requestAnalysis(true); }
+      return;
+    }
+    var info = H.layerGrid(v.layer, { config: app.config, analytics: an.analytics, values: an.layers }, v.combine);
+    app.layerInfo = info;
+    if (info.reason && !info.stats) { app.renderer.clearGrid(); } else { app.renderer.setGrid(info); }
+    H.fillLayerLegend(list, app.config, v.layer, v.palette, info);
+    $("layerNote").textContent = (info.reason ? info.reason + " " : "") + "MODEL ESTIMATE, not a measurement.";
+    app.editor.invalidate(); drawMinimap();
+  };
+  var viewListeners = [];
+  app.onView = function (fn) { viewListeners.push(fn); };
+  /** Change the view (layer, palette, compare, combine, overlays). Invalid values are ignored. */
+  app.setView = function (patch) {
+    app.view = S.normalizeView(Object.assign({}, app.view, patch), app.config, paletteIds());
+    persistView(); app.applyLayer();
+    viewListeners.forEach(function (fn) { fn(app.view); });
+  };
+  function fillLayerControls() {
+    var sel = $("layerSel"), pal = $("paletteSel");
+    H.layerIds(app.config).forEach(function (id) { sel.appendChild(option(id, app.config.planner_layers.layers[id].label)); });
+    sel.appendChild(option(H.COMBINED_ID, H.layerSpec(app.config, H.COMBINED_ID).label));
+    paletteIds().forEach(function (id) { pal.appendChild(option(id, H.PALETTE_LABELS[id] || id)); });
+    var voidKinds = $("voidKind"), sourceKinds = $("sourceKind");
+    app.config.voids.kinds.forEach(function (k) { voidKinds.appendChild(option(k, k.charAt(0).toUpperCase() + k.slice(1))); });
+    Object.keys(app.config.external_sources.kinds).forEach(function (k) { sourceKinds.appendChild(option(k, app.config.external_sources.kinds[k].label)); });
+    voidKinds.addEventListener("change", function () { app.editor.setVoidKind(voidKinds.value); });
+    sourceKinds.addEventListener("change", function () { app.editor.setSourceKind(sourceKinds.value); });
+    sel.addEventListener("change", function () { app.setView({ layer: sel.value }); });
+    pal.addEventListener("change", function () { app.setView({ palette: pal.value }); });
+  }
+
   // ---------------------------------------------------------------- controls
   function wireControls() {
     var st = app.store, ed = app.editor;
@@ -367,12 +500,14 @@
     $("bandSel").addEventListener("change", function () { app.settings.band = $("bandSel").value || null; app.backend.send({ type: "update", ops: [{ t: "band", band: app.settings.band }] }); fillApList(); requestCompute(); });
     $("modeSel").addEventListener("change", function () { app.settings.mode = $("modeSel").value; app.backend.send({ type: "update", ops: [{ t: "mode", mode: app.settings.mode }] }); requestCompute(); });
     $("cellSel").addEventListener("change", function () { app.settings.cell = parseFloat($("cellSel").value) || null; requestCompute(); });
-    function heatOpts() {
-      app.renderer.setOptions({ palette: $("paletteSel").value, opacity: $("tgHeat").checked ? parseFloat($("heatOpacity").value) : 0, banded: $("tgBands").checked,
-                                contours: $("tgContours").checked, deadZones: $("tgDead").checked });
-      H.fillLegend($("legend"), app.config, $("paletteSel").value); ed.invalidate(); drawMinimap();
-    }
-    ["paletteSel", "heatOpacity", "tgHeat", "tgBands", "tgContours", "tgDead"].forEach(function (id) { $(id).addEventListener("input", heatOpts); $(id).addEventListener("change", heatOpts); });
+    ["heatOpacity", "tgHeat", "tgBands", "tgContours", "tgDead"].forEach(function (id) { $(id).addEventListener("input", applyHeatOptions); $(id).addEventListener("change", applyHeatOptions); });
+    $("floorUp").addEventListener("click", function () { stepFloor(1); });
+    $("floorDown").addEventListener("click", function () { stepFloor(-1); });
+    document.addEventListener("keydown", function (e) {
+      var t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) { return; }
+      if (e.key === "PageUp") { stepFloor(1); e.preventDefault(); } else if (e.key === "PageDown") { stepFloor(-1); e.preventDefault(); }
+    });
     [["tgWalls", "walls"], ["tgLabels", "labels"], ["tgImage", "image"]].forEach(function (p) { $(p[0]).addEventListener("change", function () { ed.setLayer(p[1], $(p[0]).checked); }); });
     $("imageOpacity").addEventListener("input", function () { ed.setBgOpacity(parseFloat($("imageOpacity").value)); });
     $("imageBtn").addEventListener("click", function () { $("imageFile").click(); });
@@ -433,6 +568,21 @@
     $("themeBtn").textContent = theme === "light" ? "Dark" : "Light"; $("themeBtn").setAttribute("aria-pressed", String(theme === "light"));
     if (app.editor) { app.editor.invalidate(); }
   }
+  function applyContrast(on) {
+    if (on) { document.documentElement.setAttribute("data-contrast", "more"); } else { document.documentElement.removeAttribute("data-contrast"); }
+    $("contrastBtn").textContent = on ? "Contrast: on" : "Contrast: off"; $("contrastBtn").setAttribute("aria-pressed", String(on));
+    if (app.editor) { app.editor.invalidate(); }
+  }
+  function wireContrast() {
+    var saved = null, prefers = !!(window.matchMedia && window.matchMedia("(prefers-contrast: more)").matches);
+    try { saved = window.localStorage.getItem(CONTRAST_KEY); } catch (e) { /* storage unavailable */ }
+    applyContrast(saved === null ? prefers : saved === "more");
+    $("contrastBtn").addEventListener("click", function () {
+      var next = document.documentElement.getAttribute("data-contrast") !== "more";
+      try { window.localStorage.setItem(CONTRAST_KEY, next ? "more" : "off"); } catch (e) { /* storage unavailable */ }
+      applyContrast(next);
+    });
+  }
   function wireTheme() {
     var saved = null;
     try { saved = window.localStorage.getItem(THEME_KEY); } catch (e) { /* storage unavailable */ }
@@ -471,13 +621,14 @@
 
   function start(config, project) {
     app.config = config;
+    app.view = S.loadView(storage(), location.search, config, paletteIds());
     var heatCanvas = $("cHeat");
     var store = S.createStore(project);
     app.store = store; rebuildEnv();
     RF.modeIds().forEach(function (m) { $("modeSel").appendChild(option(m, m.charAt(0).toUpperCase() + m.slice(1))); });
     app.renderer = H.createRenderer({ heat: heatCanvas, over: $("cOver"), config: config, forceCanvas2d: /[?&]renderer=canvas2d/.test(location.search),
       onKind: function (r) { $("rendererChip").textContent = "renderer: " + (r.kind === "webgl" ? "WebGL" : "canvas 2D"); $("rendererChip").title = r.info; app.rendererInfo = r.info; } });
-    app.editor = E.create({ base: $("cBase"), edit: $("cEdit"), store: store, materials: materialTable(),
+    app.editor = E.create({ base: $("cBase"), edit: $("cEdit"), store: store, materials: materialTable(), config: config,
       onFrame: function (view) { app.renderer.draw(view); drawMinimap(); }, onDraw: function (c, view, f) { drawProbe(c, view); overlays.forEach(function (fn) { fn(c, view, f); }); }, announce: say, textLimit: function () { return S.textLimit(validateOpts()); }, onPointer: onPointer, onHelp: function () { app.help(); },
       onArrowWithoutSelection: moveProbeByKey,
       onToolPointer: function (tool, phase, raw, e) { return (tool.indexOf("note-") === 0 && app.noteTool) ? app.noteTool(tool, phase, raw, e) : (tool === "device" && app.deviceTool) ? app.deviceTool(phase, raw, e) : false; },
@@ -485,13 +636,15 @@
       onGrid: function (on) { $("gridBtn").setAttribute("aria-pressed", String(on)); } });
     minimap = H.createMinimap({ canvas: $("minimap"), getFloor: currentFloor, getView: function () { return app.editor.view; }, getThumb: function () { return app.renderer.thumb; },
       onNavigate: function (x, y) { app.editor.centerOn(x, y); } });
-    fillMaterialSelect(); H.fillLegend($("legend"), config, "classic");
+    fillMaterialSelect(); fillLayerControls();
     wireControls(); fillFloors(); syncPanels();
     store.subscribe(onStoreEvent);
     startBackend();
     if (window.PlannerPanels) { window.PlannerPanels.mount(app); }
     if (window.PlannerExport) { window.PlannerExport.mount(app); }
     if (window.PlannerModes) { window.PlannerModes.mount(app); }
+    if (window.PlannerLearn) { window.PlannerLearn.mount(app); }
+    app.applyLayer();
     requestCompute();
     $("saveState").textContent = "Not saved yet";
     app.ready = true;
@@ -499,7 +652,7 @@
 
   function fail(msg) { notice("The planner could not start: " + msg, "error"); }
   document.addEventListener("DOMContentLoaded", function () {
-    wireTheme();
+    wireTheme(); wireContrast();
     window.fetch(BASE + "rf-config.json").then(function (r) { if (!r.ok) { throw new Error("rf-config.json returned " + r.status); } return r.json(); })
       .then(function (config) { app.config = config; return initialProject().then(function (p) { start(config, p); }); })
       .catch(function (e) { fail(e.message + (location.protocol === "file:" ? ". Serve the page over http (python -m wallhack) instead of opening the file." : "")); });

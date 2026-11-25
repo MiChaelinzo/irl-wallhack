@@ -136,14 +136,78 @@ Floor 100 m x 100 m (seed 7, 1000 walls, 4 access points, basic mode, 2.4 GHz), 
 | index strategies | 4 AP, 100489 points, bench quadtree | 989.8 | 974.5 | 1007 | cold first run 1011.5 ms; 0.6x the engine grid time |
 
 
+### Engine grid path profile and fix (node)
+
+Measured with `node --cpu-prof` on the 100,489 point, 1000 wall, 4 AP floor (script: `computeApGrid` for the 4 APs, repeated), and with `node tools/perf_rf.js --points 100000 --repeat 5` on Intel(R) Xeon(R) Platinum 8488C, 8 logical cores, node v22.23.4. The "before" rows are the numbers in the node table above (run before this change); the "after" rows are from this run. The browser (Chromium) tables above were not re-measured and still show the old engine.
+
+Profile before the change (self time over 4 repeats): `segmentCandidates` 4462 ms, `basicDbm` 1294 ms, `wallLoss` plus its inlined `rayWallHit` 1223 ms, garbage collector 146 ms. Causes found in `segmentCandidates`: a closure created per call, a new result array per call, and a comparator `Array.sort` of every candidate wall (a ray crosses many candidate walls, only a few are actually hit).
+
+Fix in `rf-engine.js` (results unchanged): the cell visitor is a module function, `wallLoss` reuses a per-floor scratch array for the candidates, and only the walls that are actually crossed are put in ascending index order (small insertion sort) before the losses are added, so the summation order still matches `rfmodel.py`. `segmentCandidates` (used by the multipath blocker list) still returns a new sorted array.
+
+| Case (4 AP, 100489 points, 1000 walls) | Before ms (median) | After ms (median) |
+|---|---|---|
+| engine uniform grid | 1675.1 | 684.6 |
+| engine brute force | 2268.9 | 2343.9 |
+| worker core, final result | 1899.2 | 734.9 |
+| worker core, first usable frame | 143 | 56.7 |
+| bench uniform grid (reference kernel, unchanged) | 397.9 | 421.2 |
+
+Largest difference between the bench grids and the engine grid after the change: 0 dB. The engine grid path is now 1.6x the bench kernel instead of 4.2x. The rest of the gap (float64 and config lookups per ray, openings, antenna and per-call object access) is not profiled further.
+
 Largest difference between the bench grids and the engine grid: 0 dB in node, 0 dB in the browser.
 
 - `engine uniform grid` and `engine brute force` are the real `rf-engine.js` with and without its index. The three `bench` rows use one shared, bench-local kernel (`localGrid` in `tools/perf_rf_lib.js`) that only changes how wall candidates are picked, so they compare index structures with nothing else varying. Index construction is inside the timed region for every indexed row.
 - Same kernel, quadtree against uniform grid: the uniform grid took 397.9 ms and the quadtree 989.8 ms (median), so the quadtree is 2.5x slower. Brute force on the same kernel took 1808.9 ms.
 - **Decision: keep the uniform grid, do not adopt the quadtree.** The quadtree does not beat the grid on this scenario (axis-aligned walls of 2 to 8 m spread evenly over the floor, which is the case a grid is built for). `rf-engine.js` is unchanged.
-- The quadtree (989.8 ms) is faster than the engine's own grid path (1675.1 ms), but that gap is not an index effect: the same grid idea on the bench kernel takes 397.9 ms. The engine's per-ray work outside the index (candidate sort for summation order parity with Python, per call closures, per call object lookups) is where the time goes. That is a hypothesis from these numbers, not profiled, and it is the place to look first if more speed is needed.
+- The quadtree (989.8 ms) was faster than the engine's own grid path (1675.1 ms) before the fix below, and that gap was not an index effect: the same grid idea on the bench kernel takes 397.9 ms. The cause is profiled and fixed, see the next section.
 - A quadtree could win on clustered floors (dense buildings in a large empty area). That case was not measured, so no claim is made.
 - Octrees are 3D. The engine is 2D with a per-floor loss (`floor_loss_db`), so an octree does not apply until true 3D propagation exists.
 - GPU: nothing here uses the GPU. A WebGL or WebGPU compute path for propagation is a design idea only and is not built. The WebGL path in the planner draws an already computed RSSI grid.
 - Incremental rendering already exists: `rf-worker.js` posts a coarse pass first, then refines tile by tile (`progress` messages, at most one every 60 ms), and `planner.js` hands each message's grid to the heat renderer in `planner-heat.js`, which redraws it (chip text: "coarse pass, refining", then "refining N%"). For 100,000 points the first usable frame came after the coarse pass (see the worker rows) while the final result follows later.
 
+
+<!-- recorded sections below are kept when tools/perf_rf_browser.py rewrites this file -->
+
+## CPU-throttled planner page (APPROXIMATION of low-end and mobile CPUs)
+
+Measured with `python tools/perf_rf_browser.py --throttle` on Intel(R) Xeon(R) Platinum 8488C, 8 logical cores, Chromium 159.0.8154.6 headless (Playwright), on the seeded 4 AP, 1000 wall stress floor (`tools/perf_rf_lib.js`, seed 7). Throttling is Chrome DevTools `Emulation.setCPUThrottlingRate` at 4x and 6x, set on the page target. **This is an approximation, not a phone or a Raspberry Pi**: it slows JavaScript on the page's main thread by stretching CPU time, and does not model memory bandwidth, the GPU, thermal throttling or a small core count. No real low-end device was measured.
+
+Columns: cold load of the stress floor until the heat map is final (wall clock), one full frame (`benchmarkRender`), heat layer draw, move one AP and wait for the final map (5 times), an `analyze` job at 1 m cells without map layers, with the `rssi` layer, and with the `wall_loss` layer (3 times each, median), and JS heap after a forced GC (CDP `Performance.getMetrics`, page heap only, the worker heap is not included).
+
+### Finding: the throttle does not reach the Web Worker
+
+The `worker` rows barely change between 1x, 4x and 6x for compute (analysis jobs, cold load), while frame render times scale about 4x and 6x as expected. CDP CPU throttling applies to the page target, and the dedicated worker that computes the heat map is not throttled in this setup. So the worker rows show how the main thread behaves (render, frame cost) and the `main` rows (`?worker=0`, the fallback that computes on the UI thread in slices) are the honest throttled compute figures.
+
+### The extra coverageGrid per analysis (from FEAT-003), measured and removed
+
+FEAT-003 made the `analyze` worker job call `coverageGrid` a second time to build map layers, after `analyzeFloor` had already computed the same grid. That cost was never measured. Fix: `rf-engine.js` gains `analyzeFloorWithGrid` (returns the analytics and the grid it computed; `analyzeFloor` is now a thin wrapper around it), and `rf-worker.js` reuses that grid for the layers. The output is identical (`tests/test_rf_planner_js.py::test_analyze_floor_with_grid_matches_separate_calls`). The `wall_loss` layer still computes one extra grid, for the floor without walls, which is a different input.
+
+Before (extra grid), same command, same machine, same run session:
+
+| Compute backend, CPU throttle (CDP, approximation) | Cold load of 4 AP stress floor ms | Full frame render ms | Heat layer draw ms | Re-render after AP move: median / max ms | Analysis job, no layers ms | Analysis job, rssi layer ms | Analysis job, wall_loss layer ms | JS heap MB after GC |
+|---|---|---|---|---|---|---|---|---|
+| worker, 1x | 567 | 0.5 | 0.4 | 66 / 453 | 102 | 148 | 145 | 2.7 |
+| worker, 4x | 825 | 2.3 | 1.7 | 128 / 612 | 143 | 169 | 161 | 2.7 |
+| worker, 6x | 549 | 3.8 | 1.9 | 164 / 1009 | 122 | 172 | 178 | 2.7 |
+| main, 1x | 704 | 0.5 | 0.3 | 136 / 769 | 111 | 163 | 166 | 3.2 |
+| main, 4x | 6800 | 2.2 | 1.5 | 3488 / 4104 | 495 | 632 | 668 | 3.2 |
+| main, 6x | 12881 | 3.3 | 2.4 | 9579 / 11931 | 683 | 970 | 1006 | 3.2 |
+
+After (grid reused):
+
+| Compute backend, CPU throttle (CDP, approximation) | Cold load of 4 AP stress floor ms | Full frame render ms | Heat layer draw ms | Re-render after AP move: median / max ms | Analysis job, no layers ms | Analysis job, rssi layer ms | Analysis job, wall_loss layer ms | JS heap MB after GC |
+|---|---|---|---|---|---|---|---|---|
+| worker, 1x | 460 | 0.7 | 0.3 | 70 / 482 | 98 | 100 | 109 | 2.7 |
+| worker, 4x | 436 | 2.4 | 1.4 | 157 / 706 | 117 | 101 | 116 | 2.7 |
+| worker, 6x | 567 | 3.5 | 2.3 | 226 / 714 | 102 | 104 | 114 | 2.7 |
+| main, 1x | 642 | 0.6 | 0.3 | 138 / 713 | 121 | 102 | 105 | 3.1 |
+| main, 4x | 6988 | 2.1 | 0.8 | 3014 / 3881 | 432 | 433 | 475 | 3.2 |
+| main, 6x | 12787 | 3.2 | 1.7 | 8267 / 10282 | 608 | 597 | 708 | 3.2 |
+
+Reading the numbers:
+
+- The extra grid cost about 45 ms per layered analysis unthrottled (rssi layer 148 to 100 ms in the worker, 163 to 102 ms on the main thread) and about 370 ms on the main thread at 6x (970 to 597 ms). A layered analysis now costs the same as one without layers.
+- Rows that the change does not touch (cold load, AP move, frames) vary by 10 to 30 percent between the two runs. That is run-to-run noise on a shared machine, so only differences well above it are claimed.
+- The main-thread fallback is not usable for this stress floor on a CPU 4x to 6x slower: a single AP move takes 3 to 8 s to reach the final map (the coarse pass appears earlier). With a Web Worker the main thread stays free, but on a real slow device the worker itself would also be slower, which this method cannot show.
+- Heat layer draw and full frames stay under 4 ms at 6x, so drawing is not the bottleneck; compute is.
+- Memory: the page heap after GC is about 3 MB in every case. The worker heap is not measured.

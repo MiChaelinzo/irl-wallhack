@@ -9,7 +9,7 @@ FILES = ["README.md", "01-repository-audit.md", "02-technical-debt.md", "03-arch
          "09-rendering-optimization.md", "10-ui-modernization.md", "11-testing-strategy.md", "12-devops-strategy.md",
          "13-security-review.md", "14-deployment-plan.md", "15-wifi-physics.md", "16-educational-mode.md",
          "17-ar-computer-vision.md", "18-reporting-engine.md", "19-competitive-analysis.md", "20-roadmap.md",
-         "21-top-100-improvements.md", "22-top-10-hackathon-features.md", "23-hackathon-pitch.md",
+         "21-top-100-improvements.md", "22-top-10-hackathon-features.md", "23-hackathon-pitch.md", "24-rf-lab-status.md",
          "adr-frontend-stack.md"]
 EM_DASH = "\u2014"
 STATUSES = ("Done", "Partial", "Not started")

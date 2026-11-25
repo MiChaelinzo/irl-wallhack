@@ -2,24 +2,27 @@
 
 Phases are ordered by value over cost from [21-top-100-improvements.md](21-top-100-improvements.md). Dates are deliberately absent: there is no capacity plan to base them on. DESIGN ONLY items are marked.
 
+## Done since the audit (see [24-rf-lab-status.md](24-rf-lab-status.md))
+
+Engine profile (1675 to 684.6 ms on the 100k point floor), AP panel SINR and MLO results, SINR-aware channel planning, door, window, stairwell and interference editing, LLM explain endpoint (off by default), educational mode with six lessons, scenario presets, richer PDF, axe accessibility run with 0 violations, request ids and diagnostics, CONTRIBUTING.md.
+
 ## Now (small, measurable, unblock honesty)
 
-1. Profile the engine grid path and close the 4x gap to the bench kernel (`docs/perf-rf.md`).
-2. Click-test the AP panel standard controls in a browser and update the README row from PARTIALLY VERIFIED.
-3. Run `tools/planner_smoke.py` in CI.
-4. Add SINR and standard columns to CSV and PDF.
-5. Real Vercel deployment and record the result.
-6. Widen JSDoc type checking.
+1. Run `tools/planner_smoke.py` and `tools/a11y_check.py` in CI (needs Chromium in the workflow).
+2. Add SINR and standard columns to CSV and PDF.
+3. Real Vercel deployment and record the result.
+4. Heat map data table alternative for screen readers, then a screen reader pass.
+5. Widen JSDoc type checking.
+6. A room creation tool in the planner (rooms are only walls plus a label today).
 
 ## Next (the product story)
 
-1. Survey import (CSV of position and dBm) and a model fit with a reported error.
-2. LLM explain endpoint for planner advice, off by default, engine numbers only, number-checking of the reply.
-3. SINR-aware placement and channel planning, then antenna azimuth search.
-4. Door and window editing in the planner UI.
-5. Educational mode, first five lessons.
-6. Before and after comparison report.
-7. Accessibility audit with axe and keyboard alternatives to dragging.
+1. Survey import (CSV of position and dBm) and a model fit with a reported error. This is the single most valuable item: every accuracy statement stays UNVERIFIED without it.
+2. Azimuth search and joint power and channel optimisation.
+3. Wireless consultant chat grounded in engine numbers.
+4. Before and after comparison report.
+5. Reflection, antenna and mesh lessons.
+6. Spectrum scan import for the Spectrum tab.
 
 ## Later (needs new foundations)
 

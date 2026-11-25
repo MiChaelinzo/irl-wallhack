@@ -21,6 +21,10 @@ Default: server binds `127.0.0.1`, single user, data stays on the machine. Optio
 | LLM off by default, keys from environment only, cloud needs per-request confirmation, response size cap, errors without keys | `llm.py` | `tests/test_insights.py` (mocked servers) |
 | CSV formula-injection guard | `planner-export.js` `csvCell` | `tests/test_planner_panels.py` |
 | Text from data rendered with `textContent`: grep finds no `innerHTML`, `insertAdjacentHTML`, `document.write` or `eval(` call in `wallhack/static/*.js` (one `innerHTML` match is a comment in `planner-panels.js`) | `planner-panels.js` header | grep only |
+| `/api/diagnostics` only for loopback clients without an Origin header; returns versions, limits, uptime and error counts, no keys, tokens, paths or addresses | `app.py` `diagnostics` | `tests/test_api.py::test_diagnostics_local_only_and_holds_no_secrets` |
+| Unhandled errors return generic JSON with a request id; the exception text stays in the server log | `app.py` `request_context` | `tests/test_api.py::test_unhandled_error_returns_explanatory_json_and_is_counted` |
+| Client-supplied `X-Request-ID` accepted only as a short plain token, else replaced | `logging_setup.py` `new_request_id` | `tests/test_api.py::test_request_id_is_generated_and_echoed` |
+| Request logs carry method, path, status and duration only, never query strings, headers or bodies | `app.py` `request_context` | by reading the code |
 | Strict CSP on the static demo: `default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'` | `vercel.json` | headers read, deployment UNVERIFIED |
 
 ## Findings
@@ -38,6 +42,7 @@ Default: server binds `127.0.0.1`, single user, data stays on the machine. Optio
 | S9 | Dependencies: `fastapi>=0.100`, `uvicorn[standard]>=0.23`, `numpy>=1.21` are unpinned lower bounds. No dependency scan in CI. | Low | Open |
 | S10 | The planner stores projects, including floor-plan images, in browser localStorage unencrypted. | Low | Disclosed on the planner page ("stay in this browser and are never uploaded") |
 | S11 | The simulated data is labelled as simulated throughout, which avoids a trust issue (presenting synthetic output as real). | Informational | Positive |
+| S12 | `/api/diagnostics` reveals the app version and Python version to the local user. In LAN mode a paired phone is refused (not loopback). | Informational | By design, local only |
 
 No secrets were found in the files read. `llm.py` documents that keys come from `OPENAI_API_KEY` or `AZURE_OPENAI_API_KEY` only.
 

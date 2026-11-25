@@ -105,3 +105,41 @@ def test_twin_body_above_the_derived_limit_is_413_and_other_routes_keep_1mb(clie
     assert client.put("/api/twin", content=big, headers={"content-type": "application/json"}).status_code == 413
     mid = json.dumps({"pad": "A" * (MAX_BODY_BYTES + 10)})
     assert client.post("/api/settings", content=mid, headers={"content-type": "application/json"}).status_code == 413
+
+
+@pytest.mark.parametrize("bands", ["6", None, {"6": 1}, [1], [None], [["6"]], ["6", "6"], ["5"], ["6", "2.4", "1"],
+                                   ["constructor"], ["__proto__"]])
+def test_put_twin_rejects_malformed_mlo_bands_with_422(client, bands):
+    t = sample_twin()
+    t["floors"][0]["aps"][0].update(band="5", channel=36, standard="wifi7", width_mhz=80, mlo_bands=bands)
+    r = client.put("/api/twin", json=t)
+    assert r.status_code == 422 and "mlo_bands" in r.json()["detail"]
+
+
+def test_put_twin_over_the_concurrency_cap_is_429_and_frees_up_afterwards(client, monkeypatch):
+    import threading
+    from wallhack import app as app_module
+    runtime = client.app.state.runtime
+    gate, started, results = threading.Event(), threading.Semaphore(0), []
+    real = runtime.set_twin
+
+    def slow_set_twin(body):
+        started.release()
+        gate.wait(5)
+        return real(body)
+
+    monkeypatch.setattr(runtime, "set_twin", slow_set_twin)
+    cap = app_module.MAX_CONCURRENT_TWIN_PUTS
+    workers = [threading.Thread(target=lambda: results.append(client.put("/api/twin", json=sample_twin()).status_code))
+               for _ in range(cap)]
+    for w in workers:
+        w.start()
+    for _ in range(cap):
+        assert started.acquire(timeout=5)
+    extra = client.put("/api/twin", json=sample_twin())
+    assert extra.status_code == 429 and "Too many twin uploads" in extra.json()["detail"] and extra.headers["retry-after"] == "1"
+    gate.set()
+    for w in workers:
+        w.join(5)
+    assert results == [200] * cap
+    assert client.put("/api/twin", json=sample_twin()).status_code == 200

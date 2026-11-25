@@ -26,6 +26,9 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 ![RF planner](docs/screenshot-planner.png)
 
 ![Planner analytics](docs/screenshot-planner-analytics.png)
+![Planner map layers: SINR beside wall attenuation, viridis palette](docs/screenshot-planner-layers.png)
+![Planner engineering dashboard](docs/screenshot-planner-dashboard.png)
+![Planner spectrum view](docs/screenshot-planner-spectrum.png)
 ![Scenario comparison](docs/screenshot-planner-compare.png)
 ![Planner, light theme](docs/screenshot-planner-light.png)
 ![Planner on a phone](docs/screenshot-planner-mobile.png)
@@ -102,6 +105,7 @@ New endpoints, all local and simulated unless real sensors are attached:
 | `GET /api/game/scenario` | Apartment placement game with precomputed per-candidate RSSI grids; scoring lives in `wallhack/game.py`. |
 | `GET /api/pair` | LAN mode only, from the host machine only: the pairing URL for a phone and its QR code as module rows. |
 | `GET /api/judge` | Judge page items with status and verification label (kept consistent with the table below by a test). |
+| `GET /api/diagnostics` | Host machine only (loopback, no Origin header): version, uptime, limits and recent server error counts. No keys or tokens. Every response also carries an `X-Request-ID` header; `WALLHACK_LOG_JSON=1` switches logs to one JSON object per line. |
 
 **LAN mode for the mobile companion** is opt-in: `--lan` or `WALLHACK_LAN=1`. It binds `0.0.0.0`, and every non-loopback request (HTTP and WebSocket) needs a random pairing token, sent as the `wallhack_pair` HttpOnly cookie (set by opening the pairing URL) or as `Authorization: Bearer`. The token is generated at start and kept in memory. In LAN mode requests from the host machine are trusted only when the Host header is `localhost`, `127.0.0.1`, `::1`, the LAN address or the configured host (blocks DNS rebinding). Cloud LLM use needs the `confirm_off_device` flag in the request, which is a consent prompt for the owner and is not enforced against a paired phone. `PUT /api/twin` accepts bodies up to about 23 MB and the server does not cap concurrent requests, so a paired device on the LAN can make the host hold several such buffers at once. Without `--lan` nothing changes: the server binds `127.0.0.1` and keeps the Host/Origin checks.
 
@@ -143,7 +147,13 @@ Off by default (`llm_provider` empty). Set it with `--config`/`config.json` or `
 | Mobile companion | Partial | Works in headless Chromium; real phone, notifications UNVERIFIED. |
 | Premium UI | Complete | PARTIALLY VERIFIED; no Pi 4 frame-rate measurement. |
 | RF intelligence scores | Complete | Model constants are textbook values, UNVERIFIED against real buildings. |
+| RF lab (non-WiFi interferers, PER/latency/airtime estimates, stairwell voids, explain, spectrum, decay, roaming map) | Complete | VERIFIED by automated Python tests and Python/JS parity (`tests/test_rf_lab.py`). Every number is a MODEL ESTIMATE with assumed constants (no standard SINR to PER formula exists); UNVERIFIED against real radios, microwave ovens or buildings. Interferers and floor openings are editable in the planner (PARTIALLY VERIFIED, see the lab UI row in the table below). |
+| Scenario presets, educational mode, plan explanation, richer PDF report | Complete | VERIFIED by automated tests (`tests/test_scenarios.py`, `test_planner_learn.py`, `test_explain.py`) and headless Chromium (`tools/planner_smoke.py`, live and `--demo`). The explain endpoint is VERIFIED against a mocked provider only, UNVERIFIED against real LLM services. Lesson content is not reviewed by a teacher, and PDFs are UNVERIFIED in a real viewer. |
+| Accessibility, diagnostics, throttled performance | Complete | VERIFIED: axe-core (`tools/a11y_check.py`, headless Chromium) reports 0 violations on the planner and dashboard, live and demo, in dark, light and high contrast; request ids, JSON logs, `/api/diagnostics` and the JSON error handler by `tests/test_api.py`; throttled numbers in `docs/perf-rf.md`. UNVERIFIED: screen readers, real phones and low-end devices (the 4x and 6x CPU throttle is an approximation and does not reach the Web Worker). |
 | Judge mode | Complete | Statuses are checked against this README by a test. |
+
+## Using the RF lab
+Open `/planner` (or the hosted demo). Pick a preset from the Project card or draw walls (W), place APs (A), doors (D), windows (O), floor openings (S) and interference sources (X). Set an AP's Wi-Fi standard to unlock SINR, latency and packet-loss layers. Choose a map layer and palette from the layer bar, open Spectrum and Dashboard tabs for channel congestion and statistics, toggle Learn for lessons, use Smart planner for advice and Export for PDF, PNG, CSV and JSON. All values are MODEL ESTIMATES. Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md). What is complete, partial and deferred: [docs/platform/24-rf-lab-status.md](docs/platform/24-rf-lab-status.md).
 
 ## Platform documentation
 The audit and design set is in [docs/platform/README.md](docs/platform/README.md): repository audit with evidence-based scores, technical debt, architecture, security review, Wi-Fi physics and inaccuracy report, material database, rendering measurements, the frontend stack decision ([ADR](docs/platform/adr-frontend-stack.md), no rewrite done), roadmap, a ranked top 100 list with Done / Partial / Not started status, a top 10 demo script and a hackathon pitch with caveats.
@@ -197,6 +207,7 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | AP panel controls for standard, width, antenna pattern and azimuth | PARTIALLY VERIFIED (JavaScript syntax check only; not clicked in a browser) |
 | RF planner propagation accuracy against real buildings, throughput and capacity numbers | UNVERIFIED (planning estimates only) |
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
+| RF planner lab UI: AP WiFi standard, width, streams and MLO controls, 11 map layers plus a combined layer, side-by-side compare, colour-blind palettes (viridis, cividis), roaming, strongest-AP and blend overlays, spectrum canvas, engineering dashboard, door, window, stairwell and interference-source editing, floor up and down | PARTIALLY VERIFIED (driven in headless Chromium by `tools/planner_smoke.py`, live, `--demo`, `--canvas2d` and `--no-worker`, zero console errors; pure parts tested in node; AP panel controls clicked through the page; no real GPU, no touch, no screen reader, colour-blind rendering judged from the palette definitions, not simulated) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |
 | RF planner PDF and PNG exports opened in a real viewer | UNVERIFIED (structure and signature checked by script only) |
 | LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
@@ -222,7 +233,8 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | ESP32 / Nexmon hardware end to end | UNVERIFIED |
 | 100,000 point RF benchmark (100,489 points, 1000 walls, 4 APs: worker final about 1.9 s node and 2.1 s headless Chromium, first frame about 145 ms; quadtree measured slower than the grid and not adopted) | VERIFIED on the benchmark machine (`docs/perf-rf.md`); UNVERIFIED on a Raspberry Pi 4 and on a real GPU |
 | Platform documentation set (`docs/platform/`: audit, architecture, security review, physics, roadmap, top 100, pitch) and `tests/test_platform_docs.py` | VERIFIED for existence, ranking and cited files (automated test); scores and competitor statements are judgements, competitor statements are general knowledge and not freshly researched |
-| Educational mode, AR and computer vision, floor-plan extraction, planner LLM explain endpoint, campus and smart-city planning | NOT BUILT (design only in `docs/platform/`) |
+| AR and computer vision, floor-plan extraction, campus and smart-city planning, measured-survey calibration, true 3D or exact ray-tracing propagation, a room creation tool, DXF and IFC import | NOT BUILT (design only in `docs/platform/`, status per section in `docs/platform/24-rf-lab-status.md`) |
+| Per-section status of the RF lab mandate (complete, partial, deferred) and its documentation set (`CONTRIBUTING.md`, architecture diagram, methodology, optimization guide) | VERIFIED for existence, links and cited files (`tests/test_platform_docs.py`); the statuses themselves are the author's reading of the code |
 
 ## Tests
 The QR tests decode codes with OpenCV and are skipped without it (`pip install opencv-python-headless`; CI installs it).

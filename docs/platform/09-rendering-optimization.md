@@ -35,9 +35,26 @@ Max difference between the bench grid and the engine grid output: 0 dB.
 | Progressive rendering | Already exists | `rf-worker.js` sends a coarse frame first, then tiles; `planner.js` `setGrid` shows them. No duplicate was added. |
 | Per-AP tile cache | Already exists | Wall edit recomputed 8 of 104 tiles (25.8 ms median final in the 1 AP, 0.5 m case). |
 
+## Optimization guide
+
+Practical order of work when the planner feels slow. Measure first with `node tools/perf_rf.js` and `python tools/perf_rf_browser.py [--throttle]`, and compare against `docs/perf-rf.md`.
+
+| Lever | What it does | Where |
+|---|---|---|
+| Larger `cell_m` | Cells scale with the inverse square of the size, the cheapest fix on a Pi | planner Cell size control, `GET /api/rf/coverage?cell_m=` |
+| Basic mode | Enhanced and multipath recompute every tile on any wall edit | mode selector |
+| Fewer APs or floors in view | Cost is cells x APs x candidate walls | project |
+| Coarse-first rendering | First picture before the final result | `rf-worker.js` |
+| Tile and per-AP cache | A wall edit recomputes only tiles its box meets | `rf-worker.js` |
+| Grid reuse for layers | Map layers reuse the coverage grid (`analyzeFloorWithGrid`), 148 to 100 ms in the worker | `rf-engine.js` |
+| Canvas 2D renderer | `?renderer=canvas2d` when WebGL is slow or missing | `planner-heat.js` |
+| Main-thread fallback | `?worker=0` for debugging only | `planner.js` |
+
+Do not optimise without a measurement: the quadtree was slower than the uniform grid, and WebGPU compute has no measured need. Numbers come from a Xeon in headless Chromium, never from a Pi 4.
+
 ## Open performance finding
 
-The engine grid path (1675 ms) is about 4x slower than the same-algorithm bench kernel (398 ms), and both produce identical values. The cause is not profiled. A hypothesis, unverified: candidate sorting and closure allocation per cell in `segmentCandidates` and `wallLoss` (`rf-engine.js`). Next step: profile with `node --cpu-prof tools/perf_rf.js --points 100000` before changing anything. A 4x gain would bring a 100k grid near 0.5 s without any new data structure.
+The engine grid path was profiled and improved from 1675 ms to 684.6 ms (node, median, 4 APs, 1000 walls, 100,489 points) with identical results, see `docs/perf-rf.md` and the CHANGELOG. The same-algorithm bench kernel remains faster, and the browser worker table in `docs/perf-rf.md` shows the engine grid path still slower than the bench grid, so some gap is open. Profile with `node --cpu-prof tools/perf_rf.js --points 100000` before changing anything.
 
 ## Rendering path
 

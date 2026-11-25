@@ -6,6 +6,10 @@ The same measurements as the node run are repeated against a real Web Worker; th
 draws frames and while an access point is dragged (requestAnimationFrame intervals). Everything printed is
 measured on this machine in this run. Needs the optional `playwright` package and a browser.
 Usage: tools/perf_rf_browser.py [--no-write]
+       tools/perf_rf_browser.py --throttle   (only the CPU-throttled cases, printed as markdown, docs/perf-rf.md untouched)
+
+--throttle uses Chrome DevTools Emulation.setCPUThrottlingRate (4x and 6x) on this machine's CPU. That is an APPROXIMATION of a
+slow laptop or phone CPU: it slows main-thread and worker JavaScript, but not memory bandwidth, GPU or thermal behaviour.
 """
 import argparse
 import json
@@ -26,6 +30,10 @@ SCALE_POINTS = 100000
 RENDER_FRAMES = 60
 DRAG_STEPS = 90
 APS_FOR_PAGE = 4
+THROTTLE_RATES = (1, 4, 6)    # 1 = unthrottled reference
+EDIT_REPEAT = 5
+ANALYSIS_REPEAT = 3
+KEEP_MARKER = "<!-- recorded sections below are kept when tools/perf_rf_browser.py rewrites this file -->"
 
 LIB = (ROOT / "tools" / "perf_rf_lib.js").read_text()
 
@@ -69,6 +77,106 @@ DRAG = """async (steps) => {
   const t1 = performance.now(), res = await A.whenIdle();
   return { intervals, idle, long, execMs, settleMs: performance.now() - t1, final: res.stats };
 }"""
+
+
+THROTTLE_JS = """async (o) => {
+  const A = window.PlannerApp, st = A.store, S = window.PlannerState, f = st.project.floors[0], ap = f.aps[0], x0 = ap.x, y0 = ap.y;
+  const med = (v) => v.slice().sort((a, b) => a - b)[Math.floor(v.length / 2)];
+  // A newer analyze job (the page's own debounced analysis) cancels an older one, so a cancelled run is repeated.
+  const job = (layers) => new Promise((resolve, reject) => {
+    const go = () => {
+      const t0 = performance.now();
+      A.runJob({ type: 'analyze', floor: f.id, cell_m: 1, layers }, { result: () => resolve(performance.now() - t0), error: (m) => reject(new Error(m.message)), cancelled: go });
+    };
+    go();
+  });
+  const settle = () => new Promise((r) => setTimeout(r, 1500)).then(() => A.whenIdle());
+  const out = {};
+  out.frame_ms = A.benchmarkRender(o.frames);
+  A.benchmarkRender(20); out.heat_draw_ms = A.renderer.lastDrawMs;
+  const edits = [];
+  for (let i = 0; i < o.editRepeat; i++) {      // re-render on edit: move one AP, wait until the worker has the final map
+    const t0 = performance.now();
+    st.exec({ label: 'edit', key: 'perf' + i, ops: [S.setOp('ap', st.project, f.id, ap.id, { x: x0 + 3 + i, y: y0 + 2 })] });
+    await A.whenIdle(); edits.push(performance.now() - t0);
+  }
+  out.edit_median_ms = med(edits); out.edit_max_ms = Math.max(...edits);
+  const plain = [], layered = [];
+  await settle(); await job([]);                  // let the page's own analysis finish, then warm up
+  for (let i = 0; i < o.analysisRepeat; i++) { plain.push(await job([])); layered.push(await job(['rssi'])); }
+  out.analysis_no_layers_ms = med(plain); out.analysis_layers_ms = med(layered);
+  const wall = [];
+  for (let i = 0; i < o.analysisRepeat; i++) { wall.push(await job(['wall_loss'])); }
+  out.analysis_wall_loss_ms = med(wall);
+  return out;
+}"""
+
+
+def throttled_run(browser, base, rate, query=""):
+    """Planner page with the stress floor under CDP CPU throttling `rate`x: render, edit and analysis times plus JS heap."""
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
+    client = page.context.new_cdp_session(page)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "planner" + query)
+    page.wait_for_function("window.PlannerApp && window.PlannerApp.ready", timeout=30000)
+    page.add_script_tag(content=LIB)
+    page.evaluate("() => window.PlannerApp.whenIdle()")
+    client.send("Emulation.setCPUThrottlingRate", {"rate": rate})
+    page.evaluate("(n) => window.PlannerApp.loadProject(RFPerf.stressProject(7, n))", APS_FOR_PAGE)
+    t0 = time.time()
+    page.evaluate("() => window.PlannerApp.whenIdle()")
+    out = {"rate": rate, "backend": page.evaluate("() => window.PlannerApp.backend.kind"), "cold_wall_ms": (time.time() - t0) * 1000}
+    out.update(page.evaluate(THROTTLE_JS, {"frames": RENDER_FRAMES, "editRepeat": EDIT_REPEAT, "analysisRepeat": ANALYSIS_REPEAT}))
+    client.send("HeapProfiler.collectGarbage")
+    client.send("Performance.enable")
+    metrics = {m["name"]: m["value"] for m in client.send("Performance.getMetrics")["metrics"]}
+    out["heap_mb"] = metrics.get("JSHeapUsedSize", 0) / 1048576
+    client.send("Emulation.setCPUThrottlingRate", {"rate": 1})
+    page.close()
+    if errors:
+        raise SystemExit("FAIL: page errors during throttled run: %s" % errors)
+    return out
+
+
+def throttle_markdown(results, version):
+    lines = ["| Compute backend, CPU throttle (CDP, approximation) | Cold load of 4 AP stress floor ms | Full frame render ms | Heat layer draw ms | Re-render after AP move: median / max ms | Analysis job, no layers ms | Analysis job, rssi layer ms | Analysis job, wall_loss layer ms | JS heap MB after GC |",
+             "|---|---|---|---|---|---|---|---|---|"]
+    for r in results:
+        lines.append("| %s, %sx | %.0f | %.1f | %.1f | %.0f / %.0f | %.0f | %.0f | %.0f | %.1f |" % (
+            r["backend"], r["rate"], r["cold_wall_ms"], r["frame_ms"], r["heat_draw_ms"], r["edit_median_ms"], r["edit_max_ms"],
+            r["analysis_no_layers_ms"], r["analysis_layers_ms"], r["analysis_wall_loss_ms"], r["heap_mb"]))
+    return "\n".join(lines)
+
+
+def start_server():
+    server = subprocess.Popen([sys.executable, "-m", "wallhack", "--source", "simulator", "--seed", "7", "--scenario", "two_zones", "--port", str(PORT), "--no-browser"], cwd=ROOT,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(50):
+        try:
+            urlopen("http://127.0.0.1:%d/api/status" % PORT).read()
+            break
+        except OSError:
+            time.sleep(0.2)
+    return server
+
+
+def run_throttle() -> int:
+    from playwright.sync_api import sync_playwright
+    server = start_server()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            base = "http://127.0.0.1:%d/" % PORT
+            results = [throttled_run(browser, base, rate) for rate in THROTTLE_RATES]
+            results += [throttled_run(browser, base, rate, "?worker=0") for rate in THROTTLE_RATES]   # main-thread fallback: throttling reaches the compute
+            version = browser.version
+            browser.close()
+    finally:
+        server.terminate()
+    print("Chromium %s headless on %s, %d logical cores. Rate 1 is this machine unthrottled; 4 and 6 are CDP CPU throttling, an approximation of slower CPUs." % (version, cpu_name(), os.cpu_count()))
+    print(throttle_markdown(results, version))
+    return 0
 
 
 def pct(values, q):
@@ -121,7 +229,10 @@ def page_run(browser, base, query, label):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--no-write", action="store_true", help="print only, do not write docs/perf-rf.md")
+    ap.add_argument("--throttle", action="store_true", help="only the CDP CPU-throttled cases (1x, 4x, 6x), printed as markdown")
     args = ap.parse_args()
+    if args.throttle:
+        return run_throttle()
     from playwright.sync_api import sync_playwright
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -226,7 +337,11 @@ def main() -> int:
     doc = "\n".join(lines)
     print(doc)
     if not args.no_write:
-        (ROOT / "docs" / "perf-rf.md").write_text(doc + "\n")
+        out = ROOT / "docs" / "perf-rf.md"
+        kept = ""
+        if out.is_file() and KEEP_MARKER in out.read_text():
+            kept = "\n" + out.read_text()[out.read_text().index(KEEP_MARKER):]   # hand-recorded before/after sections survive a rerun
+        out.write_text(doc + "\n" + kept)
     return 0
 
 

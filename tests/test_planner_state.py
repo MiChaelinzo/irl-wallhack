@@ -452,3 +452,68 @@ def test_blank_project_name_loads_as_default_in_js_and_python(name):
     d = twin.sample_twin()
     d["name"] = name.encode().decode("unicode_escape")
     assert twin.validate_twin(d)["name"] == "Untitled"
+
+
+# ---------------------------------------------------------------- malformed mlo_bands (same cases as test_twin_api.py)
+MALFORMED_MLO_BANDS = [
+    ("'6'", "string instead of list"), ("null", "null"), ("{'6': 1}", "object"), ("[1]", "number entry"), ("[null]", "null entry"),
+    ("[['6']]", "nested list"), ("['6', '6']", "duplicate"), ("['5']", "own band"),
+    ("['6', '2.4', '1']", "more links than max_links allows"), ("['constructor']", "inherited object key"), ("['__proto__']", "prototype key"),
+]
+
+
+@pytest.mark.parametrize("bands,why", MALFORMED_MLO_BANDS)
+def test_malformed_mlo_bands_are_rejected_like_twin_py(bands, why):
+    body = """
+      const d = JSON.parse(JSON.stringify(input.twin));
+      Object.assign(d.floors[0].aps[0], {band: '5', channel: 36, standard: 'wifi7', width_mhz: 80, mlo_bands: %s});
+      try { S.validateProject(d); out('accepted'); } catch (e) { out(e.name + ': ' + e.message); }
+    """ % bands
+    r = run_js(body)
+    assert r.startswith("ProjectError") and "mlo_bands" in r, (why, r)
+
+
+def test_opening_void_and_interferer_operations_undo_and_redo_exactly():
+    r = run_js("""
+      const store = S.createStore(mk()), f = store.floorId, before = JSON.stringify(store.project);
+      const wid = store.project.floors[0].walls[0].id;
+      store.exec({label: 'door', ops: [S.addOp('opening', store.project, f, {id: 'dx', kind: 'door', wall: wid, pos: 0.1, width: 0.5})]});
+      store.exec({label: 'void', ops: [S.addOp('void', store.project, f, {id: 'v1', kind: 'stairwell', x: 1, y: 1, w: 2, d: 2})]});
+      store.exec({label: 'src', ops: [S.addOp('interferer', store.project, null, {id: 's1', kind: 'microwave', floor: f, x: 1, y: 1})]});
+      store.exec({label: 'src2', key: 'k', ops: [S.setOp('interferer', store.project, null, 's1', {duty_cycle: 0.3})]});
+      const full = JSON.stringify(store.project);
+      const valid = S.parseProjectJson(S.exportProjectJson(store.project)).interferers[0].duty_cycle;
+      store.undo(); store.undo(); store.undo(); store.undo();
+      const undone = JSON.stringify(store.project);
+      store.redo(); store.redo(); store.redo(); store.redo();
+      out({valid, undoneVoids: JSON.parse(undone).floors[0].voids, redone: JSON.stringify(store.project) === full, noInterferers: (JSON.parse(undone).interferers || []).length,
+           limit: S.addLimitError('interferer', store.project, f, S.__cfg || input.config)});
+    """, {"config": __import__("wallhack.rfmodel", fromlist=["CONFIG"]).CONFIG})
+    assert r["valid"] == 0.3 and r["redone"] and r["noInterferers"] == 0 and r["undoneVoids"] == [] and r["limit"] is None
+
+
+def test_door_placement_clamps_inside_the_wall_and_ignores_far_clicks():
+    r = run_js("""
+      const f = {walls: [wall('a', 0, 0, 10, 0), wall('b', 0, 5, 0.4, 5)], openings: []};
+      const near = G.placeOpening(f, {x: 9.9, y: 0.1}, 0.9, 0.5), far = G.placeOpening(f, {x: 5, y: 3}, 0.9, 0.5), short = G.placeOpening(f, {x: 0.2, y: 5}, 0.9, 0.5);
+      out({near, far, short, rect: G.voidRect({x: 1, y: 1}, {x: 1.2, y: 4}, {width_m: 10, depth_m: 10}, 0.5), rect2: G.voidRect({x: 9, y: 9}, {x: 12, y: 12}, {width_m: 10, depth_m: 10}, 0.5),
+           inside: G.voidContains({points: [[0, 0], [4, 0], [0, 4]]}, 1, 1), outside: G.voidContains({points: [[0, 0], [4, 0], [0, 4]]}, 3, 3)});
+    """)
+    assert r["near"] == {"wall": "a", "pos": 9.1, "width": 0.9} and r["far"] is None and r["short"]["width"] == 0.4
+    assert r["rect"] is None and r["rect2"] == {"x": 9, "y": 9, "w": 1, "d": 1} and r["inside"] and not r["outside"]
+
+
+def test_view_settings_validate_url_and_storage():
+    from wallhack import rfmodel
+    r = run_js("""
+      const cfg = input.config, pal = ['classic', 'cvd', 'viridis', 'cividis'];
+      const a = S.viewFromSearch('?worker=0&layer=sinr&palette=viridis&overlays=blend,roaming,bogus&combine=snr,loss', cfg, pal).view;
+      const bad = S.normalizeView({layer: 'nope', palette: 5, combine: [], overlays: 'x'}, cfg, pal);
+      const mem = {}, st = {getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = v; }};
+      S.saveView(st, a);
+      const merged = S.loadView(st, '?palette=cividis', cfg, pal);
+      out({a, bad, merged, back: S.viewFromSearch('?' + S.viewToSearch(a), cfg, pal).view});
+    """, {"config": rfmodel.CONFIG})
+    assert r["a"] == {"layer": "sinr", "palette": "viridis", "compare": "snr", "combine": ["snr", "loss"], "overlays": ["roaming", "blend"]}
+    assert r["bad"]["layer"] == "rssi" and r["bad"]["palette"] == "classic" and r["bad"]["overlays"] == [] and r["bad"]["combine"] == ["rssi", "snr"]
+    assert r["merged"]["palette"] == "cividis" and r["merged"]["layer"] == "sinr" and r["back"] == r["a"]

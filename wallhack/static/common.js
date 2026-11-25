@@ -128,6 +128,26 @@
     restart();
   };
 
+  // Front-end error boundary: an uncaught error or rejected promise is shown in a live region instead of failing silently.
+  // The page's own notice element is reused when it exists (planner: #plannerNotice, dashboard: #note).
+  var ERROR_REGION_IDS = ["plannerNotice", "note"], ERROR_ELEMENT_ID = "errorBoundary", MAX_ERROR_TEXT = 300;
+  api.errorMessage = function (reason) {
+    var text = reason && reason.message ? reason.message : String(reason);
+    return "Something went wrong: " + text.slice(0, MAX_ERROR_TEXT) + ". Your saved data is untouched. Reload the page if this keeps happening.";
+  };
+  api.reportError = function (reason) {
+    var doc = root.document, el = null;
+    ERROR_REGION_IDS.forEach(function (id) { el = el || doc.getElementById(id); });
+    if (!el) {
+      el = doc.getElementById(ERROR_ELEMENT_ID);
+      if (!el) { el = doc.createElement("div"); el.id = ERROR_ELEMENT_ID; el.className = "banner error"; doc.body.insertBefore(el, doc.body.firstChild); }
+    }
+    el.hidden = false; el.className = "banner error"; el.setAttribute("role", "alert");
+    el.textContent = api.errorMessage(reason);
+  };
+  root.addEventListener("error", function (e) { api.reportError(e.error || e.message); });
+  root.addEventListener("unhandledrejection", function (e) { api.reportError(e.reason); });
+
   root.WallhackCommon = api;
   root.document.addEventListener("DOMContentLoaded", function () {
     var mq = root.matchMedia ? root.matchMedia("(prefers-reduced-motion: reduce)") : null;

@@ -24,14 +24,14 @@
   </div>
 </header>
 
-<div id="privacy" class="banner" role="note">
+<div id="privacy" class="banner" role="region" aria-label="Privacy and honest limits">
   <p><strong>Privacy and consent.</strong> Use only in your own space, and only with the knowledge and consent of everyone who may be sensed.
   Do not use this to monitor other people or other people's networks.</p>
   <p><strong>Honest limits.</strong> This dashboard shows estimates derived from WiFi signal fluctuations. It does not produce images and cannot literally see through walls.
   Readings can be wrong.</p>
   <button id="dismissPrivacy" type="button">I understand</button>
 </div>
-<div id="note" class="banner note" hidden></div>
+<div id="note" class="banner note" role="region" aria-label="Notice" hidden></div>
 <div id="offline" class="banner error" role="alert" hidden>Connection to the Wallhack server lost. Showing the last known values and retrying.</div>
 
 <main>
@@ -214,7 +214,7 @@
   <section class="card wide env" id="envSection" aria-labelledby="hEnv">
     <h2 id="hEnv">Environment</h2>
     <div id="envHead" class="env-head"></div>
-    <div id="envChips" class="chips" aria-label="Sensor status"></div>
+    <div id="envChips" class="chips" role="group" aria-label="Sensor status"></div>
     <div id="envGrid" class="env-grid"></div>
   </section>
 

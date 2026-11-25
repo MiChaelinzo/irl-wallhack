@@ -1,6 +1,6 @@
 # 16 Educational mode
 
-Status: **DESIGN ONLY.** Nothing in this document is built. The goal is to teach how Wi-Fi behaves by letting a learner change one thing and watch the model respond, using engine functions that already exist, with the MODEL ESTIMATE label kept.
+Status: **BUILT (first version), PARTIALLY VERIFIED.** `wallhack/static/planner-learn.js` and `learn-content.json` implement the Learn tab, the Learn toggle with a contextual panel for RSSI, SNR, SINR, attenuation, propagation, frequencies, channels and interference, six lessons (propagation, band, wall loss, channels, interference, dead zone) and a "why is the signal weak here" panel built on `probeAt(..., {explain: true})`. Lesson checks call the engine and are tested in `tests/test_planner_learn.py` (each fails on the starting project and passes on its solution, and the solution is undoable). Headless Chromium covers the flow in `tools/planner_smoke.py`. Not built: reflection paths, antenna polar plot, mesh lesson, MLO lesson, SINR side-by-side lesson. The original design follows. The goal is to teach how Wi-Fi behaves by letting a learner change one thing and watch the model respond, using engine functions that already exist, with the MODEL ESTIMATE label kept.
 
 ## Lesson set
 

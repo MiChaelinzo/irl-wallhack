@@ -214,3 +214,30 @@ def test_enterprise_layout_is_deterministic_and_neighbours_differ():
     assert len({c for c, _, _ in r["c24"]}) == 3 and all(a[0] != b[0] for a, b in zip(r["c24"], r["c24"][1:]) if a[2] == b[2])
     q = {row[0]: row for row in r["boq"]}
     assert q["Access point, 5 GHz primary"][1] == 8 and q["PoE switch ports"][1] == 10 and q["PoE switch, 24 ports"][1] == 1 and q["Cat6A cable"][1] == 264
+
+
+def test_dashboard_stats_rank_zones_and_measure_the_edge():
+    r = run_js("""
+      const cols = 10, rows = 4, n = cols * rows, rssi = new Float32Array(n), rate = new Float32Array(n);
+      for (let i = 0; i < n; i++) { const c = i % cols; rssi[i] = c < 5 ? -50 : -90; rate[i] = c < 5 ? 200 : 0; }
+      const f = floor('g', 0, 10, 4, [], {rooms: [{id: 'a', name: 'West', x: 0, y: 0, w: 5, d: 4}, {id: 'b', name: 'East', x: 5, y: 0, w: 5, d: 4}]});
+      const d = PP.dashboardStats({cols, rows, cell_m: 1, coverage_pct: 50, avg_rssi_dbm: -70}, rssi, rate, f, config);
+      const tiles = PP.dashboardStats({cols, rows, cell_m: 1, coverage_pct: 50, avg_rssi_dbm: -70}, rssi, rate, floor('g', 0, 10, 4, []), config);
+      out({d, tiles: tiles.zone_source});
+    """)
+    d = r["d"]
+    assert d["weakest"][0]["name"] == "East" and d["strongest"][0]["name"] == "West" and d["zone_source"] == "rooms" and r["tiles"] == "tiles"
+    assert d["efficiency_pct"] == 50 and d["mean_throughput_mbps"] == 100 and sum(b["cells"] for b in d["histogram"]) == 40
+    assert d["edge"]["cells"] == 40 - 8 * 2 and 0 < d["edge"]["coverage_pct"] < 100
+
+
+def test_spectrum_view_lists_aps_and_sources_with_their_frequency_span():
+    r = run_js("""
+      const p = proj([floor('g', 0, 20, 10, [ap('a1', 5, 5, 17, {band: '2.4', channel: 1}), ap('a2', 15, 5, 17, {band: '2.4', channel: 6})])]);
+      p.interferers = [{id: 'mw', kind: 'microwave', floor: 'g', x: 10, y: 5}];
+      const v = PP.spectrumView(p, '2.4', 20, E, config);
+      out({ids: v.sources.map(s => s.id), kinds: v.sources.map(s => s.kind), sugg: v.analysis.suggestions.map(s => s.channel), lo: v.lo_mhz, hi: v.hi_mhz,
+           mwSpan: [v.sources[2].lo, v.sources[2].hi]});
+    """)
+    assert r["ids"] == ["a1", "a2", "mw"] and r["kinds"] == ["ap", "ap", "microwave"] and r["mwSpan"] == [2425, 2475]
+    assert r["sugg"][0] == 11 and r["lo"] <= 2402

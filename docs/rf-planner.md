@@ -99,6 +99,23 @@ The gain is added to `tx_dbm` per path, towards the first segment of the path (t
 ### MLO (Wi-Fi 7)
 `mlo_bands` lists up to two more bands the AP also transmits on, at the same position and power, on the default channel width of the band (`default_width_mhz`, capped by the standard). The capacity is `sum of the fastest max_links (3) link rates x mac_efficiency`, each extra link is noise limited (no interference). It is a CAPACITY MODEL, labelled as such in the output, not a measurement: real MLO gains depend on the client, the MLO mode (STR, eMLSR) and the traffic.
 
+### RF lab additions
+
+Optional twin fields (validated by `twin.py` and `planner-state.js`, absent in legacy projects, which give identical results):
+
+- `interferers`: list of `{id, kind, floor, x, y, tx_dbm?, duty_cycle?}` with kind `microwave`, `bluetooth` or `neighbour_wifi` (which also takes `band`, `channel`, `width_mhz`). At most 50. Defaults and sources: `rf-config.json` `external_sources`. They enter the `sinr` analytics section (`sinr.external`, per-AP `external_sources`).
+- floor `voids`: list of `{id, kind, x, y, w, d}` or `{id, kind, points: [[x, y], ...]}` (stairwell, atrium, shaft). Named `voids` because a floor's `openings` already means doors and windows. They reduce the floor loss locally.
+
+New analytics output (all ESTIMATES): `sinr.reliability` (per-cell `per_pct`, `loss_pct`, `latency_ms`, `airtime_pct` and means, also per AP), and `roaming.map` (`second_ap`, `margin_db`, `zone`, `blend_pct` per cell, replacing the bounding boxes: `roaming.zones` keeps `cells`, `area_m2` and `centroid` only; the plan overlay draws the exact cells).
+
+Python functions (mirrored in `rf-engine.js` as `probeAt(..., {explain: true})`, `spectrumAnalysis`, `signalDecay`):
+
+- `probe_at(twin, floor, x, y, band, mode, explain=True)` adds `explain`: EIRP, path loss, every wall crossed with material and dB, floor loss, reflected and diffracted paths, the SINR terms and `text`, a list of plain sentences. `total_loss_db` is the sum of the path, wall and floor terms, and `direct_dbm = eirp_dbm - total_loss_db`.
+- `spectrum_analysis(twin, band, width_mhz=None, exclude_ap=None)`: per channel overlapping sources, congestion, occupancy, level, plus up to three suggested channels.
+- `signal_decay(twin, floor, ap_id, bearing_deg, band, mode, step_m, max_distance_m)`: RSSI, distance-only level and walls crossed along a ray (0 degrees is +x, clockwise).
+
+The assumptions behind each number are in [platform/15-wifi-physics.md](platform/15-wifi-physics.md).
+
 ### Not modelled
 Refraction is not modelled (negligible indoors at these frequencies, and the plan is 2D), and no real-world fading, beamforming, MU-MIMO, OFDMA scheduling or client mix is modelled. A `standard` AP uses the legacy `mcs_tables` entry of the nearest narrower width for the old `throughput_mbps` field (the tables have no 40 MHz entry at 5 GHz, for example), so that field stays defined.
 
@@ -138,7 +155,7 @@ The optional LLM explanation endpoint is not implemented. The deterministic text
 
 Files: `planner-state.js` (project JSON, undo/redo, persistence), `planner-editor.js` (canvas editor and geometry), `rf-worker.js` (tiled incremental computation), `planner-heat.js` (renderer, contours, legend, tooltip text, mini-map), `planner.js` (wiring).
 
-Project JSON is the digital twin format plus `schema_version`, per-floor `labels`, and an optional background image (`background` data URL, `bg_px`, `bg_opacity`, `scale_m_per_px`). Import limits live once in `rf-config.json` under `limits` (floors, items per list, walls and openings per floor, custom materials, material dB range, background size, text length, furniture and sensor kinds). `twin.py` and `planner-state.js` both read them, so the planner and `/api/twin` accept the same projects: at most 5000 walls and 5000 openings per floor (each door or window sits on a wall) and at most 200 items in every other list (rooms, furniture, sensors, APs, labels, annotations, devices), names and ids up to 64 characters (`limits.max_text_chars`, the one text limit: the editor label box, note box and scenario name boxes stop typing at it, and the label and scenario helpers clip with `PlannerState.clipText`, so a saved project always reloads; on import, the name-like fields that the editor wrote, which are wall, AP and device names, labels, note text and scenario names, are truncated to it so older saved projects that used 80 characters still load, while ids and the other fields are rejected), AP channels from the band's channel list, custom materials with every band and 0 to 80 dB. Labels, annotations and devices are planner fields that `/api/twin` drops. Items beyond a limit are rejected on import; the editor does not stop you drawing past a limit, but such a project cannot be imported again. `PUT /api/twin` has its own body limit, `MAX_TWIN_BODY_BYTES` in `app.py`, derived from these limits (`max_floors` x (`max_background_chars` + (walls + openings + 5 x items) x `twin_json_bytes_per_item`) + `twin_body_overhead_bytes`, about 23 MB), so a twin at every limit, background images included, is accepted. Bigger bodies get 413. All other routes keep the 1 MB `MAX_BODY_BYTES` cap. Import errors name the field, for example `floors[0].walls[3].x1: must be between 0 and 10`.
+Project JSON is the digital twin format plus `schema_version`, per-floor `labels`, and an optional background image (`background` data URL, `bg_px`, `bg_opacity`, `scale_m_per_px`). Import limits live once in `rf-config.json` under `limits` (floors, items per list, walls and openings per floor, custom materials, material dB range, background size, text length, furniture and sensor kinds). `twin.py` and `planner-state.js` both read them, so the planner and `/api/twin` accept the same projects: at most 5000 walls and 5000 openings per floor (each door or window sits on a wall) and at most 200 items in every other list (rooms, furniture, sensors, APs, labels, annotations, devices), names and ids up to 64 characters (`limits.max_text_chars`, the one text limit: the editor label box, note box and scenario name boxes stop typing at it, and the label and scenario helpers clip with `PlannerState.clipText`, so a saved project always reloads; on import, the name-like fields that the editor wrote, which are wall, AP and device names, labels, note text and scenario names, are truncated to it so older saved projects that used 80 characters still load, while ids and the other fields are rejected), AP channels from the band's channel list, custom materials with every band and 0 to 80 dB. Labels, annotations and devices are planner fields that `/api/twin` drops. Items beyond a limit are rejected on import; the editor does not stop you drawing past a limit, but such a project cannot be imported again. `PUT /api/twin` has its own body limit, `MAX_TWIN_BODY_BYTES` in `app.py`, derived from these limits (`max_floors` x (`max_background_chars` + (walls + openings + 5 x items) x `twin_json_bytes_per_item`) + `twin_body_overhead_bytes`, about 23 MB), so a twin at every limit, background images included, is accepted. Bigger bodies get 413. At most `limits.max_concurrent_twin_puts` uploads run at once; another gets 429 with a `Retry-After: 1` header. All other routes keep the 1 MB `MAX_BODY_BYTES` cap. Import errors name the field, for example `floors[0].walls[3].x1: must be between 0 and 10`.
 
 Worker protocol (heat map): `init {config}`, `setProject {project, mode, band}`, `update {ops}` (the same operations the undo history stores: `wall.add|set|remove`, `ap.*`, `label.*`, `floor.set`, plus `{t:"mode"}` and `{t:"band"}`), `compute {id, floor, cell_m}`, `cancel {id}`. Replies: `progress` (stage `coarse` then `fine`, a transferred Float32Array), `result` (grid, coverage and dead-zone percent, tile statistics), `cancelled`, `error`.
 
@@ -174,22 +191,37 @@ Project JSON `schema_version` is 2 (version 1 files still load). New optional fi
 
 Not done: editing doors and windows in the UI, a "save to local twin" button (the twin API caps size, planner projects stay in the browser and in JSON files), a GPU measurement, touch and Raspberry Pi verification.
 
+## Map layers, spectrum, dashboard and editing (RF lab UI)
+
+All values are MODEL ESTIMATES. Constants are in `rf-config.json` under `planner_layers` (ranges, quality weights, dashboard thresholds, editor defaults).
+
+- **Layers**: the Heat map card picks RSSI, SNR, SINR, quality score, bandwidth, latency, packet-loss likelihood, wall attenuation, interference (SNR minus SINR), channel utilisation, capacity or a combined map (the weakest of the ticked layers in every cell). RSSI is the live worker grid. Other layers come from the analysis job (`analyze` with `layers`), at the analysis cell size, and are drawn through the same colour scale as goodness 0 to 1, so the strong end is always good. Latency, loss, SINR and interference need an AP with a WiFi standard; otherwise the legend says so. Wall attenuation is the best RSSI without walls minus the best RSSI with them.
+- **Palettes**: classic, colour-blind safe (inverted viridis), viridis, cividis. They apply to the WebGL and canvas paths and to the legend and charts.
+- **Overlays**: overlap and handoff cells, strongest AP (Okabe-Ito colours), signal blend; all from `analytics.roaming.map` and `best_ap`.
+- **Spectrum tab**: `RFEngine.spectrumAnalysis` per band and candidate width: congestion bars, the span of each AP and source, suggested channels.
+- **Dashboard tab**: signal histogram, coverage, edge coverage (cells within `edge_margin_m` of the outer wall), weakest and strongest rooms (or tiles when a floor has no rooms), mean throughput and the efficiency score defined in `planner_layers.dashboard.efficiency_note`.
+- **Editing**: tools Door (D), Window (O), Floor opening (S, drag a rectangle), Interference (X); Environment tab lists and edits sources, floor openings, doors and windows; sources can be dragged. Limits are those of `rf-config.json` (`addLimitError`).
+- **View persistence**: layer, palette, compare, combine and overlays are kept in browser storage and the URL query. They are not part of the project JSON.
+
 ## Status
 Against the original mission list. "complete" means the code exists and is covered by tests or the browser smoke; accuracy against real buildings is UNVERIFIED throughout.
 
 | Mission item | Status | Detail and reason |
 | --- | --- | --- |
 | Advanced RF Simulation | complete | Frequency-aware model for 2.4, 5 and 6 GHz, per-band material attenuation, openings, floor loss, basic, enhanced (one reflection, knife-edge diffraction) and multipath (incoherent sum) modes, per-AP band and channel. Not ray tracing; no polarisation, no moving objects. |
-| Interactive Floor Planning | partial | Draw, move, rotate, snap, delete walls, materials, APs, labels, floors, image import with scale calibration, undo/redo, pan and zoom. Deferred: add, edit and remove doors and windows in the UI (the engine honours twin openings, they are shown but not editable). |
-| Visualization Enhancements | partial | WebGL heat map with canvas 2D fallback, quality bands, contours, dead-zone hatch, colour-blind palette, legend, hover and keyboard probe, mini-map, light and dark themes. Deferred: exact roaming-zone cell overlay (bounding boxes are drawn). |
+| Interactive Floor Planning | partial | Draw, move, rotate, snap, delete walls, materials, APs, labels, floors, image import with scale calibration, undo/redo, pan and zoom. Doors, windows, floor openings and interference sources are editable (tools D, O, S, X). Deferred: a room creation tool (rooms are walls plus a label), DXF and IFC import, automatic wall extraction from an image. |
+| Visualization Enhancements | partial | WebGL heat map with canvas 2D fallback, quality bands, contours, dead-zone hatch, colour-blind palette, legend, hover and keyboard probe, mini-map, light and dark themes. Eleven map layers plus a combined layer, side-by-side compare, and exact per-cell roaming, strongest-AP and blend overlays. Deferred: a 3D view of the signal (the engine is 2D). |
 | Analytics Dashboard | complete | Coverage, average RSSI, weak area, dead zones with Locate, overlap, roaming candidates, per-AP throughput, client capacity, channel utilisation, all with table equivalents. Throughput, capacity and utilisation are ESTIMATES from a rate table. |
 | Performance Optimization | complete | Web Worker, 16x16 tiles, coarse then fine pass, per-AP cache, dirty-tile edits, spatial index, main-thread fallback. Measured in `perf-rf.md` (SwiftShader, Xeon). Deferred: cancelling inside one long planner step; real GPU and Pi 4 numbers UNVERIFIED. |
 | Scenario Comparison | complete | Saved scenarios, side by side, delta and slider views, metric diff, explainable optimisation score, ranking. |
-| Smart WiFi Planner | partial | Issue detection, greedy AP placement, AP count, power and channel advice, confidence (model sensitivity, not accuracy), undoable apply. Deferred: optional LLM explain endpoint (the deterministic texts work offline); adjacent-channel interference is modelled in the SINR estimate (see above) but the channel plan still counts co-channel conflicts only. |
+| Smart WiFi Planner | partial | Issue detection, greedy AP placement, AP count, power and channel advice, confidence (model sensitivity, not accuracy), undoable apply. Channel advice now maximises mean SINR (adjacent-channel and non-WiFi sources included, `planChannelsSinr`), and mesh node and dead-zone fixes are recommended with confidence and rationale. `POST /api/planner/explain` explains a plan from engine numbers only, with a rule-based fallback when the LLM is off. |
 | Modern UI/UX | partial | Glass dark and light themes, keyboard shortcuts, tooltips, responsive layout without horizontal overflow at 390 px, ARIA labels. Touch and pinch code exists but was never exercised by a test or a device. |
 | Export Features | partial | PNG, CSV, project JSON, PDF, print and BoQ CSV through `PlannerExport.register`. Deferred: a "Save to local twin" button (the twin API caps the request at 1 MB, 5000 walls per floor and 600k background characters); PDF and PNG not opened in a real viewer. |
 | Architecture Improvements | complete | Engine (`rfmodel.py`, `rf-engine.js`, `rf-optimizer.js`) separate from UI files, `rf-config.json` materials and tables, registries (modes, materials, exports), JSDoc types checked by `make typecheck`, ADR and docs. |
 | Bonus Features | complete | Multi-floor, 3D building, mesh, capacity, IoT and enterprise modes, each a simple model (see the table above). |
+
+## Scenario presets and educational mode
+`wallhack/static/scenarios.json` (generated by `tools/make_scenarios.py`, checked by a test) holds seven illustrative layouts: small apartment, large home, office floor, school building, warehouse, hotel floor and coffee shop. The Project card loads them, also in the static demo. `planner-state.js` `validateScenarioLibrary` validates every preset through `validateProject`. `learn-content.json` holds the topics and lessons used by the Learn tab. The presets are not real buildings and every coverage number is a MODEL ESTIMATE.
 
 ## Typed interfaces
 `tsconfig.json` (`allowJs`, `checkJs`, `noEmit`, not strict) covers `rf-engine.js`, `rf-optimizer.js` and `planner-state.js`. Run `make typecheck` (`npx -p typescript tsc -p tsconfig.json`). TypeScript is a dev tool only: `node_modules` is gitignored and nothing needs it at runtime. The check currently passes with no errors; JSDoc function types must use arrow syntax, for example `(ctx:Object,x:number)=>number`.
@@ -197,3 +229,16 @@ Against the original mission list. "complete" means the code exists and is cover
 ## Extending
 `rfmodel.register_mode(id, fn)` and `RFEngine.registerMode(id, fn)` add a mode;
 `RFEngine.registerMaterials(table)` adds materials. See the ADR in `docs/adr-rf-engine.md`.
+
+## Methodology and limits
+The engine answers one question per cell: what power would a client receive from each AP, and how does that compare with noise and interference. Steps, in the order the code runs them (`wallhack/rfmodel.py`, mirrored in `rf-engine.js`):
+
+1. Free-space anchor and log-distance slope per band.
+2. Wall and opening losses along the straight segment from AP to cell, per material and band.
+3. Floor loss for cells on other floors, reduced near stairwell, atrium or shaft openings.
+4. Optional single reflection and knife-edge diffraction (enhanced), or an incoherent power sum of the paths (multipath).
+5. Antenna gain from the AP pattern and azimuth, then the strongest AP serves the cell.
+6. Noise floor from the channel width, interference from other APs and non-WiFi sources weighted by channel overlap and duty cycle, giving SINR.
+7. PHY rate, throughput, estimated packet error, latency and airtime from tables in `rf-config.json`.
+
+It is not ray tracing: there are no ray launching, second-order reflections, polarisation, fading or moving objects, and the geometry is 2D. It has not been calibrated against a measured survey, so use it to compare options (move this AP, change this wall) rather than to promise a dBm value. Details and the inaccuracy list are in `docs/platform/15-wifi-physics.md`; per-section status is in `docs/platform/24-rf-lab-status.md`.

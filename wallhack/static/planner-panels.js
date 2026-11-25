@@ -55,14 +55,25 @@
     power.overpowered.concat(power.underpowered).forEach(function (r) {
       add(r.kind, r.text, r.reason, r.confidence, null, { type: "set_tx", ap_id: r.ap_id, tx_dbm: r.to_tx_dbm });
     });
-    var ch = plan.channels;
-    if (ch) {
+    var sc = plan.channels_sinr, ch = plan.channels;
+    if (sc && sc.sinr_before_db !== null) {
+      sc.assignments.filter(function (a) { return a.changed; }).forEach(function (a) {
+        add("channel", a.ap_id + ": move from channel " + a.from_channel + " to " + a.to_channel + " (" + a.band + " GHz). Mean SINR " + sc.sinr_before_db + " dB to " + sc.sinr_after_db + " dB for the whole plan (estimate).",
+            sc.rationale, sc.confidence, null, { type: "set_channel", ap_id: a.ap_id, channel: a.to_channel });
+      });
+    } else if (ch) {
       ch.assignments.filter(function (a) { return a.changed; }).forEach(function (a) {
         add("channel", a.ap_id + ": move from channel " + a.from_channel + " to " + a.to_channel + " (" + a.band + " GHz). Co-channel conflicts " + ch.conflicts_before + " to " + ch.conflicts_after + " (estimate).",
             "Greedy channel colouring from the modelled signal between APs. No confidence is computed for channel changes.", null, null,
             { type: "set_channel", ap_id: a.ap_id, channel: a.to_channel });
       });
     }
+    ((plan.mesh && plan.mesh.nodes) || []).forEach(function (r) {
+      add("mesh_node", r.text, r.reason, r.confidence, { x: r.x, y: r.y }, { type: "add_ap", x: r.x, y: r.y, tx_dbm: r.tx_dbm, band: r.band, mesh_parent: r.parent_ap_id });
+    });
+    (plan.dead_zone_fixes || []).forEach(function (r) {
+      add("dead_zone_fix", r.text, r.reason, r.confidence, { x: r.x, y: r.y }, { type: "add_ap", x: r.x, y: r.y, tx_dbm: r.tx_dbm, band: r.band });
+    });
     return out;
   }
 
@@ -77,6 +88,7 @@
       project.floors.forEach(function (f) { all = all.concat(f.aps); });
       var id = S.nextId(all.concat(added), "ap"), item = { id: id, x: a.x, y: a.y, tx_dbm: a.tx_dbm };
       if (a.band) { item.band = a.band; }
+      if (a.mesh_parent) { item.mesh_parent = a.mesh_parent; }
       added.push(item);
       var op = S.addOp("ap", project, floorId, item);
       op.index = floor.aps.length + added.length - 1;   // keep batch order: later APs go after earlier ones
@@ -103,6 +115,84 @@
       ["Access points", String(a.aps.length), String(b.aps.length), signed(c.ap_count_delta, 0).replace(".0", ""), ""],
       row("Optimisation score", c.a.score.score, c.b.score.score, c.score_delta, "", "higher is better")
     ];
+  }
+
+
+  // ------------------------------------------------------------------ engineering dashboard and spectrum data (pure)
+  /** Rectangles the dashboard ranks: the rooms of the floor, or square tiles when it has none. */
+  function dashboardZones(floor, tileM) {
+    if (floor.rooms && floor.rooms.length) {
+      return floor.rooms.map(function (r) { return { name: r.label || r.name || r.id, x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.d }; });
+    }
+    var out = [];
+    for (var y = 0; y < floor.depth_m; y += tileM) {
+      for (var x = 0; x < floor.width_m; x += tileM) {
+        var x1 = Math.min(floor.width_m, x + tileM), y1 = Math.min(floor.depth_m, y + tileM);
+        out.push({ name: "Area " + f1(x) + "-" + f1(x1) + " m by " + f1(y) + "-" + f1(y1) + " m", x0: x, y0: y, x1: x1, y1: y1 });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Engineering dashboard figures of one floor from an analysis. a: analytics (cols, rows, cell_m, coverage_pct, avg_rssi_dbm), rssi and rate:
+   * per-cell best RSSI and estimated bandwidth (Float32Array or array, row-major), floor: the floor record, config: rf-config.json.
+   * Returns {histogram, coverage_pct, avg_rssi_dbm, mean_throughput_mbps, efficiency_pct, edge, weakest, strongest, zone_source}. ESTIMATES.
+   */
+  function dashboardStats(a, rssi, rate, floor, config) {
+    var d = config.planner_layers.dashboard, lo = config.planner_layers.layers.rssi.lo, hi = config.planner_layers.layers.rssi.hi, cover = config.analytics.coverage_dbm;
+    var n = a.cols * a.rows, cell = a.cell_m, i, bins = [], nb = Math.round((hi - lo) / d.histogram_bin_db);
+    for (i = 0; i < nb; i++) { bins.push({ from: lo + i * d.histogram_bin_db, to: lo + (i + 1) * d.histogram_bin_db, cells: 0, pct: 0 }); }
+    var rateSum = 0, eff = 0, edgeCells = 0, edgeCovered = 0, edgeSum = 0;
+    for (i = 0; i < n; i++) {
+      var col = i % a.cols, row = Math.floor(i / a.cols), x = (col + 0.5) * cell, y = (row + 0.5) * cell;
+      bins[Math.max(0, Math.min(nb - 1, Math.floor((rssi[i] - lo) / d.histogram_bin_db)))].cells++;
+      rateSum += rate[i]; eff += Math.min(1, rate[i] / d.efficiency_target_mbps);
+      if (x < d.edge_margin_m || y < d.edge_margin_m || x > floor.width_m - d.edge_margin_m || y > floor.depth_m - d.edge_margin_m) {
+        edgeCells++; edgeSum += rssi[i]; if (rssi[i] >= cover) { edgeCovered++; }
+      }
+    }
+    bins.forEach(function (b) { b.pct = n ? 100 * b.cells / n : 0; });
+    var zones = dashboardZones(floor, d.zone_tile_m).map(function (z) {
+      var sum = 0, count = 0;
+      for (var r = Math.max(0, Math.floor(z.y0 / cell)); r < Math.min(a.rows, Math.ceil(z.y1 / cell)); r++) {
+        for (var c = Math.max(0, Math.floor(z.x0 / cell)); c < Math.min(a.cols, Math.ceil(z.x1 / cell)); c++) {
+          var cx = (c + 0.5) * cell, cy = (r + 0.5) * cell;
+          if (cx >= z.x0 && cx < z.x1 && cy >= z.y0 && cy < z.y1) { sum += rssi[r * a.cols + c]; count++; }
+        }
+      }
+      return count ? { name: z.name, x0: z.x0, y0: z.y0, x1: z.x1, y1: z.y1, mean_rssi_dbm: sum / count, cells: count } : null;
+    }).filter(Boolean);
+    function byName(p, q) { return p.name < q.name ? -1 : p.name > q.name ? 1 : 0; }
+    return { histogram: bins, coverage_pct: a.coverage_pct, avg_rssi_dbm: a.avg_rssi_dbm, mean_throughput_mbps: n ? rateSum / n : 0, efficiency_pct: n ? 100 * eff / n : 0,
+             edge: { cells: edgeCells, coverage_pct: edgeCells ? 100 * edgeCovered / edgeCells : null, mean_rssi_dbm: edgeCells ? edgeSum / edgeCells : null },
+             weakest: zones.slice().sort(function (p, q) { return (p.mean_rssi_dbm - q.mean_rssi_dbm) || byName(p, q); }).slice(0, d.zones),
+             strongest: zones.slice().sort(function (p, q) { return (q.mean_rssi_dbm - p.mean_rssi_dbm) || byName(p, q); }).slice(0, d.zones),
+             zone_source: floor.rooms && floor.rooms.length ? "rooms" : "tiles" };
+  }
+
+  /**
+   * Spectrum view of one band: the engine analysis (channel occupancy, congestion, suggestions) plus the frequency span of every access point
+   * and source for the width overlap rows. RF is RFEngine, config rf-config.json.
+   */
+  function spectrumView(project, band, widthMhz, RF, config) {
+    var analysis = RF.spectrumAnalysis(project, band, { config: config, widthMhz: widthMhz }), sources = [];
+    project.floors.forEach(function (f) {
+      f.aps.forEach(function (ap) {
+        if ((ap.band || "2.4") !== band) { return; }
+        var radio = RF.apRadio(config, ap, band), span = RF.sourceSpanMhz(config, { band: band, channel: radio.channel, width_mhz: radio.width });
+        sources.push({ id: ap.id, kind: "ap", lo: span[0], hi: span[1], channel: radio.channel, width_mhz: radio.width });
+      });
+    });
+    RF.resolveInterferers(project, config).forEach(function (src) {
+      if (src.band !== band) { return; }
+      var span = RF.sourceSpanMhz(config, src);
+      sources.push({ id: src.id, kind: src.kind, lo: span[0], hi: span[1], channel: src.channel === undefined ? null : src.channel, width_mhz: src.width_mhz });
+    });
+    var lo = Infinity, hi = -Infinity;
+    analysis.channels.forEach(function (c) { lo = Math.min(lo, c.centre_mhz - widthMhz / 2); hi = Math.max(hi, c.centre_mhz + widthMhz / 2); });
+    sources.forEach(function (x) { lo = Math.min(lo, x.lo); hi = Math.max(hi, x.hi); });
+    return { analysis: analysis, sources: sources, lo_mhz: lo, hi_mhz: hi, width_mhz: widthMhz };
   }
 
   // ------------------------------------------------------------------ DOM helpers
@@ -137,13 +227,14 @@
 
   /** Tab strip with arrow key navigation. add(id, label) returns the panel element. */
   function createTabs(strip, host) {
-    var tabs = [];
+    var tabs = [], listeners = {};
     function select(id, focus) {
       tabs.forEach(function (t) {
         var on = t.id === id;
         t.button.setAttribute("aria-selected", String(on)); t.button.tabIndex = on ? 0 : -1; t.panel.hidden = !on;
         if (on && focus) { t.button.focus(); }
       });
+      (listeners[id] || []).forEach(function (fn) { fn(); });
     }
     return {
       add: function (id, label) {
@@ -161,7 +252,9 @@
         if (tabs.length === 1) { select(id, false); }
         return p;
       },
-      select: select
+      select: select,
+      /** Call fn each time the tab is shown, so panels that draw to a canvas can size it while visible. */
+      onSelect: function (id, fn) { (listeners[id] = listeners[id] || []).push(fn); }
     };
   }
 
@@ -170,21 +263,45 @@
     var S = root.PlannerState, H = root.PlannerHeat, doc = root.document;
     var tabs = createTabs(doc.getElementById("tabs"), doc.getElementById("tabPanels"));
     app.tabs = tabs;
-    var state = { analysis: null, timer: 0, roaming: false, flash: null, ghost: null, compare: null, plan: null, recs: [], planJob: 0, applied: {}, staleNote: false };
-    var panels = { analytics: tabs.add("analytics", "Analytics"), scenarios: tabs.add("scenarios", "Scenarios"), smart: tabs.add("smart", "Smart planner") };
+    var state = { analysis: null, timer: 0, flash: null, ghost: null, compare: null, plan: null, recs: [], planJob: 0, applied: {}, staleNote: false };
+    var panels = { analytics: tabs.add("analytics", "Analytics"), layers: tabs.add("layers", "Layers"), dashboard: tabs.add("dashboard", "Dashboard"),
+                   spectrum: tabs.add("spectrum", "Spectrum"), environment: tabs.add("environment", "Environment"),
+                   scenarios: tabs.add("scenarios", "Scenarios"), smart: tabs.add("smart", "Smart planner") };
+    function overlayOn(id) { return app.view.overlays.indexOf(id) >= 0; }
+    function toggleOverlay(id, on) {
+      var list = app.view.overlays.filter(function (x) { return x !== id; });
+      app.setView({ overlays: on ? list.concat([id]) : list });
+    }
 
     // -------------------------------------------------------------- overlays on the editor canvas
     app.overlay(function (c, view) {
       function sx(x) { return view.ox + x * view.scale; }
       function sy(y) { return view.oy + y * view.scale; }
-      if (state.roaming && state.analysis && state.analysis.floor === app.store.floorId) {
-        c.save(); c.fillStyle = "rgba(251,191,36,.20)"; c.strokeStyle = "#fbbf24"; c.lineWidth = 1.5; c.setLineDash([5, 4]);
-        state.analysis.analytics.roaming.zones.forEach(function (z) {
-          c.fillRect(sx(z.bbox.x_min), sy(z.bbox.y_min), (z.bbox.x_max - z.bbox.x_min) * view.scale, (z.bbox.y_max - z.bbox.y_min) * view.scale);
-          c.strokeRect(sx(z.bbox.x_min), sy(z.bbox.y_min), (z.bbox.x_max - z.bbox.x_min) * view.scale, (z.bbox.y_max - z.bbox.y_min) * view.scale);
+      if (overlayOn("roaming") && state.analysis && state.analysis.floor === app.store.floorId) {
+        // exact per-cell data (analytics.roaming.map), horizontal runs of equal zones drawn as one rectangle
+        var an = state.analysis.analytics, map = an.roaming.map, cell = an.cell_m * view.scale;
+        var fills = { overlap: "rgba(251,191,36,.12)", handoff: "rgba(251,191,36,.40)" };
+        c.save();
+        map.zone.forEach(function (row, r) {
+          for (var col = 0; col < row.length; col++) {
+            var id = map.zone_ids[row[col]];
+            if (!fills[id]) { continue; }
+            var end = col;
+            while (end + 1 < row.length && row[end + 1] === row[col]) { end++; }
+            c.fillStyle = fills[id];
+            c.fillRect(sx(col * an.cell_m), sy(r * an.cell_m), cell * (end - col + 1), cell);
+            col = end;
+          }
         });
         c.restore();
       }
+      ["strongest", "blend"].forEach(function (id) {
+        var img = overlayOn(id) && state.analysis && state.analysis.floor === app.store.floorId ? overlayImage(id) : null;
+        if (!img) { return; }
+        c.save(); c.imageSmoothingEnabled = false;
+        c.drawImage(img, sx(0), sy(0), img.width * state.analysis.analytics.cell_m * view.scale, img.height * state.analysis.analytics.cell_m * view.scale);
+        c.restore();
+      });
       if (state.flash) {
         c.save(); c.strokeStyle = "#fb7185"; c.lineWidth = 3; c.setLineDash([6, 4]);
         c.strokeRect(sx(state.flash.x_min), sy(state.flash.y_min), (state.flash.x_max - state.flash.x_min) * view.scale, (state.flash.y_max - state.flash.y_min) * view.scale);
@@ -200,16 +317,23 @@
     });
 
     // ============================================================== analytics
-    function requestAnalysis() {
+    function requestAnalysis(immediate) {
       root.clearTimeout(state.timer);
       state.timer = root.setTimeout(function () {
         if (!app.backend) { return; }
         var floor = app.currentFloor();
-        app.runJob({ type: "analyze", floor: floor.id, cell_m: analysisCell(floor) }, {
-          result: function (m) { state.analysis = m; renderAnalytics(); if (app.onAnalysis) { app.onAnalysis(m); } },
+        app.runJob({ type: "analyze", floor: floor.id, cell_m: analysisCell(floor), layers: app.neededLayers() }, {
+          result: function (m) {
+            state.analysis = m; m.overlays = {};
+            renderAnalytics(); renderDashboard(); renderSideBySide(); renderLayerPanel();
+            if (app.refreshApResults) { app.refreshApResults(); }
+            if (app.view.layer !== "rssi") { app.applyLayer(); }
+            app.editor.invalidate();
+            if (app.onAnalysis) { app.onAnalysis(m); }
+          },
           error: function (m) { panels.analytics.textContent = "Analytics failed: " + m.message; }
         });
-      }, ANALYSIS_DEBOUNCE_MS);
+      }, immediate === true ? 0 : ANALYSIS_DEBOUNCE_MS);
     }
     app.requestAnalysis = requestAnalysis;
 
@@ -237,9 +361,9 @@
 
       var tools = el("div", { class: "tool-row" });
       var rg = el("input", { type: "checkbox", id: "tgRoaming" });
-      rg.checked = state.roaming;
-      rg.addEventListener("change", function () { state.roaming = rg.checked; app.editor.invalidate(); });
-      tools.appendChild(el("label", { class: "check" }, [rg, " Show roaming zones on the plan (bounding boxes)"]));
+      rg.checked = overlayOn("roaming");
+      rg.addEventListener("change", function () { toggleOverlay("roaming", rg.checked); });
+      tools.appendChild(el("label", { class: "check" }, [rg, " Show roaming zones on the plan (exact cells: handoff strong, overlap light)"]));
       host.appendChild(tools);
 
       var bars = el("div", { class: "bars", "aria-hidden": "true" });
@@ -537,7 +661,7 @@
       state.recs.forEach(function (r) {
         var applied = !!state.applied[r.id];
         var li = el("li", { class: applied ? "applied" : "" });
-        li.appendChild(el("div", { class: "rec-main" }, [el("strong", { text: r.kind.replace("_", " ") }), " ", el("span", { text: r.text })]));
+        li.appendChild(el("div", { class: "rec-main" }, [el("strong", { text: r.kind.replace(/_/g, " ") }), " ", el("span", { text: r.text })]));
         li.appendChild(el("div", { class: "muted hint", text: "Confidence: " + (r.confidence === null ? "n/a" : Math.round(r.confidence * 100) + "%") + ". " + r.reason }));
         var row = el("div", { class: "tool-row" });
         if (r.ghost) {
@@ -545,24 +669,369 @@
           row.appendChild(pv);
           li.addEventListener("mouseenter", function () { setGhost(r); }); li.addEventListener("mouseleave", function () { setGhost(null); });
         }
-        row.appendChild(button(applied ? "Applied" : "Apply", function () { applyRecs([r], "Apply recommendation: " + r.kind.replace("_", " ")); }, applied ? { disabled: "" } : { "data-rec": r.id }));
+        row.appendChild(button(applied ? "Applied" : "Apply", function () { applyRecs([r], "Apply recommendation: " + r.kind.replace(/_/g, " ")); }, applied ? { disabled: "" } : { "data-rec": r.id }));
         li.appendChild(row); list.appendChild(li);
       });
       if (!state.recs.length) { list.appendChild(el("li", { text: "No changes recommended." })); }
       out.appendChild(list);
       out.appendChild(el("p", { class: "muted hint", text: PLAN_NOTE }));
+      if (app.planExtras) { app.planExtras(out, p, state.recs); }
     }
     app.store.subscribe(function (ev) {
       if (ev.source === "load") { state.plan = null; state.recs = []; state.ghost = null; renderSmart(); }
       else if (state.plan && !state.applying && ev.ops && ev.ops.length && !state.staleNote) { state.staleNote = true; sp.status.textContent = "The plan changed since the planner ran. Run it again for fresh recommendations."; }
     });
     renderSmart();
-    app.panels = { renderAnalytics: renderAnalytics, renderScenarios: renderScenarios, state: state, sc: sc };
+
+    // ============================================================== layers: combine, side-by-side compare, roaming and AP overlays
+    var AP_COLOURS = function () { return app.config.planner_layers.overlay_ap_colours; };
+    function hexRgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
+
+    /** Cached cols x rows image of an overlay ("strongest" AP or signal "blend"), one pixel per analysis cell. */
+    function overlayImage(id) {
+      var m = state.analysis;
+      if (!m || !m.analytics || !m.analytics.best_ap) { return null; }
+      if (m.overlays[id]) { return m.overlays[id]; }
+      var a = m.analytics, cv = doc.createElement("canvas"), cx = cv.getContext("2d"), img;
+      cv.width = a.cols; cv.height = a.rows; img = cx.createImageData(a.cols, a.rows);
+      for (var r = 0; r < a.rows; r++) {
+        for (var c = 0; c < a.cols; c++) {
+          var k = (r * a.cols + c) * 4, ap = a.best_ap[r][c], rgb = null, alpha = 0;
+          if (id === "strongest" && ap >= 0) { rgb = hexRgb(AP_COLOURS()[ap % AP_COLOURS().length]); alpha = 105; }
+          else if (id === "blend") {
+            var blend = a.roaming.map.blend_pct[r][c];
+            if (blend !== null && blend < 100) { rgb = [251, 191, 36]; alpha = Math.round(40 + 190 * (100 - blend) / 50); }
+          }
+          if (rgb) { img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = alpha; }
+        }
+      }
+      cx.putImageData(img, 0, 0);
+      m.overlays[id] = cv;
+      return cv;
+    }
+
+    var layerUi = { host: panels.layers };
+    function layerLabel(id) { return H.layerSpec(app.config, id).label; }
+    function renderLayerPanel() {
+      var host = layerUi.host, v = app.view, cfg = app.config;
+      host.textContent = "";
+      host.appendChild(el("p", { class: "muted hint", text: cfg.planner_layers.label + ". Pick the map layer in the Heat map card. Layers that need a WiFi standard on an access point stay empty until you set one in the access point list." }));
+      var combine = el("div", { class: "checks", id: "combineList", role: "group", "aria-label": "Layers to combine" });
+      H.layerIds(cfg).forEach(function (id) {
+        var cb = el("input", { type: "checkbox", "data-layer": id });
+        cb.checked = v.combine.indexOf(id) >= 0;
+        cb.addEventListener("change", function () {
+          var list = Array.prototype.slice.call(combine.querySelectorAll("input")).filter(function (x) { return x.checked; }).map(function (x) { return x.dataset.layer; });
+          if (!list.length) { cb.checked = true; app.say("Keep at least one layer selected"); return; }
+          app.setView({ combine: list });
+        });
+        combine.appendChild(el("label", { class: "check" }, [cb, " " + layerLabel(id)]));
+      });
+      host.appendChild(el("h3", { text: "Combined layer" }));
+      host.appendChild(el("p", { class: "muted hint", text: "The combined map shows, in every cell, the weakest result among the ticked layers (each rated from worst to best on its own scale), so it highlights the bottleneck." }));
+      host.appendChild(combine);
+      host.appendChild(el("div", { class: "tool-row" }, [button("Show combined map", function () { app.setView({ layer: H.COMBINED_ID }); }, { id: "showCombined" })]));
+
+      host.appendChild(el("h3", { text: "Roaming and signal overlays" }));
+      var ov = el("div", { class: "checks", id: "overlayList" });
+      [["roaming", "Overlap and handoff areas (exact cells)"], ["strongest", "Strongest AP (colour per access point)"], ["blend", "Signal blend (where several APs share a cell, darker means more even)"]].forEach(function (o) {
+        var cb = el("input", { type: "checkbox", id: "ov-" + o[0] });
+        cb.checked = overlayOn(o[0]);
+        cb.addEventListener("change", function () { toggleOverlay(o[0], cb.checked); });
+        ov.appendChild(el("label", { class: "check" }, [cb, " " + o[1]]));
+      });
+      host.appendChild(ov);
+      var m = state.analysis;
+      if (m && m.floor === app.store.floorId) {
+        var legend = el("ul", { class: "legend-list", id: "apColourLegend", "aria-label": "Strongest AP colours" });
+        m.analytics.aps.forEach(function (ap, i) {
+          var sw = el("i"); sw.style.background = AP_COLOURS()[i % AP_COLOURS().length]; sw.setAttribute("aria-hidden", "true");
+          legend.appendChild(el("li", {}, [sw, el("b", { text: ap.id }), " " + ap.band + " GHz channel " + ap.channel + ", serves " + f1(ap.served_area_m2) + " m2"]));
+        });
+        if (overlayOn("strongest")) { host.appendChild(legend); }
+        host.appendChild(el("p", { class: "muted hint", text: "Handoff area " + f1(m.analytics.roaming.area_m2) + " m2 (" + pct(m.analytics.roaming.pct) + "), overlap area " + f1(m.analytics.overlap.area_m2) + " m2 (" + pct(m.analytics.overlap.pct) + "). " + cfg.roaming.label }));
+      }
+
+      host.appendChild(el("h3", { text: "Side by side" }));
+      var sel = el("select", { id: "cmpLayerB", "aria-label": "Layer shown on the right" });
+      H.layerIds(cfg).concat([H.COMBINED_ID]).forEach(function (id) { sel.appendChild(el("option", { value: id, text: layerLabel(id) })); });
+      sel.value = v.compare === undefined ? "snr" : v.compare;
+      sel.addEventListener("change", function () { app.setView({ compare: sel.value }); });
+      host.appendChild(el("div", { class: "tool-row" }, [el("label", { class: "inline" }, ["Left: current map layer. Right: ", sel])]));
+      layerUi.side = el("div", { class: "side-by-side", id: "sideBySide" });
+      host.appendChild(layerUi.side);
+      renderSideBySide();
+    }
+
+    function drawLayerCanvas(canvas, info, floor, palette) {
+      var dpr = root.devicePixelRatio || 1, w = canvas.clientWidth || 360, h = canvas.clientHeight || 240, pad = 6;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      var c = canvas.getContext("2d"), k = Math.min((w - 2 * pad) / floor.width_m, (h - 2 * pad) / floor.depth_m), ox = (w - floor.width_m * k) / 2, oy = (h - floor.depth_m * k) / 2;
+      c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+      c.fillStyle = "rgba(128,140,170,.15)"; c.fillRect(ox, oy, floor.width_m * k, floor.depth_m * k);
+      if (info && info.stats) {
+        var off = doc.createElement("canvas"), oc, img, lut = {};
+        off.width = info.cols; off.height = info.rows; oc = off.getContext("2d"); img = oc.createImageData(info.cols, info.rows);
+        for (var i = 0; i < info.rssi.length; i++) {
+          var key = Math.round(info.rssi[i] * 2), col = lut[key] || (lut[key] = H.colorAt(palette, info.rssi[i]));
+          img.data[i * 4] = col[0]; img.data[i * 4 + 1] = col[1]; img.data[i * 4 + 2] = col[2]; img.data[i * 4 + 3] = 215;
+        }
+        oc.putImageData(img, 0, 0);
+        c.imageSmoothingEnabled = true; c.drawImage(off, ox, oy, floor.width_m * k, floor.depth_m * k);
+      }
+      c.strokeStyle = "#cbd5e1"; c.lineWidth = 1.5; c.lineCap = "round"; c.beginPath();
+      floor.walls.forEach(function (wl) { c.moveTo(ox + wl.x1 * k, oy + wl.y1 * k); c.lineTo(ox + wl.x2 * k, oy + wl.y2 * k); });
+      c.stroke();
+      floor.aps.forEach(function (ap) { c.fillStyle = "#a78bfa"; c.beginPath(); c.arc(ox + ap.x * k, oy + ap.y * k, 4, 0, Math.PI * 2); c.fill(); });
+    }
+
+    function renderSideBySide() {
+      var host = layerUi.side;
+      if (!host) { return; }
+      host.textContent = "";
+      var m = state.analysis, floor = app.currentFloor(), v = app.view;
+      if (!m || m.floor !== floor.id || !m.layers) { host.appendChild(el("p", { class: "muted", text: "Computing layers..." })); return; }
+      var ids = [v.layer, v.compare], pending = [];
+      var panes = ids.map(function (id, n) {
+        if (!(id === H.COMBINED_ID ? v.combine : [id]).every(function (x) { return m.layers[x]; })) { pending.push(id); return null; }
+        var info = H.layerGrid(id, { config: app.config, analytics: m.analytics, values: m.layers }, v.combine);
+        var cv = el("canvas", { id: "side" + (n ? "B" : "A"), class: "side-canvas", role: "img", "aria-label": layerLabel(id) + " map. The legend and the table below give the same information as text." });
+        var legend = el("ul", { class: "legend-list" });
+        H.fillLayerLegend(legend, app.config, id, v.palette, info);
+        host.appendChild(el("figure", { class: "side-pane" }, [el("figcaption", { text: layerLabel(id) }), cv, legend]));
+        root.requestAnimationFrame(function () { drawLayerCanvas(cv, info, floor, v.palette); });
+        return info;
+      });
+      if (pending.length) {
+        host.appendChild(el("p", { class: "muted", text: "Computing " + pending.map(layerLabel).join(", ") + "..." }));
+        app.requestAnalysis(true);
+      }
+      var rows = panes.map(function (info, n) {
+        var spec = H.layerSpec(app.config, ids[n]);
+        return info ? [layerLabel(ids[n]), info.stats ? f1(info.stats.min) + " " + spec.unit : "-", info.stats ? f1(info.stats.mean) + " " + spec.unit : "-", info.stats ? f1(info.stats.max) + " " + spec.unit : "-", info.reason || ""] : [layerLabel(ids[n]), "-", "-", "-", "computing"];
+      });
+      host.appendChild(table("Layer statistics over the floor (" + ESTIMATE + "S)", ["Layer", "Minimum", "Mean", "Maximum", "Note"], rows));
+    }
+    app.onView(function () { renderLayerPanel(); renderSideBySide(); if (state.analysis) { renderAnalytics(); } app.editor.invalidate(); });
+
+    // ============================================================== engineering dashboard
+    var dash = { host: panels.dashboard };
+    function renderDashboard() {
+      var host = dash.host, m = state.analysis, floor = app.currentFloor();
+      host.textContent = "";
+      if (!m || m.floor !== floor.id || !m.layers || !m.layers.rssi || !m.layers.bandwidth) { host.appendChild(el("p", { class: "muted", text: "Computing the dashboard..." })); return; }
+      var d = dashboardStats(m.analytics, m.layers.rssi.values, m.layers.bandwidth.values, floor, app.config), th = app.config.planner_layers.dashboard;
+      host.appendChild(el("p", { class: "muted hint", text: "MODEL ESTIMATE, not a measurement. Throughput and efficiency are " + ESTIMATE + "S from a rate table (docs/rf-planner.md). " + th.efficiency_note }));
+      var stats = el("div", { class: "stats" });
+      [card("Average coverage", pct(d.coverage_pct), "at or above " + app.config.analytics.coverage_dbm + " dBm"), card("Average RSSI", f1(d.avg_rssi_dbm) + " dBm", "best AP per cell"),
+       card("Edge coverage", d.edge.coverage_pct === null ? "-" : pct(d.edge.coverage_pct), "within " + th.edge_margin_m + " m of the outer edge"),
+       card("Throughput " + ESTIMATE, f1(d.mean_throughput_mbps) + " Mbps", "mean per cell, one client"),
+       card("Efficiency score " + ESTIMATE, f1(d.efficiency_pct) + " / 100", "target " + th.efficiency_target_mbps + " Mbps per cell")
+      ].forEach(function (c) { stats.appendChild(c); });
+      host.appendChild(stats);
+      host.appendChild(el("h3", { text: "Signal distribution" }));
+      var cv = el("canvas", { id: "dashHist", class: "hist", role: "img", "aria-label": "Histogram of the best signal per cell, in " + th.histogram_bin_db + " dB bins. The table below has the same numbers." });
+      host.appendChild(cv);
+      root.requestAnimationFrame(function () { drawHistogram(cv, d.histogram); });
+      host.appendChild(table("Signal distribution (share of floor area per RSSI range)", ["RSSI range", "Share of floor"], d.histogram.filter(function (b) { return b.cells > 0; })
+        .map(function (b) { return [b.from + " to " + b.to + " dBm", pct(b.pct)]; })));
+      function zoneRows(list) {
+        return list.map(function (z) {
+          return [z.name, f1(z.mean_rssi_dbm) + " dBm", button("Locate", function () { locate({ x_min: z.x0, y_min: z.y0, x_max: z.x1, y_max: z.y1 }); }, { "aria-label": "Show " + z.name + " on the plan" })];
+        });
+      }
+      var what = d.zone_source === "rooms" ? "rooms" : "tiles of " + th.zone_tile_m + " m (this floor has no rooms)";
+      host.appendChild(table("Weakest zones, by mean RSSI of " + what, ["Zone", "Mean signal", "Show"], zoneRows(d.weakest)));
+      host.appendChild(table("Strongest zones, by mean RSSI of " + what, ["Zone", "Mean signal", "Show"], zoneRows(d.strongest)));
+    }
+    function drawHistogram(canvas, bins) {
+      var dpr = root.devicePixelRatio || 1, w = canvas.clientWidth || 480, h = canvas.clientHeight || 160, padL = 34, padB = 24, padT = 8;
+      canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+      var c = canvas.getContext("2d"), max = Math.max.apply(null, bins.map(function (b) { return b.pct; }).concat([1])), bw = (w - padL - 8) / bins.length, fg = getComputedStyle(doc.documentElement).getPropertyValue("--fg").trim() || "#e8edf6";
+      c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+      c.font = "11px system-ui, sans-serif"; c.fillStyle = fg; c.strokeStyle = fg; c.globalAlpha = 0.5;
+      c.beginPath(); c.moveTo(padL, padT); c.lineTo(padL, h - padB); c.lineTo(w - 4, h - padB); c.stroke(); c.globalAlpha = 1;
+      c.textAlign = "right"; c.fillText(f1(max) + "%", padL - 4, padT + 8); c.fillText("0", padL - 4, h - padB);
+      bins.forEach(function (b, i) {
+        var mid = (b.from + b.to) / 2, col = H.colorAt(app.view.palette, mid), bh = (h - padB - padT) * b.pct / max;
+        c.fillStyle = "rgb(" + col.join(",") + ")"; c.fillRect(padL + i * bw + 1, h - padB - bh, bw - 2, bh);
+        c.strokeStyle = fg; c.globalAlpha = 0.6; c.strokeRect(padL + i * bw + 1, h - padB - bh, bw - 2, bh); c.globalAlpha = 1;
+        if (i % 2 === 0) { c.fillStyle = fg; c.textAlign = "center"; c.fillText(String(b.from), padL + i * bw + bw / 2, h - 8); }
+      });
+      c.fillStyle = fg; c.textAlign = "right"; c.fillText("dBm", w - 4, h - 8);
+    }
+    app.onView(function () { if (state.analysis) { renderDashboard(); } });
+
+    // ============================================================== spectrum view
+    var spec = { host: panels.spectrum, band: "5", width: null, canvas: null };
+    var LEVEL_COLOURS = { low: "#009e73", moderate: "#f0e442", high: "#e69f00", severe: "#d55e00" };
+    var KIND_COLOURS = { ap: "#56b4e9", microwave: "#d55e00", bluetooth: "#cc79a7", neighbour_wifi: "#e69f00" };
+    function renderSpectrum() {
+      var host = spec.host, cfg = app.config, bands = Object.keys(cfg.bands);
+      host.textContent = "";
+      if (bands.indexOf(spec.band) < 0) { spec.band = bands[0]; }
+      var widths = cfg.bands[spec.band].widths_mhz;
+      if (widths.indexOf(spec.width) < 0) { spec.width = cfg.spectrum.width_mhz[spec.band]; }
+      var data;
+      try { data = spectrumView(app.store.project, spec.band, spec.width, root.RFEngine, cfg); } catch (e) { host.appendChild(el("p", { class: "banner error", role: "alert", text: "Spectrum view failed: " + e.message })); return; }
+      host.appendChild(el("p", { class: "muted hint", text: data.analysis.label + ". " + "Congestion adds up coupling times duty cycle of every access point and source in the project, ignoring distance." }));
+      var bandSel = el("select", { id: "specBand", "aria-label": "Band" }), widthSel = el("select", { id: "specWidth", "aria-label": "Channel width" });
+      bands.forEach(function (b) { bandSel.appendChild(el("option", { value: b, text: b + " GHz" })); }); bandSel.value = spec.band;
+      widths.forEach(function (w) { widthSel.appendChild(el("option", { value: String(w), text: w + " MHz" })); }); widthSel.value = String(spec.width);
+      bandSel.addEventListener("change", function () { spec.band = bandSel.value; spec.width = null; renderSpectrum(); });
+      widthSel.addEventListener("change", function () { spec.width = parseInt(widthSel.value, 10); renderSpectrum(); });
+      host.appendChild(el("div", { class: "tool-row" }, [el("label", { class: "inline" }, ["Band ", bandSel]), el("label", { class: "inline" }, ["Candidate channel width ", widthSel])]));
+      var sugg = data.analysis.suggestions;
+      host.appendChild(el("p", { id: "specSuggest", class: "plan-sum", text: sugg.length ? "Least congested channels at " + spec.width + " MHz: " + sugg.map(function (x) { return x.channel + " (" + x.level + ", congestion " + x.congestion + ")"; }).join(", ") + "." : "No channel suggestion for this band." }));
+      var rowsN = Math.min(data.sources.length, 12), height = 230 + rowsN * 16;
+      spec.canvas = el("canvas", { id: "specCanvas", class: "spectrum", width: "900", height: String(height), role: "img",
+        "aria-label": "Channel occupancy of the " + spec.band + " GHz band with the frequency span of each access point and source. The tables below have the same numbers." });
+      host.appendChild(spec.canvas);
+      drawSpectrum(spec.canvas, data);
+      var legend = el("p", { class: "muted hint", text: "Bars: congestion of a channel of the chosen width (full height is 100 percent). Colour and text level: low, moderate, high, severe. Rows below: the frequency span of each access point and source (blue AP, red microwave, pink Bluetooth, orange neighbour WiFi). Triangles mark the suggested channels." });
+      host.appendChild(legend);
+      host.appendChild(table("Channels (" + ESTIMATE + "S)", ["Channel", "Centre", "Overlapping sources", "Congestion", "Level"], data.analysis.channels.map(function (c) {
+        return [String(c.channel), c.centre_mhz + " MHz", c.sources.map(function (x) { return x.id + " (" + f1(x.overlap_mhz) + " MHz)"; }).join(", ") || "none", String(c.congestion), c.level];
+      })));
+      host.appendChild(table("Sources in this band", ["Source", "Kind", "Span", "Channel", "Width"], data.sources.map(function (x) {
+        return [x.id, x.kind, Math.round(x.lo) + " to " + Math.round(x.hi) + " MHz", x.channel === null ? "-" : String(x.channel), x.width_mhz + " MHz"];
+      })));
+    }
+    function drawSpectrum(canvas, data) {
+      var c = canvas.getContext("2d"), w = canvas.width, h = canvas.height, padL = 40, padR = 12, padT = 26, chartH = 140, axisY = padT + chartH;
+      var fg = getComputedStyle(doc.documentElement).getPropertyValue("--fg").trim() || "#e8edf6", span = data.hi_mhz - data.lo_mhz, k = (w - padL - padR) / span;
+      function X(mhz) { return padL + (mhz - data.lo_mhz) * k; }
+      c.clearRect(0, 0, w, h); c.font = "11px system-ui, sans-serif"; c.textBaseline = "alphabetic";
+      c.strokeStyle = fg; c.fillStyle = fg; c.globalAlpha = 0.45; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(padL, padT); c.lineTo(padL, axisY); c.lineTo(w - padR, axisY); c.stroke(); c.globalAlpha = 1;
+      c.textAlign = "right"; c.fillText("100%", padL - 4, padT + 8); c.fillText("0", padL - 4, axisY);
+      var chans = data.analysis.channels, sparse = chans.length > 14, shown = {};
+      data.analysis.suggestions.forEach(function (x) { shown[x.channel] = true; });
+      chans.forEach(function (ch, i) {
+        var x0 = X(ch.centre_mhz - data.width_mhz / 2), x1 = X(ch.centre_mhz + data.width_mhz / 2), bh = chartH * Math.min(100, ch.occupancy_pct) / 100, col = LEVEL_COLOURS[ch.level];
+        c.globalAlpha = 0.4; c.fillStyle = col; c.fillRect(x0, axisY - bh, x1 - x0, bh);
+        c.globalAlpha = 0.9; c.strokeStyle = col; c.strokeRect(x0, axisY - bh, x1 - x0, bh); c.globalAlpha = 1;
+        if (!sparse || i % Math.ceil(chans.length / 14) === 0 || shown[ch.channel]) {
+          c.fillStyle = fg; c.textAlign = "center"; c.fillText(String(ch.channel), X(ch.centre_mhz), axisY + 13);
+        }
+      });
+      data.analysis.suggestions.forEach(function (sg) {
+        var ch = chans.filter(function (x) { return x.channel === sg.channel; })[0], cx = X(ch.centre_mhz);
+        c.fillStyle = fg; c.beginPath(); c.moveTo(cx, axisY - 4); c.lineTo(cx - 6, axisY - 15); c.lineTo(cx + 6, axisY - 15); c.closePath(); c.fill();
+      });
+      c.fillStyle = fg; c.textAlign = "left"; c.fillText("Channel (centre frequency " + Math.round(data.lo_mhz) + " to " + Math.round(data.hi_mhz) + " MHz)", padL, padT - 10);
+      data.sources.slice(0, 12).forEach(function (src, i) {
+        var y = axisY + 26 + i * 16, col = KIND_COLOURS[src.kind] || "#999";
+        c.globalAlpha = 0.55; c.fillStyle = col; c.fillRect(X(src.lo), y, Math.max(2, X(src.hi) - X(src.lo)), 11); c.globalAlpha = 1;
+        c.strokeStyle = col; c.strokeRect(X(src.lo), y, Math.max(2, X(src.hi) - X(src.lo)), 11);
+        c.fillStyle = fg; c.textAlign = "left"; c.fillText(src.id + " (" + src.kind + ")", Math.min(X(src.hi) + 4, w - 150), y + 10);
+      });
+    }
+    app.store.subscribe(function (ev) { if (ev.source !== "select" && ev.source !== "meta" && spec.canvas !== null) { root.clearTimeout(spec.timer); spec.timer = root.setTimeout(renderSpectrum, 120); } });
+    tabs.onSelect("spectrum", renderSpectrum); tabs.onSelect("dashboard", renderDashboard); tabs.onSelect("layers", renderSideBySide);
+    renderSpectrum();
+    app.renderSpectrum = renderSpectrum;
+
+    // ============================================================== environment: interference sources, floor openings, doors and windows
+    var env = { host: panels.environment };
+    function numberField(value, min, max, step, label, onChange) {
+      var inp = el("input", { type: "number", min: String(min), max: String(max), step: String(step), value: String(value), "aria-label": label });
+      inp.addEventListener("change", function () {
+        var v = parseFloat(inp.value);
+        if (isFinite(v) && v >= min && v <= max) { onChange(v); } else { inp.value = String(value); app.say(label + " must be " + min + " to " + max); }
+      });
+      return inp;
+    }
+    function selectField(options, value, label, onChange) {
+      var sel = el("select", { "aria-label": label });
+      options.forEach(function (o) { sel.appendChild(el("option", { value: o[0], text: o[1] })); });
+      sel.value = value; sel.addEventListener("change", function () { onChange(sel.value); });
+      return sel;
+    }
+    function renderEnvironment() {
+      var host = env.host, cfg = app.config, ext = cfg.external_sources, project = app.store.project, floor = app.currentFloor(), st = app.store;
+      host.textContent = "";
+      host.appendChild(el("p", { class: "muted hint", text: ext.label + ". Add sources with the Interference tool (X) or here. Drag a source on the plan to move it." }));
+
+      // interference sources
+      host.appendChild(el("h3", { text: "Interference and neighbour networks" }));
+      host.appendChild(el("div", { class: "tool-row" }, [button("Add source on this floor", function () {
+        var kind = doc.getElementById("sourceKind").value;
+        app.editor.addInterfererAt({ x: floor.width_m / 2, y: floor.depth_m / 2 }, kind);
+      }, { id: "envAddSource" })]));
+      var srcRows = (project.interferers || []).map(function (src) {
+        var spec = ext.kinds[src.kind], fl = S.findFloor(project, src.floor);
+        function set(props, label) { st.exec({ label: label, key: "src:" + src.id + ":" + Object.keys(props)[0], ops: [S.setOp("interferer", project, null, src.id, props)] }); }
+        var cells = [src.id,
+          selectField(Object.keys(ext.kinds).map(function (k) { return [k, ext.kinds[k].label]; }), src.kind, "Kind of " + src.id, function (v) {
+            set({ kind: v, band: undefined, channel: undefined, width_mhz: undefined }, "Change source kind"); }),
+          selectField(project.floors.map(function (f) { return [f.id, f.name]; }), src.floor, "Floor of " + src.id, function (v) {
+            var f2 = S.findFloor(project, v); set({ floor: v, x: Math.min(src.x, f2.width_m), y: Math.min(src.y, f2.depth_m) }, "Move source to another floor"); }),
+          el("span", { class: "row-actions" }, [
+            numberField(src.x, 0, fl.width_m, 0.5, "X of " + src.id + " (m)", function (v) { set({ x: v }, "Move source"); }),
+            numberField(src.y, 0, fl.depth_m, 0.5, "Y of " + src.id + " (m)", function (v) { set({ y: v }, "Move source"); })]),
+          numberField(src.tx_dbm !== undefined ? src.tx_dbm : spec.tx_dbm, ext.tx_dbm_range[0], ext.tx_dbm_range[1], 1, "Power of " + src.id + " (dBm)", function (v) { set({ tx_dbm: v }, "Change source power"); }),
+          numberField(Math.round(100 * (src.duty_cycle !== undefined ? src.duty_cycle : spec.duty_cycle)), 100 * ext.duty_cycle_range[0], 100 * ext.duty_cycle_range[1], 5, "Duty cycle of " + src.id + " (percent)",
+            function (v) { set({ duty_cycle: v / 100 }, "Change source duty cycle"); })];
+        if (src.kind === "neighbour_wifi") {
+          var band = src.band || spec.default_band;
+          cells.push(el("span", { class: "row-actions" }, [
+            selectField(Object.keys(cfg.bands).map(function (b) { return [b, b + " GHz"]; }), band, "Band of " + src.id, function (v) { set({ band: v, channel: undefined, width_mhz: undefined }, "Change source band"); }),
+            selectField([["", "default"]].concat(cfg.bands[band].channels.map(function (ch) { return [String(ch), String(ch)]; })), src.channel === undefined ? "" : String(src.channel), "Channel of " + src.id,
+              function (v) { set({ channel: v ? parseInt(v, 10) : undefined }, "Change source channel"); })]));
+        } else { cells.push(spec.centre_mhz ? spec.centre_mhz + " MHz, " + spec.width_mhz + " MHz wide" : ""); }
+        cells.push(button("Delete", function () { app.editor.deleteInterferer(src.id); }, { "aria-label": "Delete " + src.id }));
+        return cells;
+      });
+      host.appendChild(table("Sources (" + ESTIMATE + "S, planning assumptions)", ["Id", "Kind", "Floor", "Position (m)", "Power dBm", "Duty %", "Radio", ""], srcRows));
+
+      // floor openings (stairwells)
+      host.appendChild(el("h3", { text: "Stairwells, atria and shafts on " + floor.name }));
+      host.appendChild(el("div", { class: "tool-row" }, [button("Add stairwell", function () {
+        var kind = doc.getElementById("voidKind").value, size = Math.min(3, floor.width_m, floor.depth_m);
+        var rect = { x: Math.max(0, Math.floor((floor.width_m - size) / 2)), y: Math.max(0, Math.floor((floor.depth_m - size) / 2)), w: size, d: size };
+        app.editor.addVoid(rect, kind);
+      }, { id: "envAddVoid" })]));
+      var voidRows = (floor.voids || []).map(function (v) {
+        function set(props, label) { st.exec({ label: label, key: "void:" + v.id + ":" + Object.keys(props)[0], ops: [S.setOp("void", project, floor.id, v.id, props)] }); }
+        var geometry = v.points ? el("span", { text: v.points.length + " point polygon" }) :
+          el("span", { class: "row-actions" }, [numberField(v.x, 0, floor.width_m - v.w, 0.5, "X of " + v.id, function (n) { set({ x: n }, "Move floor opening"); }),
+            numberField(v.y, 0, floor.depth_m - v.d, 0.5, "Y of " + v.id, function (n) { set({ y: n }, "Move floor opening"); }),
+            numberField(v.w, 0.5, floor.width_m - v.x, 0.5, "Width of " + v.id, function (n) { set({ w: n }, "Resize floor opening"); }),
+            numberField(v.d, 0.5, floor.depth_m - v.y, 0.5, "Depth of " + v.id, function (n) { set({ d: n }, "Resize floor opening"); })]);
+        return [v.id, selectField(cfg.voids.kinds.map(function (k) { return [k, k]; }), v.kind, "Kind of " + v.id, function (k) { set({ kind: k }, "Change floor opening kind"); }), geometry,
+                button("Delete", function () { app.editor.deleteVoid(v.id); }, { "aria-label": "Delete " + v.id })];
+      });
+      host.appendChild(table("Floor openings. They lower the floor loss for paths that start or end inside them (" + cfg.voids.label + ")", ["Id", "Kind", "Position and size (x, y, width, depth in m)", ""], voidRows));
+
+      // doors and windows
+      host.appendChild(el("h3", { text: "Doors and windows on " + floor.name }));
+      var wallIds = floor.walls.map(function (w) { return w.id; });
+      host.appendChild(el("p", { class: "muted hint", text: "Use the Door and Window tools (D, O) and click a wall, or right-click a wall. A door or window passes more signal than the wall around it." }));
+      var openRows = floor.openings.map(function (op) {
+        var wall = floor.walls.filter(function (w) { return w.id === op.wall; })[0], len = wall ? S.wallLength(wall) : op.pos + op.width;
+        function set(props, label) { st.exec({ label: label, key: "opening:" + op.id + ":" + Object.keys(props)[0], ops: [S.setOp("opening", project, floor.id, op.id, props)] }); }
+        return [op.id, selectField([["door", "Door"], ["window", "Window"]], op.kind, "Kind of " + op.id, function (k) { set({ kind: k }, "Change opening kind"); }), op.wall,
+          numberField(op.pos, 0, Math.max(0, len - op.width), 0.1, "Position of " + op.id + " along its wall (m)", function (n) { set({ pos: n }, "Move opening"); }),
+          numberField(op.width, 0.1, Math.max(0.1, len - op.pos), 0.1, "Width of " + op.id + " (m)", function (n) { set({ width: n }, "Resize opening"); }),
+          button("Delete", function () { app.editor.deleteOpening(op.id); }, { "aria-label": "Delete " + op.id })];
+      });
+      host.appendChild(table("Doors and windows (" + wallIds.length + " walls on this floor)", ["Id", "Kind", "Wall", "Position (m)", "Width (m)", ""], openRows));
+    }
+    app.store.subscribe(function (ev) {
+      if (ev.source === "select" || ev.source === "meta") { return; }
+      if (ev.source === "exec" && ev.ops.length && ev.ops.every(function (o) { return o.t.indexOf("opening.") !== 0 && o.t.indexOf("void.") !== 0 && o.t.indexOf("interferer.") !== 0 && o.t !== "floors.add" && o.t !== "floors.remove"; })) { return; }
+      renderEnvironment();
+    });
+    renderEnvironment();
+    renderLayerPanel(); renderDashboard();
+
+    app.panels = { renderAnalytics: renderAnalytics, renderScenarios: renderScenarios, state: state, sc: sc, renderEnvironment: renderEnvironment, renderSpectrum: renderSpectrum };
   }
 
   var api = { mount: mount, createTabs: createTabs, el: el, table: table, button: button, card: card, f1: f1, f2: f2, pct: pct, signed: signed, analysisCell: analysisCell,
               deltaColor: deltaColor, DELTA_RANGE_DB: DELTA_RANGE_DB, buildRecommendations: buildRecommendations, recommendationOps: recommendationOps, diffRows: diffRows,
-              floorOfAp: floorOfAp, PLAN_NOTE: PLAN_NOTE };
+              floorOfAp: floorOfAp, PLAN_NOTE: PLAN_NOTE, dashboardStats: dashboardStats, dashboardZones: dashboardZones, spectrumView: spectrumView };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.PlannerPanels = api;
 })(typeof self !== "undefined" ? self : this);

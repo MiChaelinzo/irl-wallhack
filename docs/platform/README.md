@@ -27,7 +27,7 @@ Competitor statements in `19-competitive-analysis.md` come from general knowledg
 | 13 | [Security review](13-security-review.md) | Findings with severity and status |
 | 14 | [Deployment plan](14-deployment-plan.md) | Pi, LAN, Vercel, Docker (design) |
 | 15 | [Wi-Fi physics](15-wifi-physics.md) | Formulas, citations, inaccuracy report |
-| 16 | [Educational mode](16-educational-mode.md) | DESIGN ONLY |
+| 16 | [Educational mode](16-educational-mode.md) | BUILT (first version), PARTIALLY VERIFIED |
 | 17 | [AR and computer vision](17-ar-computer-vision.md) | DESIGN ONLY |
 | 18 | [Reporting engine](18-reporting-engine.md) | Audit of exports and gaps |
 | 19 | [Competitive analysis](19-competitive-analysis.md) | General knowledge, not freshly researched |
@@ -35,6 +35,7 @@ Competitor statements in `19-competitive-analysis.md` come from general knowledg
 | 21 | [Top 100 improvements](21-top-100-improvements.md) | Ranked, with status and evidence |
 | 22 | [Top 10 hackathon features](22-top-10-hackathon-features.md) | With demo script |
 | 23 | [Hackathon pitch](23-hackathon-pitch.md) | Judge-facing narrative and caveats |
+| 24 | [RF lab status](24-rf-lab-status.md) | Complete, partial and deferred per mandate section |
 | ADR | [Frontend stack ADR](adr-frontend-stack.md) | React, TypeScript, Three.js evaluation and decision |
 
 `tests/test_platform_docs.py` checks that these files exist, that the top 100 table has at least 100 ranked rows, and that every file named in a Done row exists.

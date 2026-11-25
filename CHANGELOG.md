@@ -2,12 +2,46 @@
 
 ## Unreleased
 
+### RF lab documentation and status
+- docs: `docs/platform/24-rf-lab-status.md` lists every mandate section as complete, partial or deferred with files and open gaps (room creation tool, true 3D, exact ray tracing, survey calibration and real-hardware validation are not complete).
+- docs: `CONTRIBUTING.md` (setup, checks, parity workflow, adding a material, adding a heat layer, commit style); architecture diagram updated in `03-architecture.md`; propagation methodology in `15-wifi-physics.md` and `rf-planner.md`; optimization guide in `09-rendering-optimization.md`; deployment operations notes in `14-deployment-plan.md`; roadmap and top 100 statuses updated (rows 5, 6, 18, 35 and 49 are Done, rows 30, 53, 66, 68 and 82 are Partial); stale README rows corrected.
+- docs: screenshots regenerated with `tools/screenshot.py` and `tools/planner_smoke.py`, live and demo.
+
+### Accessibility, production readiness and throttled performance
+- feat: `tools/a11y_check.py` (dev only) runs axe-core, fetched from npm into a temp dir at run time, on the planner and dashboard (live and demo) plus keyboard, focus ring and error boundary checks. Fixed: floor button labels, `#envChips` role, light theme ribbon contrast, banner landmarks. Now 0 violations in dark, light and high contrast.
+- feat: planner Contrast button and `prefers-contrast: more` high contrast mode, 3 px focus rings, `forced-colors` outlines, rem base font size.
+- feat: front-end error boundary in `common.js`: uncaught errors and promise rejections appear in the page notice with `role="alert"`.
+- feat: `X-Request-ID` on every response, one log line per API request, optional JSON logs (`log_json`, `WALLHACK_LOG_JSON=1`, `wallhack/logging_setup.py`), JSON 500 handler with request id, local-only `GET /api/diagnostics`.
+- perf: the analysis worker job reuses the coverage grid it already computed for map layers (`analyzeFloorWithGrid` in `rf-engine.js`); a layered analysis went from 148 to 100 ms (worker) and from 970 to 597 ms (main thread, 6x CDP throttle). `tools/perf_rf_browser.py --throttle` measures 1x, 4x and 6x; numbers in `docs/perf-rf.md`, labelled as an approximation.
+- test: request id, diagnostics secrets and locality, error handler, JSON formatter, error window and grid reuse equality tests.
+
+### Scenarios, educational mode, explain and reports
+- feat: scenario presets (`scenarios.json`, generator `tools/make_scenarios.py`) loadable from the planner and the offline demo; `validateScenarioLibrary` in `planner-state.js`.
+- feat: educational mode (`planner-learn.js`, `learn-content.json`): Learn toggle with contextual panels, six lessons with engine-computed checks and an undoable "Show me", and a "why is the signal weak here" panel from the engine explain output.
+- feat: `POST /api/planner/explain`, grounded on engine numbers with a deterministic fallback when the LLM is off, number-grounding check on replies, consent kept for cloud providers.
+- feat: `rf-optimizer.js` gains `planChannelsSinr`, `suggestMeshNodes` and `suggestDeadZoneFixes`; the Smart planner lists them with confidence and rationale. New `planner` config keys `sinr_default_standard`, `sinr_default_standard_6ghz`, `channel_sinr_passes`, `max_dead_zone_fixes` and `confidence.full_gain_db`.
+- feat: PDF report adds floor overview, per-mode coverage maps, AP locations, spectrum summary, performance and a text summary.
+- test: `tests/test_scenarios.py`, `tests/test_planner_learn.py`, `tests/test_explain.py`; `tools/planner_smoke.py` covers presets, lessons, advice and the report; new screenshots in `docs/`.
+
 ### Platform documentation
 - docs: `docs/platform/` audit and design set (README index, 01 to 06, 08 to 23, generated material database as 07, `adr-frontend-stack.md`) written from the code with evidence tables, honest VERIFIED / PARTIALLY VERIFIED / UNVERIFIED labels, a ranked top 100 list whose Done rows cite existing files, and DESIGN ONLY labels for educational mode, AR, computer vision, campus and smart-city planning.
 - test: `tests/test_platform_docs.py` checks the files exist, the top 100 has at least 100 ranked rows in composite order, the composite matches its formula and every Done row cites files that exist.
 - docs: `docs/rf-planner.md` no longer lists antenna patterns as not modelled (they are, since the WiFi standards work).
 
+### RF planner UI
+- feat: map layers in the planner (RSSI, SNR, SINR, quality score, bandwidth, latency, packet-loss likelihood, wall attenuation, interference, channel utilisation, capacity, and a combined weakest-layer map) drawn through the WebGL and canvas heat renderer, with a gradient legend that states real units, side-by-side compare, palettes viridis and cividis, and roaming, strongest-AP and signal-blend overlays from the exact per-cell data. Constants live in `rf-config.json` `planner_layers`.
+- feat: AP panel controls for streams and MLO links plus per-AP SINR, reliability and MLO results; Spectrum tab (canvas of channel congestion, source spans and suggested channels); Dashboard tab (histogram, coverage, edge coverage, weakest and strongest zones, throughput, efficiency); Environment tab and editor tools (D, O, S, X) for doors, windows, stairwells and interference sources, all undoable; floor up and down buttons and Page Up and Page Down.
+- feat: view settings (layer, palette, compare, combine, overlays) persist in browser storage and the page URL (`?layer=sinr&palette=viridis`).
+- change: the analysis worker job returns the requested layers as transferable arrays; `rf-engine.js` also exports `apRadio`, `sourceSpanMhz` and `channelCentreMhz`.
+- test: layer, palette, dashboard, spectrum, editor geometry, op and view-persistence tests; `tools/planner_smoke.py` clicks the AP controls, every layer and palette, spectrum, dashboard, interferer, door, stairwell and floor controls.
+
 ### RF planner engine
+- feat: RF lab engine upgrade, Python reference with JS mirror and parity tests (`tests/test_rf_lab.py`): materials plaster, insulation, office partition and industrial wall (with sources and ranges, material doc regenerated); configurable `interferers` (microwave oven, Bluetooth hopping, neighbour WiFi) folded into SINR; estimated PER, loss, latency and airtime per cell (`sinr.reliability`, config-driven, documented as estimates); optional floor `voids` (stairwell, atrium, shaft) that reduce floor loss locally; `probe_at(..., explain=True)` and `probeAt(..., {explain: true})` with each wall, floor loss, indirect path and SINR term as numbers and text; `spectrum_analysis`; `signal_decay`; exact per-cell roaming data `roaming.map`. `twin.py` and `planner-state.js` validate the new fields. Legacy projects give identical output.
+- change: `analytics.roaming.zones` no longer has a `bbox`; the planner roaming overlay draws exact cells from `roaming.map`. `PUT /api/twin` size limit now counts the void and interferer lists.
+- perf: the engine grid path on the 100,489 point floor went from 1675.1 ms to 684.6 ms (node, median, 4 APs, 1000 walls). Profile and numbers in `docs/perf-rf.md`. Results are identical (parity tests unchanged).
+- fix: `planner-state.js` accepted inherited object keys such as `constructor` in `mlo_bands`; it now checks own keys only. Both validators have tests for malformed `mlo_bands`.
+- feat: `PUT /api/twin` allows at most `limits.max_concurrent_twin_puts` (2) uploads at once and answers 429 with `Retry-After: 1` beyond that.
+- test: the explicit-width test read a key that does not exist, so it never checked the width; it now reads `sinr.aps[0].width_mhz`.
 - fix: a Wi-Fi 4 AP on 5 GHz without `width_mhz` made `analyze_floor` raise (the band default of 80 MHz is not a Wi-Fi 4 width). `_ap_radio` and `apRadio` now use `default_width_mhz(standard, band)` when the AP has a `standard`, so the reported `width_mhz` for such APs is 40. Tests cover every standard and band in Python and against JS.
 - fix: `mlo_bands` with a non-string entry (for example `[[1]]`) caused an uncaught TypeError (HTTP 500) in `twin.py`; both validators now reject it with a normal validation error, with parity tests.
 - docs: top-100 rows 5, 6 and 35 are Partial: the engine and API compute PHY rate, SINR and MLO, but no planner UI shows them. The band validation test was reworded from "unknown band" to a path prefix check.

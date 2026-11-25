@@ -2,13 +2,16 @@
 import asyncio
 import json
 import logging
+import platform
+import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -17,6 +20,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import __version__
 from .config import LOCAL_HOSTS, Config, load_config
 from . import game, judge, llm, pairing, qr, rfmodel
+from .logging_setup import REQUEST_ID_HEADER, ErrorLog, new_request_id, request_id_var
 from .runtime import WS_EVENTS_PER_FRAME, WS_TICK_S, Runtime
 from .twin import TwinError
 
@@ -25,14 +29,16 @@ MAX_BODY_BYTES = 1_000_000
 
 def _twin_body_limit() -> int:
     """Largest PUT /api/twin body: every floor at its limits (background image, walls, openings and the other lists
-    at twin_json_bytes_per_item each) plus a fixed overhead. All inputs are rf-config.json limits."""
+    at twin_json_bytes_per_item each, voids included) plus the interferer list and a fixed overhead. All inputs are rf-config.json limits."""
     lim = rfmodel.LIMITS
-    items = lim["max_walls_per_floor"] + lim["max_openings_per_floor"] + 5 * lim["max_items_per_list"]
+    items = lim["max_walls_per_floor"] + lim["max_openings_per_floor"] + 6 * lim["max_items_per_list"]
     per_floor = lim["max_background_chars"] + items * lim["twin_json_bytes_per_item"]
-    return lim["max_floors"] * per_floor + lim["twin_body_overhead_bytes"]
+    sources = rfmodel.EXTERNAL["max_sources"] * lim["twin_json_bytes_per_item"]
+    return lim["max_floors"] * per_floor + sources + lim["twin_body_overhead_bytes"]
 
 
 MAX_TWIN_BODY_BYTES = _twin_body_limit()
+MAX_CONCURRENT_TWIN_PUTS = rfmodel.LIMITS["max_concurrent_twin_puts"]
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("wallhack")
@@ -67,6 +73,55 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     elif config.host in LOCAL_HOSTS:
         # Blocks DNS rebinding: a loopback server must only answer to its own names.
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
+
+    started = time.monotonic()
+    errors = ErrorLog()
+
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        """Give every request an id (echoed in X-Request-ID), log one line per API call, count server errors and
+        turn an unhandled exception into explanatory JSON. Query strings and bodies are never logged."""
+        rid = new_request_id(request.headers.get(REQUEST_ID_HEADER))
+        token = request_id_var.set(rid)
+        t0 = time.monotonic()
+        try:
+            try:
+                response = await call_next(request)
+                if response.status_code >= 500:
+                    errors.record("http_%d" % response.status_code)
+            except Exception:
+                log.exception("unhandled error in %s %s", request.method, request.url.path)
+                errors.record("unhandled_exception")
+                response = JSONResponse(status_code=500, content={
+                    "error": "internal_error", "request_id": rid,
+                    "detail": "The server hit an unexpected error. Nothing was changed by this request. "
+                              "Quote the request_id when reporting it; the server log has the details."})
+            response.headers[REQUEST_ID_HEADER] = rid
+            if request.url.path.startswith("/api/"):
+                log.info("%s %s -> %d", request.method, request.url.path, response.status_code,
+                         extra={"method": request.method, "path": request.url.path, "status": response.status_code,
+                                "duration_ms": round((time.monotonic() - t0) * 1000, 1)})
+            return response
+        finally:
+            request_id_var.reset(token)
+
+    @app.get("/api/diagnostics")
+    def diagnostics(request: Request):
+        """Version, limits, uptime and recent error counts for the person running the app. Local only: refused for
+        non-loopback clients and for requests carrying an Origin header. Holds no keys, tokens, paths or addresses."""
+        if not pairing.is_loopback(request.client.host if request.client else None):
+            raise HTTPException(status_code=403, detail="diagnostics are only shown on the host machine")
+        if request.headers.get("origin") is not None:
+            raise HTTPException(status_code=403, detail="diagnostics are not available to cross-origin requests")
+        lim = rfmodel.LIMITS
+        return {"version": __version__, "python": platform.python_version(), "platform": platform.system(),
+                "uptime_s": round(time.monotonic() - started, 1),
+                "source": runtime.source, "lan": config.lan, "history_enabled": config.history_enabled,
+                "llm_provider": config.llm_provider or "off", "log_json": config.log_json,
+                "limits": {"max_json_body_bytes": MAX_BODY_BYTES, "max_twin_body_bytes": MAX_TWIN_BODY_BYTES,
+                           "max_concurrent_twin_puts": MAX_CONCURRENT_TWIN_PUTS, "max_floors": lim["max_floors"],
+                           "max_walls_per_floor": lim["max_walls_per_floor"]},
+                "errors": errors.recent()}
 
     @app.get("/api/status")
     def status():
@@ -153,6 +208,8 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
         if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
             raise HTTPException(status_code=415, detail="Content-Type must be application/json")
 
+    twin_puts_running = {"n": 0}
+
     @app.get("/api/twin")
     def get_twin():
         return runtime.get_twin()
@@ -161,11 +218,17 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
     async def put_twin(request: Request):
         require_same_origin(request)
         require_json(request)
-        body = await read_json(request, MAX_TWIN_BODY_BYTES)
+        if twin_puts_running["n"] >= MAX_CONCURRENT_TWIN_PUTS:
+            raise HTTPException(status_code=429, headers={"Retry-After": "1"},
+                                detail=f"Too many twin uploads at once (limit {MAX_CONCURRENT_TWIN_PUTS}); retry shortly")
+        twin_puts_running["n"] += 1      # no await between check and increment, so the event loop cannot interleave
         try:
+            body = await read_json(request, MAX_TWIN_BODY_BYTES)
             return await run_in_threadpool(runtime.set_twin, body)
         except TwinError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        finally:
+            twin_puts_running["n"] -= 1
 
     @app.get("/api/rf/coverage")
     def rf_coverage(floor: Optional[str] = None, cell_m: float = Query(rfmodel.DEFAULT_CELL_M, ge=0.1, le=5.0),
@@ -229,6 +292,20 @@ def create_app(config: Optional[Config] = None) -> FastAPI:
             return await run_in_threadpool(runtime.explain_insights, confirm)
         except llm.LlmError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
+
+    @app.post("/api/planner/explain")
+    async def explain_planner(request: Request):
+        """Plain-language explanation of planner advice, grounded on the engine numbers in the body.
+        Works with the LLM off (deterministic rules). Cloud providers need confirm_off_device=true."""
+        require_same_origin(request)
+        require_json(request)
+        body = await read_json(request)
+        confirm = isinstance(body, dict) and body.get("confirm_off_device") is True
+        try:
+            return await run_in_threadpool(runtime.explain_planner, body, confirm)
+        except llm.LlmError as exc:
+            status = 409 if "off-device" in str(exc) else 422
+            raise HTTPException(status_code=status, detail=str(exc))
 
     @app.get("/api/scores")
     def scores():

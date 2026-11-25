@@ -7,7 +7,7 @@
 
   function banner() {
     var el = document.createElement("div");
-    el.id = "demoBanner"; el.className = "banner demo"; el.setAttribute("role", "note");
+    el.id = "demoBanner"; el.className = "banner demo"; el.setAttribute("role", "region"); el.setAttribute("aria-label", "Demo notice");
     var p = document.createElement("p");
     var b = document.createElement("strong");
     b.textContent = "Simulated replay. Not live sensing. Nothing here reads your WiFi.";
