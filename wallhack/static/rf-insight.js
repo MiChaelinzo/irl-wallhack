@@ -67,12 +67,12 @@
     return copy;
   }
 
-  function hopCounter(project) {
+  function hopCounter(project, maxHops) {
     var parent = {};
     project.floors.forEach(function (f) { f.aps.forEach(function (a) { parent[a.id] = a.mesh_parent || null; }); });
     return function (id) {
       var n = 0, cur = id;
-      while (parent[cur] && n < 16) { n++; cur = parent[cur]; }
+      while (parent[cur] && n < maxHops) { n++; cur = parent[cur]; }
       return n;
     };
   }
@@ -87,7 +87,7 @@
     var s = settingsOf(project, opts), copy = withStandards(project, s.config);
     var run = E.analyzeFloorWithGrid(copy, floorId, { env: s.env, cellM: s.cellM, mode: s.mode, band: s.band });
     var an = run.analytics, rel = an.sinr ? an.sinr.reliability : null, cols = an.cols, rows = an.rows, total = cols * rows;
-    var hops = hopCounter(copy), factor = s.config.planner_modes.mesh.hop_throughput_factor, hopMs = s.config.insight.mesh.hop_latency_ms;
+    var hops = hopCounter(copy, s.config.insight.mesh.max_hops), factor = s.config.planner_modes.mesh.hop_throughput_factor, hopMs = s.config.insight.mesh.hop_latency_ms;
     var g = { rssi: [], served: [], lat: [], thr: [], per: [], loss: [], air: [], sinr: [], hops: [] };
     for (var i = 0; i < total; i++) {
       var r = Math.floor(i / cols), c = i % cols, idx = an.best_ap[r][c];
@@ -484,7 +484,7 @@
     var apHit = res.project.floors.reduce(function (acc, f) { return acc || f.aps.filter(function (a) { return a.id === probe.ap_id; })[0] || null; }, null);
     if (apHit) { cands = cands.concat(moveCandidates(res, apHit, st.center, ac)); }
     cands = cands.concat(meshCandidates(res, ac));
-    var tried = cands.map(function (c) { return measureFix(res, view, c, rect); }).filter(function (f) { return f.room.score_after > f.room.score_before || f.room.coverage_delta_pts > 0; });
+    var tried = cands.map(function (c) { return measureFix(res, view, c, rect); }).filter(function (f) { return f.room.score_after > f.room.score_before || f.room.coverage_delta_pts > 0; }).filter(function (f) { return f.floor.coverage_delta_pts >= 0; });
     tried.sort(function (a, b) {
       return ((b.room.score_after - b.room.score_before) - (a.room.score_after - a.room.score_before)) || (b.room.coverage_delta_pts - a.room.coverage_delta_pts) ||
              (b.floor.coverage_delta_pts - a.floor.coverage_delta_pts) || (a.id < b.id ? -1 : 1);
@@ -553,6 +553,10 @@
       var t = tallyAt(p.x, p.y);
       if (!top || t.covered > top.t.covered || (t.covered === top.t.covered && (t.dead < top.t.dead || (t.dead === top.t.dead && t.mean > top.t.mean)))) { top = { p: p, t: t }; }
     });
+    if (!router && !top) {
+      return { label: cfg.insight.label, floor: floorId, ap_id: template.id, had_router: false, positions_evaluated: 0, lattice_positions: 0, moved: false, position: null, room: null,
+               current_position: null, text: "No position found: the floor has no router and no candidate position fits inside it (model estimate)." };
+    }
     var beats = !current || (top && (top.t.covered > current.covered || (top.t.covered === current.covered && (top.t.dead < current.dead || (top.t.dead === current.dead && top.t.mean > current.mean)))));
     var chosen = beats && top ? { x: round(top.p.x, 2), y: round(top.p.y, 2) } : { x: router.x, y: router.y };
     var out = { label: cfg.insight.label, floor: floorId, ap_id: template.id, had_router: !!router, positions_evaluated: lattice.length + (router ? 1 : 0),

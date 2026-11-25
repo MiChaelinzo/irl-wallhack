@@ -75,7 +75,7 @@
   /** Loss multiplier of a wall of `thicknessCm`: min(thickness / reference, max_factor) (rfmodel.thickness_factor). */
   function thicknessFactor(cfg, materialName, thicknessCm) {
     var t = cfg.wall_thickness, ref = has(t.reference_cm, materialName) ? t.reference_cm[materialName] : t.default_reference_cm;
-    return Math.min(thicknessCm / ref, t.max_factor);
+    return Math.min(Math.max(thicknessCm, t.min_cm) / ref, t.max_factor);
   }
 
   // ---------------------------------------------------------------- floor preparation + spatial index

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### WiFi architect: review fixes
+- fix: assistant fixes that lower whole-floor coverage are no longer recommended; `placementReport` returns a "No position found" result (position null) instead of throwing when the floor has no AP and no candidate position; `thicknessFactor` (Python and JS) clamps thickness to `wall_thickness.min_cm`.
+- fix: the Gamer Mode `source` text says "served" cells like the code; the hop cap moved to `insight.mesh.max_hops`; the object `source` notes that a path starting or ending inside an object crosses one edge (loss overstated); grade chips in the room table have `role="img"` (screen reader behaviour UNVERIFIED).
+- docs: `docs/rf-planner.md` states the insight layer is intentionally JS only.
+
 ### WiFi architect: measurements, screenshots and docs
 - perf: `tools/perf_architect.js` times the insight functions on presets and the stress floor and counts path evaluations (one "ray" = one direct, reflected or diffracted path call for one AP and one cell) from an instrumented copy of the engine; `tools/perf_3d.py` also measures the Signal waves frame time per quality level. Results and misses in `docs/perf-rf.md`: re-simulation after an AP move is 3 to 8 ms on presets and 518 ms on the stress floor (what-if 1.4 s, a miss); `diagnose`, `placementReport` and `meshTopologies` take 0.34 to 0.39 s on the 13 room hotel preset (a miss); 10,000+ path evaluations per run only in multipath mode or on large floors.
 - docs: `tools/screenshot.py` captures the Quick start result, Rooms and gaming, Score card, Assistant, Mesh, Time Machine and the aurora palette with waves (`docs/screenshot-planner-*.png`, demo shots stay in a temp folder); the README leads with the Quick start image, gains a five step walkthrough and honesty rows; `docs/platform/26-wifi-architect-round.md` lists the ten priority features and extras as already existed, extended, new, partial or deferred; tables 21, 24 and 25 updated.

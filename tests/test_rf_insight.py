@@ -226,3 +226,34 @@ def test_assistant_payload_is_valid_and_a_mocked_llm_with_invented_numbers_is_re
     assert ok["source"] == "llm"
     bad = llm.explain_planner(payload, "ollama", opener=fake_opener("The wall costs 77.7 dB."))
     assert bad["source"] == "rules" and bad["rejected_numbers"]
+
+
+def test_placement_report_without_router_and_without_lattice_returns_no_position():
+    r = run_js("""
+      const p = twoRooms('drywall'); p.floors[0].aps = []; p.floors[0].width_m = 0.2; p.floors[0].depth_m = 0.2;
+      p.floors[0].rooms = []; p.floors[0].walls = []; p.floors[0].labels = [];
+      let rep = null, err = null;
+      try { rep = I.placementReport(p, 'f', opts); } catch (e) { err = String(e); }
+      out({rep, err, lattice: O.candidatePositions(p, 'f', opts).length});
+    """)
+    assert r["err"] is None, r["err"]
+    if r["lattice"] == 0:
+        assert r["rep"]["position"] is None and r["rep"]["moved"] is False and "No position found" in r["rep"]["text"]
+
+
+def test_assistant_never_recommends_a_fix_that_lowers_whole_floor_coverage():
+    r = run_js("""
+      const out_ = [];
+      for (const id of ['small_apartment', 'large_home']) {
+        const p = scenario(id), f = p.floors[0];
+        for (const room of f.rooms) { out_.push(...I.diagnose(p, f.id, 'Why is my ' + room.name + ' WiFi slow?', opts).fixes.map(x => x.floor.coverage_delta_pts)); }
+      }
+      out(out_);
+    """)
+    assert all(d >= 0 for d in r)
+
+
+def test_thickness_factor_clamps_to_the_validated_minimum_in_both_languages():
+    r = run_js("out({js: [0, -5, 0.5].map(t => E.thicknessFactor(config, 'concrete', t))})")
+    py = [rfmodel.thickness_factor({"thickness_cm": t}, "concrete") for t in (0, -5, 0.5)]
+    assert r["js"] == py and py[0] == py[1] == py[2] > 0

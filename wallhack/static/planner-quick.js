@@ -343,7 +343,7 @@
     }
 
     function roomTable(gamer, caption) {
-      var rows = roomRows(gamer).map(function (r) { return [r.name, r.coverage, r.ping, r.loss, el("span", { class: "grade-chip " + r.gradeClass, text: r.grade, "aria-label": "grade " + r.grade }), r.score]; });
+      var rows = roomRows(gamer).map(function (r) { return [r.name, r.coverage, r.ping, r.loss, el("span", { class: "grade-chip " + r.gradeClass, text: r.grade, role: "img", "aria-label": "grade " + r.grade }), r.score]; });
       return table((caption || "Rooms") + ": ping range, packet loss risk and stability grade (" + ESTIMATE + ", no standard RSSI to ping formula)", ["Room", "Coverage", "Ping range", "Packet loss risk", "Gaming grade", "Stability"], rows);
     }
 

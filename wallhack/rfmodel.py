@@ -106,7 +106,7 @@ def thickness_factor(wall: dict, material_name: str, config: dict = CONFIG) -> f
     t = wall.get("thickness_cm")
     if t is None:
         return 1.0
-    return min(t / cfg["reference_cm"].get(material_name, cfg["default_reference_cm"]), cfg["max_factor"])
+    return min(max(t, cfg["min_cm"]) / cfg["reference_cm"].get(material_name, cfg["default_reference_cm"]), cfg["max_factor"])
 
 
 def _cross(ax: float, ay: float, bx: float, by: float) -> float:
