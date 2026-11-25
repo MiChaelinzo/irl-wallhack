@@ -10,6 +10,7 @@ Also captures the timeline, insights and game cards and the mobile companion and
 (docs/screenshot-<name>.png), loading each page and checking it renders.
 Also captures the RF planner (docs/screenshot-planner*.png: heat map with bands and contours, compare, analytics,
 light theme, phone width; the --demo run adds a -demo suffix) and fails if the planner heat canvas is blank.
+Also captures the Wi-Fi architect views (docs/screenshot-planner-quick|rooms|scorecard|assistant|mesh|timemachine|aurora.png).
 Exits non-zero on a JS error, a missing SIMULATED label, or a blank 3D canvas.
 """
 import argparse
@@ -179,6 +180,61 @@ def capture_planner(browser, base, errors, problems, docs, demo=False):
     mobile.close()
 
 
+def capture_architect(browser, base, errors, problems, docs, demo=False):
+    """Wi-Fi architect views: quick start result (viewport), Rooms and gaming, Score card, Assistant, Mesh, Time Machine and the aurora palette with signal waves."""
+    url = base + ("planner.html" if demo else "planner")
+    suffix = "-demo" if demo else ""
+    page = browser.new_page(viewport=DESKTOP)
+    watch(page, errors)
+    page.on("dialog", lambda d: d.accept())
+    page.goto(url)
+    planner_wait(page)
+    page.wait_for_function("() => window.PlannerApp.quick && window.PlannerApp.quick.templatesReady", timeout=15000)
+    page.select_option("#quickTemplate", "two_bedroom_condo")
+    page.click("#quickAnalyse")
+    page.wait_for_selector("#quickResult[data-ready=true]", timeout=60000)
+    page.evaluate(PLANNER_IDLE_JS)
+    page.wait_for_timeout(500)
+    if not page.locator("#quickResult .q-grade").count():
+        problems.append("quick start result has no grade")
+    page.evaluate("() => window.scrollTo(0, 0)")
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(docs / ("screenshot-planner-quick%s.png" % suffix)))
+    planner_tab(page, "rooms")
+    if not page.locator("#panel-rooms .room-card").count():
+        problems.append("Rooms and gaming tab shows no room cards")
+    page.locator("#panel-rooms").screenshot(path=str(docs / ("screenshot-planner-rooms%s.png" % suffix)))
+    planner_tab(page, "scorecard")
+    page.locator("#panel-scorecard").screenshot(path=str(docs / ("screenshot-planner-scorecard%s.png" % suffix)))
+    planner_tab(page, "assistant")
+    page.fill("#asstInput", "Why is my bedroom 2 WiFi slow?")
+    page.click("#asstForm button[type=submit]")
+    page.wait_for_function("() => /WiFi in Bedroom 2/.test(document.getElementById('asstAnswer').innerText)", timeout=15000)
+    page.locator("#panel-assistant").screenshot(path=str(docs / ("screenshot-planner-assistant%s.png" % suffix)))
+    # the condo is fully covered, so a mesh node adds nothing there; the small office has a gap that a node closes
+    page.select_option("#quickTemplate", "small_office")
+    before = page.evaluate("() => document.getElementById('quickResult').dataset.ms")
+    page.click("#quickAnalyse")
+    page.wait_for_function("(b) => document.getElementById('quickResult').dataset.ready === 'true' && document.getElementById('quickResult').dataset.ms !== b", arg=before, timeout=60000)
+    page.evaluate(PLANNER_IDLE_JS)
+    planner_tab(page, "mesh")
+    page.click("#meshRun")
+    page.wait_for_selector("#panel-mesh table", timeout=60000)
+    page.locator("#panel-mesh").screenshot(path=str(docs / ("screenshot-planner-mesh%s.png" % suffix)))
+    planner_tab(page, "timemachine")
+    page.click("#tmRun")
+    page.wait_for_selector("#tmOut table", timeout=60000)
+    page.wait_for_timeout(500)
+    page.locator("#panel-timemachine").screenshot(path=str(docs / ("screenshot-planner-timemachine%s.png" % suffix)))
+    page.select_option("#paletteSel", "aurora")
+    page.check("#tgWaves")
+    page.evaluate(PLANNER_IDLE_JS)
+    page.wait_for_timeout(1200)
+    planner_check(page, "aurora palette", problems)
+    page.locator("#stage").screenshot(path=str(docs / ("screenshot-planner-aurora%s.png" % suffix)))
+    page.close()
+
+
 def watch(page, errors):
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
@@ -246,6 +302,7 @@ def main_demo() -> int:
             capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, scratch,
                            {"mobile": "mobile.html", "judge": "judge.html"}, demo=True)
             capture_planner(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, scratch, demo=True)
+            capture_architect(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, scratch, demo=True)
             browser.close()
         for msg in errors + problems:
             print("FAIL:", msg, file=sys.stderr)
@@ -281,6 +338,7 @@ def main() -> int:
             mobile.close()
             capture_extras(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, docs, {"mobile": "mobile", "judge": "judge"})
             capture_planner(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, docs)
+            capture_architect(browser, "http://127.0.0.1:%d/" % PORT, errors, problems, docs)
             browser.close()
         for msg in errors + problems:
             print("FAIL:", msg, file=sys.stderr)
