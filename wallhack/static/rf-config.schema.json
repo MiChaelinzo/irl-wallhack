@@ -51,6 +51,24 @@
                          "w_m": {"type": "number", "exclusiveMinimum": 0}, "d_m": {"type": "number", "exclusiveMinimum": 0}}}}
       }
     },
+    "signal_waves": {
+      "type": "object",
+      "required": ["label", "source", "rays_by_quality", "max_rings", "ring_spacing_m", "speed_m_per_s", "max_radius_m", "sample_step_m", "fade_loss_db", "distance_fade_m", "frame_budget_ms"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "rays_by_quality": {"type": "object", "required": ["low", "medium", "high"], "additionalProperties": {"type": "integer", "minimum": 4}},
+        "max_rings": {"type": "integer", "minimum": 1},
+        "ring_spacing_m": {"type": "number", "exclusiveMinimum": 0},
+        "speed_m_per_s": {"type": "number", "exclusiveMinimum": 0},
+        "max_radius_m": {"type": "number", "exclusiveMinimum": 0},
+        "sample_step_m": {"type": "number", "exclusiveMinimum": 0},
+        "fade_loss_db": {"type": "number", "exclusiveMinimum": 0},
+        "distance_fade_m": {"type": "number", "exclusiveMinimum": 0},
+        "frame_budget_ms": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
     "insight": {
       "type": "object",
       "required": ["label", "source", "gaming", "streaming", "video", "rating_words", "score_card", "mesh", "time_machine", "assistant"],

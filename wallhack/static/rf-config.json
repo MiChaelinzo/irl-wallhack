@@ -1903,7 +1903,7 @@
  },
  "client_devices": {
   "label": "MODEL ESTIMATE: typical sustained demand of common Smart Home client classes, not measurements",
-  "source": "Demand is a typical sustained figure: 1080p IP camera 2 to 6 Mbps, 4K streaming TV about 25 Mbps (streaming services recommend 15 to 25 Mbps), phone video call and browsing about 5 Mbps, console game download and stream mix about 15 Mbps, IoT sensor under 1 Mbps. Bands are the typical radio support of the class, many cameras and IoT devices are 2.4 GHz only.",
+  "source": "Demand is a typical sustained figure: 1080p IP camera 2 to 6 Mbps, 4K streaming TV about 25 Mbps (streaming services recommend 15 to 25 Mbps), phone video call and browsing about 5 Mbps, console game download and stream mix about 15 Mbps, IoT sensor under 1 Mbps, video doorbell about 3 Mbps (a 1080p stream like the IP camera, upload only), smart speaker music streaming about 0.4 Mbps (320 kbps high quality audio), thermostat under 0.1 Mbps (small status messages), robot vacuum about 1 Mbps (map and app video, planning assumption). Bands are the typical radio support of the class, many cameras, doorbells, thermostats, vacuums and IoT devices are 2.4 GHz only.",
   "devices": {
    "camera": {
     "label": "IP camera",
@@ -1941,6 +1941,35 @@
    "iot": {
     "label": "IoT device",
     "demand_mbps": 0.5,
+    "bands": [
+     "2.4"
+    ]
+   },
+   "doorbell": {
+    "label": "Video doorbell",
+    "demand_mbps": 3.0,
+    "bands": [
+     "2.4"
+    ]
+   },
+   "speaker": {
+    "label": "Smart speaker",
+    "demand_mbps": 0.4,
+    "bands": [
+     "2.4",
+     "5"
+    ]
+   },
+   "thermostat": {
+    "label": "Smart thermostat",
+    "demand_mbps": 0.1,
+    "bands": [
+     "2.4"
+    ]
+   },
+   "robot_vacuum": {
+    "label": "Robot vacuum",
+    "demand_mbps": 1.0,
     "bands": [
      "2.4"
     ]
@@ -2235,5 +2264,18 @@
    "interference_min_db": 1.0,
    "label_zone_m": 3.0
   }
+ },
+ "signal_waves": {
+  "label": "ILLUSTRATION: animated rings drawn from each access point, dimmed after every wall using the engine wall loss. A picture of how walls absorb signal, not a measured wavefront",
+  "source": "Each ring is sampled along rays from the access point. A ray accumulates the loss of the walls and openings it crosses with the engine wallLoss (the same value the heat map uses at that radius) and the ring brightness falls linearly to zero at fade_loss_db of accumulated loss. fade_loss_db 30 dB is a drawing choice: a ray that has lost 30 dB is shown as almost invisible. Speed, ring spacing and ray counts are presentation settings chosen for a readable animation on a Raspberry Pi 4, not physical values (radio waves move at the speed of light). The ray count follows the page quality setting.",
+  "rays_by_quality": {"low": 24, "medium": 48, "high": 96},
+  "max_rings": 4,
+  "ring_spacing_m": 3.0,
+  "speed_m_per_s": 4.0,
+  "max_radius_m": 24.0,
+  "sample_step_m": 0.5,
+  "fade_loss_db": 30.0,
+  "distance_fade_m": 24.0,
+  "frame_budget_ms": 8.0
  }
 }

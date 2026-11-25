@@ -24,6 +24,27 @@
 </div>
 <div id="plannerNotice" class="banner" role="status" hidden></div>
 <main class="planner">
+<section class="card glass quick" id="quick" aria-labelledby="qTitle">
+  <h2 id="qTitle">Quick start: check my WiFi</h2>
+  <p class="muted hint">Two steps. First pick a home or office to try, or keep the plan you drew. Then press the button. You get a grade, what is wrong, and the best spot for your router. These are model estimates, not measurements.</p>
+  <div class="q-steps">
+    <div class="q-step"><label for="quickTemplate"><strong>Step 1.</strong> Choose a starting plan</label>
+      <select id="quickTemplate" aria-describedby="quickTemplateNote"></select>
+      <span id="quickTemplateNote" class="muted hint">Uses the plan on screen.</span></div>
+    <div class="q-step"><span><strong>Step 2.</strong> Check it</span>
+      <button id="quickAnalyse" type="button">Analyse my WiFi</button></div>
+  </div>
+  <progress id="quickProgress" max="1" value="0" hidden aria-label="Analysis progress"></progress>
+  <p id="quickStatus" class="muted" role="status" aria-live="polite"></p>
+  <div id="quickResult" tabindex="-1"></div>
+  <form id="quickAskForm" class="q-ask">
+    <label for="quickAsk">Ask a question about a room</label>
+    <input id="quickAsk" type="text" maxlength="160" autocomplete="off" placeholder="Why is my bedroom WiFi slow?">
+    <button type="submit">Ask</button>
+  </form>
+  <div id="quickChips" class="q-chips" aria-label="Suggested questions"></div>
+  <div id="quickAnswer" aria-live="polite"></div>
+</section>
 <div class="planner-work">
   <section class="card p-tools" aria-labelledby="pTools">
     <h2 id="pTools">Tools</h2>
@@ -48,6 +69,10 @@
       <label class="inline">Object kind <select id="objectKind" aria-label="Kind of object"></select></label>
       <label class="inline">Source kind <select id="sourceKind" aria-label="Kind of interference source"></select></label>
     </div>
+    <div class="tool-row">
+      <button id="findSpotBtn" type="button" title="Search the plan for the best position of the selected access point (or the first one)">Find best spot for this router</button>
+    </div>
+    <p id="findSpotOut" class="muted hint" role="status" aria-live="polite"></p>
     <div class="tool-row">
       <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
       <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
@@ -121,6 +146,7 @@
         <label class="check"><input id="tgWalls" type="checkbox" checked> Walls</label>
         <label class="check"><input id="tgLabels" type="checkbox" checked> Labels</label>
         <label class="check"><input id="tgImage" type="checkbox" checked> Image</label>
+        <label class="check" title="Animated rings from each access point, dimmed after every wall. An illustration, not a measurement"><input id="tgWaves" type="checkbox"> Signal waves</label>
       </div>
       <h3 id="legendTitle">Signal quality</h3>
       <ul id="legend" class="legend-list"></ul>
@@ -194,6 +220,7 @@
 <script src="/static/planner-panels.js"></script>
 <script src="/static/planner-export.js"></script>
 <script src="/static/planner-modes.js"></script>
+<script src="/static/planner-quick.js"></script>
 <script src="/static/planner-3d.js"></script>
 <script src="/static/planner-learn.js"></script>
 <script src="/static/planner.js"></script>

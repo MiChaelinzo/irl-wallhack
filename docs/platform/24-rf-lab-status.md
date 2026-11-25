@@ -47,6 +47,7 @@ Verification labels follow the README (VERIFIED, PARTIALLY VERIFIED, UNVERIFIED)
 | Item | Status | What exists (files) | What is missing or unverified |
 |---|---|---|---|
 | Wall thickness, objects, four more presets, aurora palette | Complete | `thickness_cm` rule in `wallhack/rfmodel.py` and `wallhack/static/rf-engine.js`, `wall_thickness` and `objects` in `wallhack/static/rf-config.json`, Object tool in `wallhack/static/planner-editor.js`, presets in `tools/make_scenarios.py`, palette in `wallhack/static/planner-heat.js`, tests `tests/test_rf_parity.py`, `tests/test_rfmodel.py`, `tests/test_scenarios.py` | Reference thicknesses and the linear rule are planning assumptions, not measurements. Objects ignore height and diffraction. |
+| Quick start, architect tabs, find best spot, Smart Home check, signal waves | Complete (UI), layout PARTIALLY VERIFIED | `wallhack/static/planner-quick.js`, `planner.html`, `style.css`, `signal_waves` and `client_devices` in `wallhack/static/rf-config.json`, `tests/test_planner_quick.py`, `tools/planner_smoke.py`, `tools/a11y_check.py` | LLM rephrase UNVERIFIED (no LLM in the sandbox); camera and smart-device interference sources not added (no sourced values); wifi_assessment.pdf is a later feature |
 
 ## Reading guide
 

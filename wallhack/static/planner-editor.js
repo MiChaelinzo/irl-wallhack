@@ -251,6 +251,7 @@
       var r = stage.getBoundingClientRect(), dpr = Math.min(2, root.devicePixelRatio || 1);
       view.w = Math.max(1, Math.round(r.width)); view.h = Math.max(1, Math.round(r.height)); view.dpr = dpr;
       [o.base, o.edit].forEach(function (c) { c.width = Math.round(view.w * dpr); c.height = Math.round(view.h * dpr); });
+      if (st.autoFit && self.fit) { self.fit(); }   // the plan still fills the stage after the layout changes size
       self.invalidate();
     }
 
@@ -451,16 +452,18 @@
       var f = floor(), pad = 28;
       view.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min((view.w - 2 * pad) / f.width_m, (view.h - 2 * pad) / f.depth_m)));
       view.ox = (view.w - f.width_m * view.scale) / 2; view.oy = (view.h - f.depth_m * view.scale) / 2;
+      st.autoFit = true;   // stays true until the user zooms or pans, so a later stage resize refits the plan
       self.invalidate();
     };
     self.zoomAt = function (factor, cx, cy) {
       var next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, view.scale * factor)), k = next / view.scale;
       view.ox = cx - (cx - view.ox) * k; view.oy = cy - (cy - view.oy) * k; view.scale = next;
+      st.autoFit = false;
       self.invalidate();
     };
-    self.panBy = function (dx, dy) { view.ox += dx; view.oy += dy; self.invalidate(); };
+    self.panBy = function (dx, dy) { view.ox += dx; view.oy += dy; st.autoFit = false; self.invalidate(); };
     /** Centre the viewport on a world point (mini-map navigation). */
-    self.centerOn = function (x, y) { view.ox = view.w / 2 - x * view.scale; view.oy = view.h / 2 - y * view.scale; self.invalidate(); };
+    self.centerOn = function (x, y) { view.ox = view.w / 2 - x * view.scale; view.oy = view.h / 2 - y * view.scale; st.autoFit = false; self.invalidate(); };
 
     // ---------------------------------------------------------------- settings
     self.setTool = function (t) {
@@ -879,7 +882,7 @@
         var ids = Object.keys(st.pointers), a = st.pointers[ids[0]], b = st.pointers[ids[1]], p = st.pinch;
         var next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, p.scale * (Math.hypot(b.x - a.x, b.y - a.y) / p.d))), k = next / p.scale;
         var cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-        view.scale = next; view.ox = cx - (p.cx - p.ox) * k; view.oy = cy - (p.cy - p.oy) * k;
+        view.scale = next; st.autoFit = false; view.ox = cx - (p.cx - p.ox) * k; view.oy = cy - (p.cy - p.oy) * k;
         self.invalidate(); return;
       }
       var raw = toWorld(e.clientX, e.clientY), f = floor(), d = st.drag;

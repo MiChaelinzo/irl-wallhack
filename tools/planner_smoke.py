@@ -50,6 +50,7 @@ def wait_idle(page):
 
 
 def screen_of(page, x, y):
+    page.evaluate("() => document.getElementById('cEdit').scrollIntoView({block: 'center', behavior: 'instant'})")   # the Quick start card sits above the stage
     return page.evaluate("([x, y]) => { const v = window.PlannerApp.editor.view, r = document.getElementById('cEdit').getBoundingClientRect(); return [r.left + v.ox + x * v.scale, r.top + v.oy + y * v.scale]; }", [x, y])
 
 
@@ -142,6 +143,7 @@ def run(page, base, problems, args):
     run_twin_lab_features(page, problems, args)
     run_view3d_features(page, problems, args)
     run_learn_features(page, problems, args)
+    run_quick_features(page, problems, args)
     if not args.no_screenshot:
         page.screenshot(path=str(Path(tempfile.gettempdir()) / "wallhack-smoke-planner.png"))   # docs/screenshot-planner.png is owned by screenshot.py
 
@@ -741,6 +743,107 @@ def run_learn_features(page, problems, args):
         page.locator("#panel-export").screenshot(path=str(docs / ("screenshot-planner-report%s.png" % suffix)))
     page.set_viewport_size(VIEWPORT)
     print("learn feature checks done")
+
+
+QUICK_TIME_LIMIT_S = 20.0   # template to result; measured times are well below (see the printed figure), this only catches a hang
+
+
+def run_quick_features(page, problems, args):
+    """Quick start: template -> Analyse -> grade, rooms, diagnosis and best spot; ask a question; apply the best spot;
+    open every Wi-Fi architect tab; signal waves toggle; mobile width has no horizontal scroll."""
+    page.on("dialog", lambda d: d.accept())
+    page.wait_for_function("() => window.PlannerApp.quick && window.PlannerApp.quick.templatesReady", timeout=15000)
+    page.select_option("#quickTemplate", "small_apartment")
+    start = time.time()
+    page.click("#quickAnalyse")
+    page.wait_for_selector("#quickResult[data-ready=true]", timeout=int(QUICK_TIME_LIMIT_S * 1000))
+    elapsed = time.time() - start
+    in_page = page.evaluate("() => Number(document.getElementById('quickResult').dataset.ms)")
+    print("quick start: template to result %.2f s (in page %d ms)" % (elapsed, in_page))
+    if elapsed > QUICK_TIME_LIMIT_S:
+        problems.append("quick start took %.1f s" % elapsed)
+    text = page.inner_text("#quickResult")
+    for word in ("Overall", "Coverage", "Dead zones", "Gaming", "Streaming", "Video calls", "Your rooms, for gaming", "Best router spot", "Bedroom", "Packet loss risk"):
+        if word.lower() not in text.lower() and word.lower() not in page.inner_html("#quickResult").lower():
+            problems.append("quick result lacks %r" % word)
+    if not page.locator("#quickResult .q-grade[aria-label^='Overall grade']").count():
+        problems.append("quick result has no grade with a text equivalent")
+    line = page.inner_text("#quickBestLine")
+    if "points coverage" not in line and "already at the best spot" not in line:
+        problems.append("best spot line unexpected: %r" % line)
+    # ask
+    page.fill("#quickAsk", "Why is my bedroom WiFi slow?")
+    page.click("#quickAskForm button[type=submit]")
+    page.wait_for_function("() => /WiFi in Bedroom/.test(document.getElementById('quickAnswer').innerText)", timeout=15000)
+    if "Main cause" not in page.inner_text("#quickAnswer"):
+        problems.append("the answer names no main cause")
+    if not page.locator("#quickChips .q-chip").count():
+        problems.append("no suggested question chips")
+    # show and apply the best spot (undoable)
+    page.click("#quickShow")
+    if page.evaluate("() => !window.PlannerApp.panels.state.ghost"):
+        problems.append("Show did not draw the ghost marker")
+    if page.locator("#quickApply:not([disabled])").count():
+        before = page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))")
+        page.click("#quickApply")
+        after = page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))")
+        if before == after:
+            problems.append("Apply did not move the router")
+        page.evaluate("() => window.PlannerApp.store.undo()")
+        if page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))") != before:
+            problems.append("undo did not restore the router")
+    wait_idle(page)
+    # find best spot with the AP tool button
+    page.click("#findSpotBtn")
+    page.wait_for_selector("#findSpotLine", timeout=30000)
+    # tabs
+    tab(page, "rooms")
+    if "Smart Home check" not in page.inner_text("#panel-rooms") or not page.locator("#panel-rooms .room-card").count():
+        problems.append("Rooms and gaming tab is incomplete")
+    tab(page, "scorecard")
+    if "How the grade is built" not in page.inner_text("#panel-scorecard") + page.inner_html("#panel-scorecard"):
+        problems.append("Score card tab is incomplete")
+    tab(page, "assistant")
+    page.fill("#asstInput", "Why is my bedroom WiFi slow?"); page.click("#asstForm button[type=submit]")
+    page.wait_for_function("() => /WiFi in Bedroom/.test(document.getElementById('asstAnswer').innerText)", timeout=15000)
+    has_explain = page.locator("#asstExplain").count() > 0
+    if args.demo == has_explain:
+        problems.append("the explain button must be hidden in the demo and shown live")
+    tab(page, "mesh")
+    page.click("#meshRun"); page.wait_for_selector("#panel-mesh table", timeout=60000)
+    if "Whole-home mesh" not in page.inner_text("#panel-mesh"):
+        problems.append("mesh tab lacks the whole-home topology")
+    tab(page, "timemachine")
+    page.click("#tmRun"); page.wait_for_selector("#tmOut table", timeout=60000)
+    if page.locator("#tmOut .tm-canvas").count() < 3 or "Change against A" not in page.inner_text("#tmOut"):
+        problems.append("Time Machine did not compare three versions")
+    page.select_option("#tmSlot3", "preset:high_end_router"); page.click("#tmRun")
+    page.wait_for_function("() => document.querySelectorAll('#tmOut .tm-canvas').length === 4", timeout=60000)
+    tab(page, "scenarios")   # the old two-scenario compare is still there
+    if not page.locator("#cmpRun, #cmpOut, #panel-scenarios button").count():
+        problems.append("scenarios tab lost its compare controls")
+    # signal waves
+    page.emulate_media(reduced_motion="no-preference")
+    page.check("#tgWaves"); page.wait_for_timeout(300)
+    if not page.evaluate("() => window.PlannerApp.quick.waves.on && window.PlannerApp.quick.waves.raf !== 0"):
+        problems.append("signal waves did not start animating")
+    page.uncheck("#tgWaves"); page.wait_for_timeout(100)
+    if page.evaluate("() => window.PlannerApp.quick.waves.raf !== 0"):
+        problems.append("signal waves kept animating after being switched off")
+    page.emulate_media(reduced_motion="reduce")
+    page.check("#tgWaves"); page.wait_for_timeout(200)
+    if page.evaluate("() => window.PlannerApp.quick.waves.raf !== 0"):
+        problems.append("signal waves animate although reduced motion is on")
+    page.uncheck("#tgWaves"); page.emulate_media(reduced_motion="no-preference")
+    # mobile width: no horizontal scroll, quick start usable
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(300)
+    if page.evaluate("() => document.documentElement.scrollWidth > window.innerWidth + 1"):
+        problems.append("horizontal scroll at 390 px width")
+    if not page.locator("#quickAnalyse").is_visible():
+        problems.append("Analyse button not visible at 390 px")
+    page.set_viewport_size(VIEWPORT)
+    print("quick start checks done")
 
 
 def main() -> int:
