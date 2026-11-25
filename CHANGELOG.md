@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### WiFi architect: insight library
+- feat: `wallhack/static/rf-insight.js` (pure, deterministic, node tested): per-room analysis, Gamer Mode (ping ranges, loss risk, stability grade), Coverage Score Card, Predictive WiFi Assistant (keyword parser, dB ranked causes, measured fixes), router placement report, mesh topologies with a backhaul assumption and the WiFi Time Machine. Rules and thresholds are documented in `docs/rf-planner.md` and live in the new `insight` block of `rf-config.json` (schema updated, `source` string included). `rf-optimizer.js` exports `candidatePositions`.
+- Verification: VERIFIED by `tests/test_rf_insight.py` (node driven) and `tests/test_rf_config_schema.py`. UI wiring is a later feature. UNVERIFIED: real model output for the assistant rephrase (mocked only); ping, grade and mesh backhaul numbers are planning assumptions, not measurements.
+
 ### WiFi architect: thickness, objects, templates, aurora palette
 - feat: optional wall `thickness_cm` with a per-material reference thickness (`wall_thickness` in `rf-config.json`, schema updated). Loss is `attenuation_db x min(thickness / reference, max_factor)`; walls without thickness are unchanged and the legacy golden fixture passes untouched. Mirrored in `rf-engine.js`, validated in `twin.py` and `planner-state.js`, shown in explain text, parity tested (`tests/test_rf_parity.py`, `tests/test_rfmodel.py`).
 - feat: Object tool (B): furniture and metal obstacles drawn as four wall segments with one `object` id (sofa, fridge, cabinet, mirror, bookshelf), undoable as one step, deleted as a group. They reuse the wall loss path (`docs/rf-planner.md`).

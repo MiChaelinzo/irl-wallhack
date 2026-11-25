@@ -101,6 +101,24 @@ def test_schema_rejects_broken_copies():
     assert any("channels" in e for e in validate(broken, SCHEMA, SCHEMA))
 
 
+def test_insight_block_is_documented_validated_and_consistent():
+    ic = CONFIG["insight"]
+    assert "ESTIMATE" in ic["label"] and "no standard formula" in ic["source"]
+    assert sum(ic["gaming"]["weights"].values()) == pytest.approx(1.0)
+    assert sum(ic["score_card"]["weights"].values()) == pytest.approx(1.0)
+    for grades in (ic["gaming"]["grades"], ic["score_card"]["grades"], ic["rating_words"]):
+        mins = [g["min_score"] for g in grades]
+        assert mins == sorted(mins, reverse=True) and mins[-1] == 0, "thresholds must descend to 0 so every score has a grade"
+    assert ic["gaming"]["range_low_percentile"] < ic["gaming"]["range_high_percentile"]
+    assert ic["time_machine"]["max_items"] <= 4 and {p["profile_id"] for p in ic["time_machine"]["presets"]} <= set(CONFIG["ap_profiles"]["profiles"])
+    broken = copy.deepcopy(CONFIG)
+    del broken["insight"]["gaming"]["weights"]["ping"]
+    assert any("ping" in e for e in validate(broken, SCHEMA, SCHEMA))
+    broken = copy.deepcopy(CONFIG)
+    broken["insight"]["mesh"]["max_nodes"] = 0
+    assert any("max_nodes" in e for e in validate(broken, SCHEMA, SCHEMA))
+
+
 def test_all_ten_material_families_present():
     assert TEN_FAMILIES <= set(CONFIG["materials"])
 
