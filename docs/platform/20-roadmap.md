@@ -9,7 +9,7 @@ Engine profile (1675 to 684.6 ms on the 100k point floor), AP panel SINR and MLO
 ## Now (small, measurable, unblock honesty)
 
 1. Run `tools/planner_smoke.py` and `tools/a11y_check.py` in CI (needs Chromium in the workflow).
-2. Add SINR and standard columns to CSV and PDF.
+2. (CSV SINR columns done in V2, `planner-export.js`. SINR in the PDF is still open.)
 3. Real Vercel deployment and record the result.
 4. Heat map data table alternative for screen readers, then a screen reader pass.
 5. Widen JSDoc type checking.
@@ -20,8 +20,8 @@ Engine profile (1675 to 684.6 ms on the 100k point floor), AP panel SINR and MLO
 1. Survey import (CSV of position and dBm) and a model fit with a reported error. This is the single most valuable item: every accuracy statement stays UNVERIFIED without it.
 2. Azimuth search and joint power and channel optimisation.
 3. Wireless consultant chat grounded in engine numbers.
-4. Before and after comparison report.
-5. Reflection, antenna and mesh lessons.
+4. (Before and after in the PDF done in V2 when a what-if was run in the Timeline and what-if tab.)
+5. (Reflection, beamforming and 6 GHz lessons done in V2, `learn-content.json`.)
 6. Spectrum scan import for the Spectrum tab.
 
 ## Later (needs new foundations)
@@ -30,6 +30,16 @@ Engine profile (1675 to 684.6 ms on the 100k point floor), AP panel SINR and MLO
 2. True 3D propagation (slabs, stairwells). Only then reconsider octrees, Three.js and GPU compute ([09-rendering-optimization.md](09-rendering-optimization.md), [adr-frontend-stack.md](adr-frontend-stack.md)).
 3. AR overlay, needs a TLS story first (DESIGN ONLY).
 4. Docker image if a deployment needs it (DESIGN ONLY).
+
+## Future work after V2 (none of it built)
+
+| Item | Why it is not done | Needed first |
+|---|---|---|
+| DXF and IFC import | Floor plans come from images and the designer today | A parser, a unit and layer mapping, and test files from real buildings |
+| Exact ray tracing | The engine has basic, enhanced (one reflection plus diffraction) and multipath modes, all approximations | A geometry model with material per face and a validation set |
+| Survey calibration | No measured data in the repository, so every accuracy claim is UNVERIFIED | Survey CSV import and a model fit that reports its error |
+| Room creation tool | Rooms are four walls plus a label drawn by hand | A rectangle tool in `planner-editor.js` with undo and tests |
+| AR overlay | Needs a TLS story for camera access | See [17-ar-computer-vision.md](17-ar-computer-vision.md), DESIGN ONLY |
 
 ## Campuses and smart cities (DESIGN ONLY)
 

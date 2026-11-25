@@ -144,9 +144,56 @@ def coffee_shop():
                     "Interference sources raise the noise floor and lower SINR even when RSSI looks fine.")
 
 
+def hospital_ward():
+    f = Floor("ward", "Hospital ward", 0, 40.0, 20.0, "reinforced_concrete", "drywall", 3.0)
+    f.wall(0, 8.0, 40.0, 8.0, "drywall", door=3.0).wall(0, 12.0, 40.0, 12.0, "drywall", door=34.0)
+    for i in range(1, 5):
+        f.wall(8.0 * i, 0, 8.0 * i, 8.0, "drywall", door=3.5)
+        f.wall(8.0 * i, 12.0, 8.0 * i, 20.0, "drywall", door=3.5)
+    f.wall(32.0, 12.0, 32.0, 20.0, "steel", door=3.5, kind="interior")
+    for i in range(5):
+        f.room("n%d" % i, "Ward %d" % (i + 1), 8 * i, 0, 8, 8)
+    for i in range(4):
+        f.room("s%d" % i, "Ward %d" % (i + 6), 8 * i, 12, 8, 8)
+    f.room("imaging", "Imaging suite", 32, 12, 8, 8).room("corridor", "Corridor", 0, 8, 40, 4)
+    f.ap("ap-west", 7.0, 10.0, 18.0, band="5", channel=36).ap("ap-mid", 20.0, 10.0, 18.0, band="5", channel=36)
+    f.ap("ap-east", 33.0, 10.0, 18.0, band="5", channel=36)
+    return scenario("hospital_ward", "Hospital ward", "Drywall wards along a corridor, a steel lined imaging suite and three corridor APs that all use channel 36.",
+                    [f], [{"id": "staff-microwave", "kind": "microwave", "floor": "ward", "x": 4.0, "y": 10.5}],
+                    "Medical devices and clinical apps need dependable roaming. Walk a path down the corridor in Timeline and check the handoffs, then run the channel plan.")
+
+
+def smart_home():
+    g = Floor("ground", "Ground floor", 0, 12.0, 9.0, "brick", "drywall", 2.6)
+    g.wall(6.0, 0, 6.0, 9.0, "drywall", door=4.0).wall(0, 5.0, 6.0, 5.0, "drywall", door=2.0).window(0, 3.0).window(2, 7.0)
+    g.room("living", "Living room", 6, 0, 6, 9).room("kitchen", "Kitchen", 0, 0, 6, 5).room("hall", "Hall", 0, 5, 6, 4)
+    g.ap("router", 2.0, 7.0, 17.0, band="5")
+    g.f["clients"] = [{"id": "tv", "device": "tv", "x": 10.0, "y": 4.0}, {"id": "cam", "device": "camera", "x": 11.0, "y": 8.0},
+                      {"id": "phone", "device": "phone", "x": 3.0, "y": 2.0}, {"id": "plug", "device": "iot", "x": 9.0, "y": 1.0}]
+    u = Floor("upper", "Upper floor", 1, 12.0, 9.0, "brick", "drywall", 2.6)
+    u.wall(4.0, 0, 4.0, 9.0, "drywall", door=4.0).wall(8.0, 0, 8.0, 9.0, "drywall", door=4.0)
+    u.room("bed1", "Bedroom 1", 0, 0, 4, 9).room("bed2", "Bedroom 2", 4, 0, 4, 9).room("study", "Study", 8, 0, 4, 9)
+    u.f["clients"] = [{"id": "tablet", "device": "phone", "x": 10.0, "y": 4.0}, {"id": "console", "device": "console", "x": 6.0, "y": 6.0}]
+    return scenario("smart_home", "Smart home", "A router downstairs, clients on both floors (TV, camera, console, laptop) and no AP upstairs.",
+                    [g, u], None, "Use Recommendations to see whether a mesh node upstairs beats moving the router.")
+
+
+def apartment_neighbours():
+    f = Floor("flat", "Flat 3B", 0, 10.0, 7.0, "concrete", "drywall", 2.5)
+    f.wall(5.0, 0, 5.0, 7.0, "drywall", door=3.0).window(1, 2.0)
+    f.room("living", "Living room", 0, 0, 5, 7).room("bedroom", "Bedroom", 5, 0, 5, 7)
+    f.ap("router", 1.0, 6.0, 17.0, band="2.4", channel=6)
+    neighbours = [{"id": "flat-3a", "kind": "neighbour_wifi", "floor": "flat", "x": 0.2, "y": 3.0, "band": "2.4", "channel": 6},
+                  {"id": "flat-3c", "kind": "neighbour_wifi", "floor": "flat", "x": 9.8, "y": 3.0, "band": "2.4", "channel": 6},
+                  {"id": "flat-2b", "kind": "neighbour_wifi", "floor": "flat", "x": 5.0, "y": 0.2, "band": "2.4", "channel": 11}]
+    return scenario("apartment_neighbours", "Apartment with neighbours", "A flat between two others, with concrete party walls and three neighbour networks, two on the router's channel 6.",
+                    [f], neighbours, "Shared concrete walls shield the signal but neighbours still raise the noise on channel 6. Run the SINR channel plan and compare.")
+
+
 def build() -> dict:
     return {"schema_version": 1, "label": LABEL,
-            "scenarios": [small_apartment(), large_home(), office_floor(), school_building(), warehouse(), hotel_floor(), coffee_shop()]}
+            "scenarios": [small_apartment(), large_home(), office_floor(), school_building(), warehouse(), hotel_floor(), coffee_shop(),
+                          hospital_ward(), smart_home(), apartment_neighbours()]}
 
 
 def render() -> str:

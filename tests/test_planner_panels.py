@@ -241,3 +241,24 @@ def test_spectrum_view_lists_aps_and_sources_with_their_frequency_span():
     """)
     assert r["ids"] == ["a1", "a2", "mw"] and r["kinds"] == ["ap", "ap", "microwave"] and r["mwSpan"] == [2425, 2475]
     assert r["sugg"][0] == 11 and r["lo"] <= 2402
+
+
+def test_csv_sinr_rows_and_pdf_lab_sections():
+    r = run_js("""
+      const an = {cell_m: 1, coverage_pct: 90, avg_rssi_dbm: -60, weak_area_m2: 1, dead_zone_area_m2: 0, dead_zones: [], overlap: {pct: 1}, roaming: {pct: 2},
+        mean_throughput_mbps: 100, total_client_capacity: 9, quality_pct: {good: 100}, aps: [],
+        sinr: {aps: [{id: 'ap1', standard: 'wifi6', mean_sinr_db: 21.5, mean_throughput_mbps: 300, served_cells: 40, interferers: ['ap2']}]}};
+      const withSinr = X.analyticsRows(an, {project: 'P', floor: 'F'}).map(r => r.join('|')), plain = X.analyticsRows(Object.assign({}, an, {sinr: undefined}), {project: 'P', floor: 'F'}).map(r => r.join('|'));
+      const none = X.labReportTables(null, null);
+      const recs = {score: 80, actions: [{rank: 1, text: 'Move ap1', before: {score: 80}, after: {score: 85}, confidence: 0.9}]};
+      const wi = {before: {score: 80, coverage_pct: 90, mean_throughput_mbps: 100}, after: {score: 85, coverage_pct: 95, mean_throughput_mbps: 120}, delta: {score: 5, coverage_pct: 5, mean_throughput_mbps: 20}};
+      const t = X.labReportTables(recs, wi);
+      const bytes = X.buildReport({title: 'R', project: 'P', floor: 'F', date: '2025-01-01', summary: [['Metric', 'Value']], aps: [['AP']], issues: [], recommendations: [],
+        network_health: t.health, device_recommendations: t.devices, what_if: t.what_if});
+      out({withSinr, plain, none, t, text: Array.from(bytes).map(c => String.fromCharCode(c)).join('')});""")
+    joined = "\n".join(r["withSinr"])
+    assert "ap1|wifi6|21.5|300|40|ap2" in joined and "Mean SINR (ESTIMATE, dB)" in joined
+    assert "SINR" not in "\n".join(r["plain"])
+    assert r["none"] == {"health": [], "devices": [], "what_if": []}
+    assert r["t"]["health"][1] == ["Coverage score", "80 out of 100"] and r["t"]["what_if"][1] == ["Coverage score", 80, 85, 5]
+    assert "Network health" in r["text"] and "Device recommendations" in r["text"] and "Before and after \\(what-if" in r["text"]

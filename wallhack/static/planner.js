@@ -30,9 +30,15 @@
   function rebuildEnv() { app.env = RF.makeEnv(app.config, app.store.project.materials); }
   function materialTable() {
     var out = {}, cfg = app.config.materials, custom = app.store.project.materials || {};
-    Object.keys(cfg).forEach(function (k) { out[k] = { label: cfg[k].label || k }; });
-    Object.keys(custom).forEach(function (k) { out[k] = { label: custom[k].label || k }; });
+    Object.keys(cfg).forEach(function (k) { out[k] = { label: cfg[k].label || k, info: lossText(cfg[k]) }; });
+    Object.keys(custom).forEach(function (k) { out[k] = { label: custom[k].label || k, info: lossText(custom[k]) }; });
     return out;
+  }
+  /** Estimated losses of a material, from the derived fields of the engine (MODEL ESTIMATE, typical values). */
+  function lossText(material) {
+    var f = RF.materialFields(app.config, material, app.settings && app.settings.band || "2.4");
+    return "Estimated loss " + f.attenuation24GHz + " / " + f.attenuation5GHz + " / " + f.attenuation6GHz + " dB at 2.4 / 5 / 6 GHz, passes " +
+      (100 * f.penetrationRate).toFixed(2) + "% and reflects " + (100 * f.reflectionRate).toFixed(1) + "% of the power at the selected band (MODEL ESTIMATE)";
   }
   function validateOpts() {
     var o = { config: app.config, materialIds: Object.keys(app.config.materials), bands: Object.keys(app.config.bands), modes: RF.modeIds() };
@@ -166,6 +172,7 @@
         ev.ops.every(function (o) { return !("tx_dbm" in o.after || "band" in o.after || "channel" in o.after || "name" in o.after ||
           "standard" in o.after || "width_mhz" in o.after || "pattern" in o.after || "spatial_streams" in o.after || "mlo_bands" in o.after); });
       if (!moveOnly) { fillApList(); }
+      if (kinds.some(function (k) { return k.indexOf("client.") === 0; })) { fillClientList(); }
       if (kinds.some(function (k) { return k === "floor.set"; })) { syncFloorPanel(); }
       if (!kinds.every(function (k) { return k.indexOf("label.") === 0 || k.indexOf("annotation.") === 0 || k.indexOf("device.") === 0; }) && !kinds.every(function (k) { return k === "floor.set" && !("width_m" in ev.ops[0].after || "depth_m" in ev.ops[0].after); })) { requestCompute(); }
       syncSelection();
@@ -218,7 +225,7 @@
     $("imageOpacity").value = f.bg_opacity === undefined ? S.DEFAULT_BG_OPACITY : f.bg_opacity;
     $("imageOpacity").disabled = !f.background; $("imageClear").disabled = !f.background;
   }
-  function syncPanels() { syncFloorPanel(); fillApList(); syncSelection(); updateHistoryButtons(); app.editor.buildPalette($("palette")); }
+  function syncPanels() { syncFloorPanel(); fillApList(); fillClientList(); syncSelection(); updateHistoryButtons(); app.editor.buildPalette($("palette")); }
 
   function fillApList() {
     var list = $("apList"), f = currentFloor(), st = app.store;
@@ -289,7 +296,25 @@
       streams.disabled = !spec;
       streams.value = ap.spatial_streams === undefined ? "" : String(ap.spatial_streams);
       streams.addEventListener("change", function () { apSet({ spatial_streams: streams.value ? parseInt(streams.value, 10) : undefined }, "Change spatial streams"); });
-      [["TX dBm", tx], ["Band", bandSelect], ["Channel", chan], ["Standard", std], ["Width", width], ["Streams", streams], ["Antenna", pattern], ["Azimuth", azimuth]].forEach(function (p) {
+      // Generic class profile (consumer, gaming, mesh, enterprise): sets band, power, standard, streams, antenna and beamforming
+      var profiles = app.config.ap_profiles.profiles, profileSel = document.createElement("select");
+      profileSel.title = "Typical generic class of equipment, not a product. Sets power within the ETSI EIRP limit, standard, streams, antenna gain and beamforming.";
+      profileSel.appendChild(option("", "none"));
+      Object.keys(profiles).forEach(function (id) { profileSel.appendChild(option(id, profiles[id].label)); });
+      profileSel.value = ap.profile || "";
+      profileSel.addEventListener("change", function () {
+        if (!profileSel.value) { apSet({ profile: undefined }, "Clear class profile"); return; }
+        var pr = profiles[profileSel.value], keepBand = ap.band && pr.bands.indexOf(ap.band) >= 0 ? ap.band : undefined;
+        var props = RF.applyApProfile(app.config, ap, profileSel.value, keepBand);
+        ["id", "x", "y", "name"].forEach(function (k) { delete props[k]; });
+        ["channel", "width_mhz", "mlo_bands", "azimuth_deg", "beamwidth_deg", "front_to_back_db"].forEach(function (k) { props[k] = undefined; });
+        apSet(props, "Apply class profile");
+      });
+      var bf = document.createElement("input");
+      bf.type = "checkbox"; bf.checked = !!ap.beamforming; bf.disabled = !ap.standard;
+      bf.setAttribute("aria-label", "Beamforming for " + (ap.name || ap.id) + " (CAPACITY MODEL, needs a standard)");
+      bf.addEventListener("change", function () { apSet({ beamforming: bf.checked ? true : undefined }, "Change beamforming"); });
+      [["TX dBm", tx], ["Class", profileSel], ["Beamforming", bf], ["Band", bandSelect], ["Channel", chan], ["Standard", std], ["Width", width], ["Streams", streams], ["Antenna", pattern], ["Azimuth", azimuth]].forEach(function (p) {
         var l = document.createElement("label"); l.appendChild(document.createTextNode(p[0])); l.appendChild(p[1]); fields.appendChild(l);
       });
       // Multi-Link Operation: extra bands the AP aggregates, only for the standards that have it
@@ -316,6 +341,25 @@
     if (!f.aps.length) { var li0 = document.createElement("li"); li0.textContent = "No access points on this floor. Use the AP tool."; list.appendChild(li0); }
   }
 
+  /** Smart Home client list of the floor with the latest CAPACITY MODEL results. */
+  function fillClientList() {
+    var list = $("clientList"), f = currentFloor(), st = app.store, devices = app.config.client_devices.devices;
+    var an = app.panels && app.panels.state.analysis, section = an && an.analytics.clients;
+    list.textContent = "";
+    (f.clients || []).forEach(function (c) {
+      var li = document.createElement("li"), name = document.createElement("span"), del = document.createElement("button"), res = document.createElement("p");
+      var e = section && section.clients.filter(function (x) { return x.id === c.id; })[0];
+      name.textContent = c.id + ": " + devices[c.device].label + " (" + devices[c.device].demand_mbps + " Mbps)";
+      del.type = "button"; del.textContent = "Delete"; del.setAttribute("aria-label", "Delete client " + c.id);
+      del.addEventListener("click", function () { st.exec({ label: "Delete client", ops: [S.removeOp("client", st.project, f.id, c.id)] }); });
+      res.className = "muted hint";
+      res.textContent = !e ? "No result yet." : e.status !== "ok" ? "CAPACITY MODEL: not served (" + e.status.replace("_", " ") + ")." :
+        "CAPACITY MODEL: " + e.ap + ", link " + e.link_mbps.toFixed(1) + " Mbps, gets " + e.delivered_mbps.toFixed(1) + " Mbps" + (e.satisfied ? "." : ", the access point is saturated.");
+      li.appendChild(name); li.appendChild(del); li.appendChild(res); list.appendChild(li);
+    });
+    if (!(f.clients || []).length) { var li0 = document.createElement("li"); li0.textContent = "No clients on this floor."; list.appendChild(li0); }
+  }
+
   /** SINR, reliability and MLO figures of one AP from the latest analysis (ESTIMATES), or a hint to set a standard. */
   function apResultText(apId) {
     var an = app.panels && app.panels.state.analysis;
@@ -332,6 +376,7 @@
   /** Refresh only the result lines of the access point list (after an analysis), without rebuilding the controls. */
   app.refreshApResults = function () {
     Array.prototype.forEach.call(document.querySelectorAll("[data-ap-result]"), function (p) { p.textContent = apResultText(p.dataset.apResult); });
+    fillClientList();
   };
 
   function syncSelection() {
@@ -342,7 +387,8 @@
       var walls = f.walls.filter(function (w) { return st.selection.walls.indexOf(w.id) >= 0; }), mats = {};
       walls.forEach(function (w) { mats[w.material || ""] = true; });
       $("wallMaterial").value = Object.keys(mats).length === 1 ? Object.keys(mats)[0] : "";
-      $("wallInfo").textContent = n === 1 ? S.wallLength(walls[0]).toFixed(2) + " m long, " + Math.round(E.angleDeg(walls[0])) + " degrees" : n + " walls selected";
+      var shown = Object.keys(mats).length === 1 ? materialTable()[walls[0].material || (walls[0].kind === "exterior" ? app.config.kind_defaults.exterior : app.config.kind_defaults.interior)] : null;
+      $("wallInfo").textContent = (n === 1 ? S.wallLength(walls[0]).toFixed(2) + " m long, " + Math.round(E.angleDeg(walls[0])) + " degrees" : n + " walls selected") + (shown ? ". " + shown.info : "");
     }
     app.editor.invalidate();
   }
@@ -497,6 +543,13 @@
     $("gridBtn").addEventListener("click", function () { ed.toggleGrid(); });
     $("gridStep").addEventListener("change", function () { ed.setStep(parseFloat($("gridStep").value)); });
     $("floorSel").addEventListener("change", function () { st.setFloor($("floorSel").value); ed.fit(); });
+    Object.keys(app.config.client_devices.devices).forEach(function (id) { $("clientKind").appendChild(option(id, app.config.client_devices.devices[id].label)); });
+    $("clientAdd").addEventListener("click", function () {
+      var st = app.store, f = currentFloor(), n = (f.clients || []).length;
+      var item = { id: S.nextId(f.clients || [], "client"), device: $("clientKind").value, x: Math.min(f.width_m, f.width_m / 2 + n % 5), y: Math.min(f.depth_m, f.depth_m / 2 + Math.floor(n / 5)) };
+      st.exec({ label: "Add client", ops: [S.addOp("client", st.project, f.id, item)] });
+      say("Added " + item.id + " at the middle of the floor");
+    });
     $("bandSel").addEventListener("change", function () { app.settings.band = $("bandSel").value || null; app.backend.send({ type: "update", ops: [{ t: "band", band: app.settings.band }] }); fillApList(); requestCompute(); });
     $("modeSel").addEventListener("change", function () { app.settings.mode = $("modeSel").value; app.backend.send({ type: "update", ops: [{ t: "mode", mode: app.settings.mode }] }); requestCompute(); });
     $("cellSel").addEventListener("change", function () { app.settings.cell = parseFloat($("cellSel").value) || null; requestCompute(); });
@@ -631,7 +684,7 @@
     app.editor = E.create({ base: $("cBase"), edit: $("cEdit"), store: store, materials: materialTable(), config: config,
       onFrame: function (view) { app.renderer.draw(view); drawMinimap(); }, onDraw: function (c, view, f) { drawProbe(c, view); overlays.forEach(function (fn) { fn(c, view, f); }); }, announce: say, textLimit: function () { return S.textLimit(validateOpts()); }, onPointer: onPointer, onHelp: function () { app.help(); },
       onArrowWithoutSelection: moveProbeByKey,
-      onToolPointer: function (tool, phase, raw, e) { return (tool.indexOf("note-") === 0 && app.noteTool) ? app.noteTool(tool, phase, raw, e) : (tool === "device" && app.deviceTool) ? app.deviceTool(phase, raw, e) : false; },
+      onToolPointer: function (tool, phase, raw, e) { return (tool.indexOf("note-") === 0 && app.noteTool) ? app.noteTool(tool, phase, raw, e) : (tool === "device" && app.deviceTool) ? app.deviceTool(phase, raw, e) : (tool === "path" && app.pathTool) ? app.pathTool(phase, raw, e) : false; },
       onTool: function (t) { Array.prototype.forEach.call(document.querySelectorAll("[data-tool]"), function (b) { b.setAttribute("aria-pressed", String(b.dataset.tool === t)); }); },
       onGrid: function (on) { $("gridBtn").setAttribute("aria-pressed", String(on)); } });
     minimap = H.createMinimap({ canvas: $("minimap"), getFloor: currentFloor, getView: function () { return app.editor.view; }, getThumb: function () { return app.renderer.thumb; },
@@ -643,6 +696,7 @@
     if (window.PlannerPanels) { window.PlannerPanels.mount(app); }
     if (window.PlannerExport) { window.PlannerExport.mount(app); }
     if (window.PlannerModes) { window.PlannerModes.mount(app); }
+    if (window.Planner3D) { window.Planner3D.mount(app); }
     if (window.PlannerLearn) { window.PlannerLearn.mount(app); }
     app.applyLayer();
     requestCompute();

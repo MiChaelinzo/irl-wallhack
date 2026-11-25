@@ -71,6 +71,7 @@ VOIDS = CONFIG["voids"]
 SPECTRUM = CONFIG["spectrum"]
 DECAY = CONFIG["decay"]
 ROAMING = CONFIG["roaming"]
+TIMELINE = CONFIG["timeline"]
 LABEL = "ESTIMATE: log-distance model with wall attenuation, not a measurement"
 MODE_LABEL = "MODEL ESTIMATE ({mode} mode, {band} GHz), not a measurement"
 
@@ -327,10 +328,19 @@ def in_void(floor: dict, x: float, y: float) -> bool:
     return False
 
 
+def floors_crossed(ap_floor: dict, floor: dict, floors_apart: int, config: dict = CONFIG) -> float:
+    """Floors the signal crosses for the floor loss. It is `floors_apart` (the level difference) unless both floors set
+    `elevation_m`, then |elevation difference| / floor_elevation.reference_height_m, at least one, so a tall or a deep
+    floor-to-floor gap costs more than one standard floor. Legacy projects without elevation_m keep the whole count."""
+    if floors_apart == 0 or "elevation_m" not in ap_floor or "elevation_m" not in floor:
+        return floors_apart
+    return max(1.0, abs(floor["elevation_m"] - ap_floor["elevation_m"]) / config["floor_elevation"]["reference_height_m"])
+
+
 def floor_penetration_db(ap: dict, ap_floor: dict, floor: dict, x: float, y: float, floors_apart: int, band: str) -> float:
     """Floor loss between the AP floor and the receiving floor. Every path end that sits inside a void on its own
     floor removes `voids.open_end_reduction` of it (capped at all of it). Without voids it is floor_loss_db x floors."""
-    base = CONFIG["floor_loss_db"][band] * floors_apart
+    base = CONFIG["floor_loss_db"][band] * floors_crossed(ap_floor, floor, floors_apart)
     if floors_apart == 0:
         return base
     open_ends = int(in_void(ap_floor, ap["x"], ap["y"])) + int(in_void(floor, x, y))
@@ -470,7 +480,7 @@ def _ap_radio(ap: dict, band: str) -> Tuple[int, int]:
 
 
 AP_MODEL_FIELDS = ("standard", "spatial_streams", "mlo_bands", "antenna_gain_dbi", "azimuth_deg", "pattern",
-                   "beamwidth_deg", "front_to_back_db")   # optional AP fields, copied to ap_grids output when set
+                   "beamwidth_deg", "front_to_back_db", "beamforming")   # optional AP fields, copied to ap_grids output when set
 SINR_LABEL = "MODEL ESTIMATE: SINR throughput from co-channel and adjacent-channel interference, not a measurement"
 
 
@@ -774,7 +784,7 @@ def floor_by_id(twin: dict, floor_id: str) -> dict:
     return floor
 
 
-def _regions(cells: List[bool], cols: int, rows: int, cell_m: float, with_bbox: bool = True) -> List[dict]:
+def _regions(cells: List[bool], cols: int, rows: int, cell_m: float) -> List[dict]:
     """4-connected regions of True cells (flood fill), ordered by their first cell in row-major scan."""
     seen = [False] * len(cells)
     regions = []
@@ -795,9 +805,8 @@ def _regions(cells: List[bool], cols: int, rows: int, cell_m: float, with_bbox: 
         rs = [n // cols for n in members]
         cs = [n % cols for n in members]
         region = {"cells": len(members), "area_m2": _round(len(members) * cell_m * cell_m, 2)}
-        if with_bbox:
-            region["bbox"] = {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
-                              "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)}
+        region["bbox"] = {"x_min": _round(min(cs) * cell_m, 2), "y_min": _round(min(rs) * cell_m, 2),
+                          "x_max": _round((max(cs) + 1) * cell_m, 2), "y_max": _round((max(rs) + 1) * cell_m, 2)}
         region["centroid"] = {"x": _round((sum(cs) / len(cs) + 0.5) * cell_m, 2), "y": _round((sum(rs) / len(rs) + 0.5) * cell_m, 2)}
         regions.append(region)
     return regions
@@ -808,13 +817,15 @@ def _table_width(ap: dict, config: dict) -> int:
 
 
 def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_grids: Optional[dict] = None,
-              external: Optional[List[dict]] = None) -> dict:
+              external: Optional[List[dict]] = None, placed_clients: Optional[List[dict]] = None) -> dict:
     """Coverage analytics of one floor. `grid_result` is a coverage_grid result, `aps` the ap_grids list.
 
     ESTIMATES only. See docs/rf-planner.md for every formula. When any AP sets `standard` the result gains
     a "sinr" section (all other fields are unchanged). `mlo_grids` maps an AP id to {band: RSSI grid} of its
     extra MLO links, built by analyze_floor. `external` lists resolved non-WiFi and neighbour sources with their flat
     RSSI `grid` (resolve_interferers plus a grid per source, built by analyze_floor), folded into the "sinr" section.
+    `placed_clients` lists the Smart Home client devices of the floor; when it is not empty the result gains a "clients"
+    section (client_capacity_section), otherwise every field is as before.
     """
     a = config["analytics"]
     rows, cols, cell_m = grid_result["rows"], grid_result["cols"], grid_result["cell_m"]
@@ -903,7 +914,7 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
                     "pct": _round(100.0 * sum(overlap_cells) / total, 1), "pairs": pair_list(pair_cells)},
         "roaming": {"cells": sum(roam_cells), "area_m2": _round(sum(roam_cells) * area, 2),
                     "pct": _round(100.0 * sum(roam_cells) / total, 1), "pairs": pair_list(roam_pairs),
-                    "zones": _regions(roam_cells, cols, rows, cell_m, with_bbox=False),
+                    "zones": _regions(roam_cells, cols, rows, cell_m),
                     "map": {"label": config["roaming"]["label"], "zone_ids": zone_ids,
                             "second_ap": [second_ap[r * cols:(r + 1) * cols] for r in range(rows)],
                             "margin_db": [[None if v is None else _round(v, 1) for v in margin[r * cols:(r + 1) * cols]] for r in range(rows)],
@@ -914,7 +925,153 @@ def analytics(grid_result: dict, aps: List[dict], config: dict = CONFIG, mlo_gri
         "aps": per_ap, "total_client_capacity": sum(e["client_capacity"] for e in per_ap)}
     if any("standard" in ap for ap in aps):
         result["sinr"] = _sinr_section(aps, best_ap, flats, cols, rows, config, mlo_grids, external, cell_m)
+    if placed_clients:
+        result["clients"] = client_capacity_section(placed_clients, aps, best_ap, best, cols, rows, cell_m, config)
     return result
+
+
+
+# ---------------------------------------------------------------- v2 data models (ESTIMATES)
+CLIENT_LABEL = "CAPACITY MODEL: client demand against estimated link rates, OFDMA, MU-MIMO and beamforming are planning models, not measurements"
+MATERIAL_BAND_FIELDS = {"2.4": "attenuation24GHz", "5": "attenuation5GHz", "6": "attenuation6GHz"}
+
+
+def db_to_power_fraction(loss_db: float) -> float:
+    """Linear power fraction left after `loss_db` of loss: 10^(-dB / 10)."""
+    return 10.0 ** (-loss_db / 10.0)
+
+
+def material_fields(material: dict, band: str = DEFAULT_BAND) -> dict:
+    """Derived, read-only material fields, computed from the stored per-band dB values (nothing new is stored, so
+    saved projects and custom materials are unaffected).
+
+    attenuation24GHz, attenuation5GHz, attenuation6GHz: `attenuation_db` per band, in dB.
+    penetrationRate: power fraction that passes the wall at `band`, 10^(-attenuation_db / 10).
+    reflectionRate: power fraction that is reflected at `band`, 10^(-reflection_loss_db / 10).
+    The rates are linear fractions (0 to 1) rounded to 4 decimals. MODEL ESTIMATE from typical dB values. Bands the
+    material does not define give None for their attenuation field."""
+    check_band(band)
+    out = {name: material["attenuation_db"].get(b) for b, name in MATERIAL_BAND_FIELDS.items()}
+    out["penetrationRate"] = _round(db_to_power_fraction(material["attenuation_db"][band]), 4)
+    out["reflectionRate"] = _round(db_to_power_fraction(material["reflection_loss_db"][band]), 4)
+    return out
+
+
+def ap_profile(profile_id: str, config: dict = CONFIG) -> dict:
+    profiles = config["ap_profiles"]["profiles"]
+    if profile_id not in profiles:
+        raise ValueError(f"profile must be one of {list(profiles)}")
+    return profiles[profile_id]
+
+
+def apply_ap_profile(ap: dict, profile_id: str, band: Optional[str] = None, config: dict = CONFIG) -> dict:
+    """A copy of `ap` with the radio fields of a generic class profile: band, standard, spatial_streams, tx_dbm (for
+    that band), antenna_gain_dbi, pattern, beamforming and `profile`. Position, id and name stay. Fields that depend on
+    the radio and the previous band (channel, width_mhz, MLO links and sector settings) are dropped so the result is valid."""
+    profile = ap_profile(profile_id, config)
+    chosen = band or profile["band"]
+    if chosen not in profile["bands"]:
+        raise ValueError(f"profile {profile_id!r} supports the bands {profile['bands']}")
+    keep = {k: v for k, v in ap.items() if k in ("id", "x", "y", "name")}
+    keep.update({"tx_dbm": profile["tx_dbm"][chosen], "band": chosen, "standard": profile["standard"],
+                 "spatial_streams": profile["spatial_streams"], "antenna_gain_dbi": profile["antenna_gain_dbi"],
+                 "pattern": profile["pattern"], "beamforming": profile["beamforming"], "profile": profile_id})
+    return keep
+
+
+def ap_streams(ap: dict, config: dict = CONFIG) -> int:
+    return ap.get("spatial_streams") or default_streams(ap["standard"], config)
+
+
+def ofdma_capacity_gain(standard: Optional[str], n_clients: int, config: dict = CONFIG) -> float:
+    """CAPACITY MODEL: airtime capacity multiplier from OFDMA. 1 + gain x min(1, (n - 1) / saturation_clients), so a
+    single client gains nothing and the gain saturates. Standards without OFDMA give 1."""
+    m = config["capacity_models"]["ofdma"]
+    gain = m["gain_by_standard"].get(standard)
+    if gain is None or n_clients < 2:
+        return 1.0
+    return 1.0 + gain * min(1.0, (n_clients - 1) / m["saturation_clients"])
+
+
+def mu_mimo_users(standard: Optional[str], streams: int, n_clients: int, config: dict = CONFIG) -> int:
+    """CAPACITY MODEL: clients served at the same time, min(clients, AP streams, standard maximum). 1 without MU-MIMO."""
+    limit = config["capacity_models"]["mu_mimo"]["max_users_by_standard"].get(standard)
+    if limit is None or n_clients < 1:
+        return 1
+    return max(1, min(n_clients, streams, limit))
+
+
+def mu_mimo_capacity_gain(users: int, config: dict = CONFIG) -> float:
+    """CAPACITY MODEL: spatial stream sharing, 1 + (users - 1) x spatial_efficiency."""
+    return 1.0 + (users - 1) * config["capacity_models"]["mu_mimo"]["spatial_efficiency"]
+
+
+def beamforming_gain_db(ap: dict, config: dict = CONFIG) -> float:
+    """CAPACITY MODEL: steered pattern gain towards a client, in dB. Zero unless the AP sets `beamforming` and its
+    standard supports it. min(max_gain_db, array_gain_db_per_doubling x log2(streams) x steering_efficiency)."""
+    m = config["capacity_models"]["beamforming"]
+    if not ap.get("beamforming") or ap.get("standard") not in m["standards"]:
+        return 0.0
+    return min(m["max_gain_db"], m["array_gain_db_per_doubling"] * math.log2(ap_streams(ap, config)) * m["steering_efficiency"])
+
+
+def client_capacity_section(clients: List[dict], aps: List[dict], best_ap: List[int], best: List[float], cols: int,
+                            rows: int, cell_m: float, config: dict = CONFIG) -> dict:
+    """Smart Home client demand against the estimated link of each client (CAPACITY MODEL).
+
+    Each client attaches to the strongest AP of its cell. It cannot attach when no AP covers the cell (`no_coverage`),
+    when the AP band is not in the device bands (`band_unsupported`) or when the link rate is zero (`no_link`).
+    The link rate is the legacy throughput estimate at the client RSSI plus the AP beamforming gain. Per AP the raw
+    airtime load is the sum of demand / link rate, divided by the OFDMA and MU-MIMO capacity gains. A load above 1
+    saturates the AP and every attached client then receives demand / load."""
+    devices = config["client_devices"]["devices"]
+    attached: Dict[int, List[dict]] = {}
+    entries = []
+    for c in clients:
+        dev = devices[c["device"]]
+        col = min(cols - 1, max(0, int(math.floor(c["x"] / cell_m))))
+        row = min(rows - 1, max(0, int(math.floor(c["y"] / cell_m))))
+        n = row * cols + col
+        i = best_ap[n]
+        entry = {"id": c["id"], "device": c["device"], "ap": aps[i]["id"] if i >= 0 else None, "status": "ok",
+                 "rssi_dbm": _round(best[n], 1), "beamforming_gain_db": 0.0, "link_mbps": 0.0,
+                 "demand_mbps": dev["demand_mbps"], "airtime_pct": 0.0, "delivered_mbps": 0.0, "satisfied": False}
+        entries.append(entry)
+        if i < 0:
+            entry["status"] = "no_coverage"
+            continue
+        if aps[i]["band"] not in dev["bands"]:
+            entry["status"] = "band_unsupported"
+            continue
+        gain = beamforming_gain_db(aps[i], config)
+        link = estimated_throughput_mbps(best[n] + gain, aps[i]["band"], _table_width(aps[i], config), config)
+        if link <= 0.0:
+            entry["status"] = "no_link"
+            continue
+        entry["beamforming_gain_db"], entry["link_mbps"] = _round(gain, 2), _round(link, 1)
+        entry["_airtime"] = dev["demand_mbps"] / link
+        attached.setdefault(i, []).append(entry)
+    per_ap = []
+    for i, ap in enumerate(aps):
+        members = attached.get(i, [])
+        standard = ap.get("standard")
+        users = mu_mimo_users(standard, ap_streams(ap, config) if standard else 1, len(members), config)
+        ofdma, mu = ofdma_capacity_gain(standard, len(members), config), mu_mimo_capacity_gain(users, config)
+        raw = sum(m["_airtime"] for m in members)
+        load = raw / (ofdma * mu)
+        for m in members:
+            m["airtime_pct"] = _round(100.0 * m["_airtime"] / (ofdma * mu), 1)
+            m["delivered_mbps"] = _round(m["demand_mbps"] / max(1.0, load), 2)
+            m["satisfied"] = load <= 1.0
+        per_ap.append({"id": ap["id"], "clients": len(members), "demand_mbps": _round(sum(m["demand_mbps"] for m in members), 2),
+                       "raw_airtime_pct": _round(100.0 * raw, 1), "ofdma_gain": _round(ofdma, 3), "mu_mimo_users": users,
+                       "mu_mimo_gain": _round(mu, 3), "airtime_pct": _round(100.0 * load, 1), "saturated": load > 1.0})
+    for e in entries:
+        e.pop("_airtime", None)
+    demand = sum(e["demand_mbps"] for e in entries)
+    return {"label": CLIENT_LABEL, "clients": entries, "aps": per_ap,
+            "demand_mbps": _round(demand, 2), "delivered_mbps": _round(sum(e["delivered_mbps"] for e in entries), 2),
+            "satisfied_pct": _round(100.0 * sum(1 for e in entries if e["satisfied"]) / len(entries), 1) if entries else 0.0}
 
 
 def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, band: Optional[str] = None,
@@ -932,7 +1089,8 @@ def analyze_floor(twin: dict, floor_id: str, cell_m: float = DEFAULT_CELL_M, ban
         pseudo = {"id": src["id"], "x": src["x"], "y": src["y"], "tx_dbm": src["tx_dbm"], "band": src["band"]}
         grid = ap_grids(twin, floor_id, cell_m, [(pseudo, floor_by_id(twin, src["floor"]))], src["band"], mode)[0]["grid"]
         external.append(dict(src, grid=[v for row in grid for v in row]))
-    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids, external)
+    return analytics(coverage_grid(twin, floor_id, cell_m, None, band, mode), grids, CONFIG, mlo_grids, external,
+                     floor_by_id(twin, floor_id).get("clients"))
 
 
 def _obstructions(floor: dict, px: float, py: float, qx: float, qy: float) -> Tuple[int, int]:
@@ -995,6 +1153,117 @@ def probe_at(twin: dict, floor_id: str, x: float, y: float, band: Optional[str] 
     if explain:
         out["explain"] = _explain(twin, floor, ap, ap_floor, x, y, used, mode, materials, rssi)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Signal timeline along a walking path with handoff events. Reference for rf-engine.js signalTimeline.
+# ---------------------------------------------------------------------------------------------
+TIMELINE_LABEL = TIMELINE["label"]
+
+
+def _path_points(twin: dict, path: List[dict], step_m: float, max_samples: int) -> List[dict]:
+    """Sample points of a polyline: the first waypoint, every step_m along each same-floor segment, every later waypoint.
+
+    A segment between two floors is a jump (stairs or lift): only its end point is sampled and the distance does not grow."""
+    if not isinstance(path, list) or not path:
+        raise ValueError("path needs at least one waypoint")
+    if len(path) > TIMELINE["max_waypoints"]:
+        raise ValueError(f"path has more than {TIMELINE['max_waypoints']} waypoints")
+    if not step_m > 0:
+        raise ValueError("step_m must be positive")
+    for w in path:
+        floor_by_id(twin, w["floor"])
+    points = [{"floor": path[0]["floor"], "x": path[0]["x"], "y": path[0]["y"], "s": 0.0}]
+    travelled = 0.0
+    for a, b in zip(path, path[1:]):
+        if a["floor"] != b["floor"]:
+            points.append({"floor": b["floor"], "x": b["x"], "y": b["y"], "s": travelled})
+            continue
+        dx, dy = b["x"] - a["x"], b["y"] - a["y"]
+        length = math.sqrt(dx * dx + dy * dy)
+        k = 1
+        while k * step_m < length - 1e-9:
+            d = k * step_m
+            t = d / length
+            points.append({"floor": a["floor"], "x": a["x"] + dx * t, "y": a["y"] + dy * t, "s": travelled + d})
+            k += 1
+        travelled += length
+        points.append({"floor": b["floor"], "x": b["x"], "y": b["y"], "s": travelled})
+        if len(points) > max_samples:
+            raise ValueError(f"path needs more than {max_samples} samples, use a larger step_m")
+    return points
+
+
+def signal_timeline(twin: dict, path: List[dict], band: Optional[str] = None, mode: str = "basic",
+                    step_m: Optional[float] = None, hysteresis_db: Optional[float] = None) -> dict:
+    """Signal along a walking path for a client that roams with hysteresis.
+
+    path: [{floor, x, y}, ...]. Returns {samples, events, summary, label}. Samples hold the position, the serving AP,
+    its level, the strongest AP at that point and whether the point is in a handoff zone. Events are "handoff",
+    "coverage_lost" and "coverage_regained". Deterministic: the same twin and path always give the same result."""
+    step = TIMELINE["step_m"] if step_m is None else step_m
+    hyst = TIMELINE["hysteresis_db"] if hysteresis_db is None else hysteresis_db
+    mode = check_mode(mode)
+    points = _path_points(twin, path, step, TIMELINE["max_samples"])
+    materials = material_table(twin)
+    levels = {f["id"]: f["level"] for f in twin["floors"]}
+    entries = [(ap, f) for f in twin["floors"] for ap in f["aps"]]
+    roam_min, roam_margin, dead = ANALYTICS["roam_min_dbm"], ANALYTICS["roam_margin_db"], ANALYTICS["dead_zone_dbm"]
+    samples, events = [], []
+    serving: Optional[int] = None
+    in_dead = False
+    for i, p in enumerate(points):
+        floor = floor_by_id(twin, p["floor"])
+        x, y = _round(p["x"], 3), _round(p["y"], 3)
+        rssis, bands = [], []
+        for ap, f in entries:
+            used = check_band(band or ap.get("band", DEFAULT_BAND))
+            bands.append(used)
+            rssis.append(_round(rssi_from_ap(ap, f, floor, x, y, abs(levels[f["id"]] - levels[floor["id"]]), used, mode, materials), 1))
+        best = None
+        for k, v in enumerate(rssis):
+            if best is None or v > rssis[best]:
+                best = k
+        sample = {"i": i, "s_m": _round(p["s"], 3), "floor": p["floor"], "x": x, "y": y}
+        if best is None:
+            sample.update({"ap_id": None, "rssi_dbm": NO_SIGNAL_DBM, "quality": quality_band(NO_SIGNAL_DBM), "best_ap_id": None,
+                           "best_rssi_dbm": NO_SIGNAL_DBM, "in_handoff_zone": False, "throughput_mbps": 0.0})
+            samples.append(sample)
+            continue
+        if serving is None:
+            serving = best
+        elif best != serving and rssis[best] >= roam_min and (rssis[serving] < roam_min or rssis[best] - rssis[serving] >= hyst):
+            events.append({"kind": "handoff", "i": i, "s_m": sample["s_m"], "floor": p["floor"], "x": x, "y": y,
+                           "from_ap": entries[serving][0]["id"], "to_ap": entries[best][0]["id"],
+                           "from_rssi_dbm": rssis[serving], "to_rssi_dbm": rssis[best]})
+            serving = best
+        others = [v for k, v in enumerate(rssis) if k != best]
+        second = max(others) if others else None
+        zone = second is not None and rssis[best] >= roam_min and second >= roam_min and rssis[best] - second <= roam_margin
+        rssi = max(rssis[serving], NO_SIGNAL_DBM)
+        ap = entries[serving][0]
+        channel, width = _ap_radio(ap, bands[serving])
+        rate = estimated_throughput_mbps(rssi, bands[serving], legacy_table_width(bands[serving], width) if "standard" in ap else width)
+        if rssi < dead and not in_dead:
+            events.append({"kind": "coverage_lost", "i": i, "s_m": sample["s_m"], "floor": p["floor"], "x": x, "y": y, "rssi_dbm": rssi})
+        elif rssi >= dead and in_dead:
+            events.append({"kind": "coverage_regained", "i": i, "s_m": sample["s_m"], "floor": p["floor"], "x": x, "y": y, "rssi_dbm": rssi})
+        in_dead = rssi < dead
+        sample.update({"ap_id": ap["id"], "rssi_dbm": rssi, "quality": quality_band(rssi), "best_ap_id": entries[best][0]["id"],
+                       "best_rssi_dbm": rssis[best], "in_handoff_zone": zone, "throughput_mbps": _round(rate, 1)})
+        samples.append(sample)
+    served = [s for s in samples if s["ap_id"] is not None]
+    sticky = [s["best_rssi_dbm"] - s["rssi_dbm"] for s in served if s["best_ap_id"] != s["ap_id"]]
+    summary = {"length_m": _round(points[-1]["s"], 2), "samples": len(samples), "step_m": step, "hysteresis_db": hyst,
+               "handoffs": sum(1 for e in events if e["kind"] == "handoff"),
+               "coverage_lost_events": sum(1 for e in events if e["kind"] == "coverage_lost"),
+               "handoff_zone_pct": _round(100.0 * sum(1 for s in samples if s["in_handoff_zone"]) / len(samples), 1),
+               "dead_samples_pct": _round(100.0 * sum(1 for s in served if s["rssi_dbm"] < dead) / len(samples), 1) if served else 100.0,
+               "min_rssi_dbm": min((s["rssi_dbm"] for s in served), default=NO_SIGNAL_DBM),
+               "mean_rssi_dbm": _mean([s["rssi_dbm"] for s in served]),
+               "mean_throughput_mbps": _mean([s["throughput_mbps"] for s in samples]),
+               "sticky_samples": len(sticky), "max_sticky_gap_db": _round(max(sticky), 1) if sticky else 0.0}
+    return {"label": TIMELINE_LABEL, "band": band, "mode": mode, "samples": samples, "events": events, "summary": summary}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1070,7 +1339,7 @@ def _explain(twin: dict, floor: dict, ap: dict, ap_floor: dict, x: float, y: flo
         walls.append({"wall": wall["id"], "material": name, "material_label": materials[name]["label"],
                       "through": opening["kind"] if opening else "wall", "loss_db": _round(loss, 2)})
     walls_db = sum(w["loss_db"] for w in walls)
-    floor_full = CONFIG["floor_loss_db"][band] * apart
+    floor_full = CONFIG["floor_loss_db"][band] * floors_crossed(ap_floor, floor, apart)
     floor_db = floor_penetration_db(ap, ap_floor, floor, x, y, apart, band)
     total = _round(path, 2) + walls_db + _round(floor_db, 2)
     direct = ap["tx_dbm"] + gain - total

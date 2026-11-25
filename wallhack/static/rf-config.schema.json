@@ -4,7 +4,8 @@
   "title": "wallhack rf-config.json",
   "description": "Structure of the shared RF configuration. Covers bands, materials, kind_defaults, floor_loss_db and wifi_standards. Other sections are allowed and validated by the engine tests.",
   "type": "object",
-  "required": ["schema_version", "label", "source", "bands", "materials", "kind_defaults", "floor_loss_db", "wifi_standards"],
+  "required": ["schema_version", "label", "source", "bands", "materials", "kind_defaults", "floor_loss_db", "wifi_standards",
+    "floor_elevation", "ap_profiles", "client_devices", "capacity_models"],
   "properties": {
     "schema_version": {"type": "integer", "minimum": 1},
     "label": {"type": "string", "minLength": 1},
@@ -25,6 +26,97 @@
       "additionalProperties": {"type": "string", "minLength": 1}
     },
     "floor_loss_db": {"$ref": "#/$defs/perBandNumber"},
+    "floor_elevation": {
+      "type": "object",
+      "required": ["label", "source", "reference_height_m", "elevation_m_range"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "reference_height_m": {"type": "number", "exclusiveMinimum": 0},
+        "elevation_m_range": {"$ref": "#/$defs/numberRange"}
+      },
+      "additionalProperties": false
+    },
+    "ap_profiles": {
+      "type": "object",
+      "required": ["label", "source", "eirp_limit_dbm", "profiles"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "eirp_limit_dbm": {
+          "type": "object",
+          "required": ["etsi", "fcc"],
+          "additionalProperties": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "number"}}
+        },
+        "profiles": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/apProfile"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "client_devices": {
+      "type": "object",
+      "required": ["label", "source", "devices"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "devices": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["label", "demand_mbps", "bands"],
+            "properties": {
+              "label": {"type": "string", "minLength": 1},
+              "demand_mbps": {"type": "number", "exclusiveMinimum": 0},
+              "bands": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "capacity_models": {
+      "type": "object",
+      "required": ["label", "source", "ofdma", "mu_mimo", "beamforming"],
+      "properties": {
+        "label": {"type": "string", "pattern": "^CAPACITY MODEL"},
+        "source": {"type": "string", "minLength": 1},
+        "ofdma": {
+          "type": "object",
+          "required": ["gain_by_standard", "saturation_clients"],
+          "properties": {
+            "gain_by_standard": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}},
+            "saturation_clients": {"type": "integer", "minimum": 2}
+          },
+          "additionalProperties": false
+        },
+        "mu_mimo": {
+          "type": "object",
+          "required": ["max_users_by_standard", "spatial_efficiency"],
+          "properties": {
+            "max_users_by_standard": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 1}},
+            "spatial_efficiency": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+          },
+          "additionalProperties": false
+        },
+        "beamforming": {
+          "type": "object",
+          "required": ["standards", "array_gain_db_per_doubling", "steering_efficiency", "max_gain_db"],
+          "properties": {
+            "standards": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "array_gain_db_per_doubling": {"type": "number", "minimum": 0},
+            "steering_efficiency": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+            "max_gain_db": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "wifi_standards": {
       "type": "object",
       "required": ["label", "source", "default_streams", "default_guard_interval_us", "mcs", "standards"],
@@ -70,6 +162,25 @@
     }
   },
   "$defs": {
+    "numberRange": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+    "apProfile": {
+      "type": "object",
+      "required": ["label", "description", "standard", "band", "bands", "spatial_streams", "tx_dbm", "antenna_gain_dbi", "pattern", "beamforming", "confidence"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "standard": {"type": "string", "minLength": 1},
+        "band": {"type": "string", "minLength": 1},
+        "bands": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "spatial_streams": {"type": "integer", "minimum": 1},
+        "tx_dbm": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "number", "minimum": 0, "maximum": 30}},
+        "antenna_gain_dbi": {"type": "number"},
+        "pattern": {"type": "string", "minLength": 1},
+        "beamforming": {"type": "boolean"},
+        "confidence": {"enum": ["low", "medium", "high"]}
+      },
+      "additionalProperties": false
+    },
     "perBandNumber": {
       "type": "object",
       "minProperties": 1,

@@ -478,9 +478,244 @@
     });
   }
 
+  // ---------------------------------------------------------------- what-if diff
+  /** The numbers a what-if compares, from one floor analytics result. Score is out of 100 (rf-config.json "recommendations"). */
+  function metricsOf(an, config) {
+    var rc = config.recommendations, w = rc.score_weights;
+    // with a WiFi standard on every AP the SINR throughput is used, so interference and channel choices show up in the score
+    var speed = an.sinr ? an.sinr.mean_throughput_mbps : an.mean_throughput_mbps;
+    var score = 100 * (w.coverage * an.coverage_pct / 100 + w.no_dead_zone * (1 - an.dead_zone_pct / 100) +
+                       w.throughput * Math.min(1, speed / rc.throughput_full_mbps));
+    return { coverage_pct: an.coverage_pct, dead_zone_pct: an.dead_zone_pct, mean_throughput_mbps: speed,
+             client_capacity: an.total_client_capacity, score: round(score, 1), optimiser_score: E.scoreAnalytics(an, config).score };
+  }
+
+  /** after minus before for every number of metricsOf (coverage score, dead zone %, average speed, capacity, optimiser score). */
+  function diffAnalytics(before, after, config) {
+    var a = metricsOf(before, config), b = metricsOf(after, config), delta = {};
+    Object.keys(a).forEach(function (k) { delta[k] = round(b[k] - a[k], 2); });
+    return { before: a, after: b, delta: delta };
+  }
+
+  function findAp(copy, apId) {
+    var hit = null;
+    copy.floors.forEach(function (f) { f.aps.forEach(function (ap) { if (ap.id === apId) { hit = { ap: ap, floor: f }; } }); });
+    if (!hit) { throw new Error("unknown AP id '" + apId + "'"); }
+    return hit;
+  }
+
+  var CHANGE_KINDS = ["move_ap", "upgrade_profile", "upgrade_standard", "remove_wall", "add_mesh_node", "set_channels"];
+
+  /**
+   * A copy of the project with one change applied. Kinds: move_ap {ap_id, x, y}, upgrade_profile {ap_id, profile_id},
+   * upgrade_standard {ap_id, standard}, remove_wall {floor, wall_id}, add_mesh_node {floor, x, y, parent_ap_id?, tx_dbm?, band?},
+   * set_channels {assignments: [{ap_id, channel}]}. The input is not modified.
+   */
+  function applyChange(project, change, config) {
+    var copy = cloneProject(project), hit;
+    if (CHANGE_KINDS.indexOf(change.kind) < 0) { throw new Error("change.kind must be one of " + CHANGE_KINDS.join(", ")); }
+    if (change.kind === "move_ap") { hit = findAp(copy, change.ap_id); hit.ap.x = change.x; hit.ap.y = change.y; }
+    else if (change.kind === "upgrade_profile") {
+      hit = findAp(copy, change.ap_id);
+      var next = E.applyApProfile(config, hit.ap, change.profile_id, change.band);
+      Object.keys(hit.ap).forEach(function (k) { delete hit.ap[k]; });
+      Object.assign(hit.ap, next);
+    } else if (change.kind === "upgrade_standard") {
+      if (!config.wifi_standards.standards[change.standard]) { throw new Error("unknown standard '" + change.standard + "'"); }
+      findAp(copy, change.ap_id).ap.standard = change.standard;
+    } else if (change.kind === "remove_wall") {
+      var f = E.findFloor(copy, change.floor), n = f.walls.length;
+      f.walls = f.walls.filter(function (w) { return w.id !== change.wall_id; });
+      if (f.walls.length === n) { throw new Error("unknown wall id '" + change.wall_id + "'"); }
+      f.openings = (f.openings || []).filter(function (o) { return o.wall !== change.wall_id; });
+    } else if (change.kind === "add_mesh_node") {
+      var target = E.findFloor(copy, change.floor), node = { id: "mesh-" + (target.aps.length + 1), x: change.x, y: change.y,
+        tx_dbm: change.tx_dbm !== undefined ? change.tx_dbm : config.planner.default_tx_dbm, band: change.band || config.planner.default_band };
+      if (change.parent_ap_id) { node.mesh_parent = change.parent_ap_id; }
+      target.aps.push(node);
+    } else {
+      change.assignments.forEach(function (a) { findAp(copy, a.ap_id).ap.channel = a.channel; });
+    }
+    return copy;
+  }
+
+  function runMetrics(ctx, project, env) {
+    // every AP gets a WiFi standard first (planner.sinr_default_standard) so before and after are both SINR based
+    return E.analyzeFloor(withChannels(project, ctx, null), ctx.floor.id, { env: env, cellM: ctx.cellM, band: ctx.band || undefined, mode: ctx.mode });
+  }
+
+  /**
+   * Measured before/after of one change on one floor. opts: context options plus `floor` (the floor to measure, default floorId).
+   * Returns {change, floor, before, after, delta, confidence, perturbations, stable_perturbations, reason}. Confidence is the share of the
+   * wall attenuation perturbations under which the score still improves by at least stability_fraction_of_gain of the nominal gain.
+   */
+  function whatIf(project, floorId, change, opts) {
+    var o = opts || {}, measured = o.floor || floorId, ctx = makeContext(project, measured, o), rc = ctx.config.recommendations;
+    var changed = applyChange(project, change, ctx.config);
+    var envB = E.makeEnv(ctx.config, changed.materials);
+    var nominal = diffAnalytics(runMetrics(ctx, project, ctx.env), runMetrics(ctx, changed, envB), ctx.config);
+    var gain = nominal.delta.score, runs = [];
+    wallEnvs(ctx).forEach(function (w) {
+      runs.push(diffAnalytics(runMetrics(ctx, project, w.env), runMetrics(ctx, changed, w.env), ctx.config).delta.score);
+    });
+    var stable = gain > 0 ? runs.filter(function (g) { return g >= ctx.pc.confidence.stability_fraction_of_gain * gain; }).length : 0;
+    var conf = confidenceOf(ctx, stable, runs.length, gain);
+    return { label: rc.label, change: change, floor: measured, before: nominal.before, after: nominal.after, delta: nominal.delta,
+             confidence: gain > 0 ? conf.value : 0, perturbations: runs.length, stable_perturbations: stable,
+             reason: gain > 0 ? reasonText(ctx, stable, runs.length, "score gain", gain, conf.magnitude) : "The score does not improve, so confidence is 0." };
+  }
+
+  // ---------------------------------------------------------------- recommendation engine
+  function standardLabel(config, id) { return config.wifi_standards.standards[id].label.replace(/^Wi-Fi /, "WiFi ").replace(/ \(.*\)$/, ""); }
+
+  /** Candidate changes for a floor in a fixed order: moves, standard upgrades, mesh nodes, channel plan. */
+  function candidateActions(project, floorId, ctx, o) {
+    var rc = ctx.config.recommendations, out = [], floor = ctx.floor, cx = floor.width_m / 2, cy = floor.depth_m / 2;
+    floor.aps.slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; }).forEach(function (ap) {
+      var dist = Math.hypot(cx - ap.x, cy - ap.y);
+      if (dist >= ctx.pc.edge_margin_m) {
+        var step = Math.min(rc.move_step_m, dist);
+        out.push({ id: "move:" + ap.id, floor: floorId, text: "Move " + ap.id + " " + round(step, 1) + " m toward the centre",
+          change: { kind: "move_ap", ap_id: ap.id, x: round(ap.x + (cx - ap.x) * step / dist, 2), y: round(ap.y + (cy - ap.y) * step / dist, 2) } });
+      }
+      var nextStd = rc.standard_upgrade[ap.standard === undefined ? (ap.band === "6" ? ctx.pc.sinr_default_standard_6ghz : ctx.pc.sinr_default_standard) : ap.standard];
+      if (nextStd && !(ap.band === "6" && nextStd === "wifi6")) {
+        out.push({ id: "standard:" + ap.id, floor: floorId, text: "Upgrade " + ap.id + " to " + standardLabel(ctx.config, nextStd),
+          change: { kind: "upgrade_standard", ap_id: ap.id, standard: nextStd } });
+      }
+    });
+    project.floors.slice().sort(function (a, b) { return a.level - b.level || (a.id < b.id ? -1 : 1); }).forEach(function (f) {
+      var res = suggestMeshNodes(project, f.id, o);
+      if (res.nodes.length) {
+        var n = res.nodes[0], upstairs = f.level > floor.level;
+        out.push({ id: "mesh:" + f.id, floor: f.id, text: "Add mesh node " + (f.id === floorId ? "on " + f.name : upstairs ? "upstairs on " + f.name : "on " + f.name) +
+          " at (" + n.x + " m, " + n.y + " m)", change: { kind: "add_mesh_node", floor: f.id, x: n.x, y: n.y, parent_ap_id: n.parent_ap_id } });
+      }
+    });
+    var plan = planChannelsSinr(project, floorId, o);
+    var moves = plan.assignments.filter(function (a) { return a.changed; });
+    if (moves.length) {
+      out.push({ id: "channels", floor: floorId, text: "Reduce interference on channel " + moves[0].from_channel + ": " +
+        moves.map(function (a) { return a.ap_id + " to channel " + a.to_channel; }).join(", "),
+        change: { kind: "set_channels", assignments: moves.map(function (a) { return { ap_id: a.ap_id, channel: a.to_channel }; }) } });
+    }
+    return out;
+  }
+
+  /**
+   * Coverage score out of 100 for the floor and ranked actions. Every action is applied to a copy of the project and measured
+   * with whatIf, so its delta is a difference of two model runs, never a guess. Ranked by score delta (then id), actions below
+   * recommendations.min_score_gain are dropped. Same project and options always give the same list.
+   */
+  function recommend(project, floorId, opts) {
+    var o = Object.assign({}, opts || {}), ctx = makeContext(project, floorId, o), rc = ctx.config.recommendations;
+    o.env = ctx.env; o.config = ctx.config;
+    var current = metricsOf(runMetrics(ctx, project, ctx.env), ctx.config);
+    var actions = candidateActions(project, floorId, ctx, o).map(function (c) {
+      var w = whatIf(project, floorId, c.change, Object.assign({}, o, { floor: c.floor }));
+      return { id: c.id, kind: c.change.kind, floor: c.floor, text: c.text, change: c.change, before: w.before, after: w.after, delta: w.delta,
+               confidence: w.confidence, perturbations: w.perturbations, stable_perturbations: w.stable_perturbations, reason: w.reason };
+    }).filter(function (a) { return a.delta.score >= rc.min_score_gain; });
+    actions.sort(function (a, b) { return (b.delta.score - a.delta.score) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });
+    actions = actions.slice(0, rc.max_actions);
+    actions.forEach(function (a, i) {
+      a.rank = i + 1;
+      a.summary = a.text + ": score " + a.before.score + " to " + a.after.score + ", coverage " + a.before.coverage_pct + "% to " + a.after.coverage_pct + "% (estimate).";
+    });
+    return { label: rc.label, floor: floorId, score: current.score, metrics: current, actions: actions,
+             note: actions.length ? "" : "No tested action raises the score by " + rc.min_score_gain + " points or more." };
+  }
+
+  // ---------------------------------------------------------------- "Design my network"
+  function bearingDeg(fromX, fromY, toX, toY) {
+    var deg = Math.atan2(toY - fromY, toX - fromX) * 180 / Math.PI;
+    return Math.round(deg < 0 ? deg + 360 : deg);
+  }
+
+  /**
+   * Deterministic network plan for one floor, ignoring its current APs: AP count and positions from the greedy coverage search,
+   * a sector orientation toward the floor centre for APs on the edge when that measurably helps, channels from the conflict graph
+   * plan, and a mesh node on every other floor that has no AP. Verified by analysis of the designed project.
+   */
+  function designNetwork(project, floorId, opts) {
+    var o = Object.assign({}, opts || {}), config = o.config || (o.env && o.env.config);
+    var base = cloneProject(project), floor = E.findFloor(base, floorId), rc = config.recommendations, pc = config.planner;
+    var band = o.band || pc.default_band, target = o.targetPct || pc.target_coverage_pct, maxAps = o.max_aps || rc.design.max_aps;
+    floor.aps = [];
+    var ctx0 = makeContext(base, floorId, Object.assign({}, o, { config: config, env: o.env || E.makeEnv(config, base.materials) }));
+    var before = metricsOf(runMetrics(ctx0, project, ctx0.env), config);
+    var res = greedy(ctx0, maxAps, target);
+    var cx = floor.width_m / 2, cy = floor.depth_m / 2;
+    var aps = res.picks.map(function (p, i) {
+      return { id: "plan-ap" + (i + 1), x: round(p.x, 2), y: round(p.y, 2), tx_dbm: pc.default_tx_dbm, band: band, standard: band === "6" ? pc.sinr_default_standard_6ghz : rc.design.default_standard };
+    });
+    floor.aps = aps.map(function (a) { return Object.assign({}, a); });
+    var po = { config: config, env: ctx0.env, band: o.band, mode: ctx0.mode, cellM: ctx0.cellM };
+    var plain = coveragePct(floor, base, floorId, po);
+    // orientation: edge APs point at the centre when the sector pattern keeps or raises the coverage
+    var edge = pc.edge_margin_m + pc.min_ap_separation_m / 2, orient = [];
+    aps.forEach(function (a, i) {
+      a.pattern = "omni";
+      if (Math.min(a.x, floor.width_m - a.x, a.y, floor.depth_m - a.y) <= edge) {
+        var trial = Object.assign({}, floor.aps[i], { pattern: "sector", azimuth_deg: bearingDeg(a.x, a.y, cx, cy) });
+        var saved = floor.aps[i]; floor.aps[i] = trial;
+        var withSector = coveragePct(floor, base, floorId, po);
+        if (withSector >= plain) { a.pattern = "sector"; a.azimuth_deg = trial.azimuth_deg; plain = withSector; orient.push(a.id); } else { floor.aps[i] = saved; }
+      }
+    });
+    var channels = planChannels(base, floorId, po);
+    channels.assignments.forEach(function (c) {
+      aps.filter(function (a) { return a.id === c.ap_id; }).forEach(function (a) { a.channel = c.to_channel; });
+    });
+    floor.aps = aps.map(function (a) { return Object.assign({}, a); });
+    var mesh = [];
+    base.floors.slice().sort(function (a, b) { return a.level - b.level; }).forEach(function (f) {
+      if (f.id === floorId || f.aps.length) { return; }
+      var found = suggestMeshNodes(base, f.id, po).nodes;
+      if (found.length) { mesh.push({ floor: f.id, id: "plan-mesh-" + f.id, x: found[0].x, y: found[0].y, parent_ap_id: found[0].parent_ap_id, backhaul_dbm: found[0].backhaul_dbm, tx_dbm: pc.default_tx_dbm, band: band }); }
+    });
+    var after = metricsOf(runMetrics(ctx0, base, ctx0.env), config);
+    var plan = { label: rc.design.label, floor: floorId, target_pct: target, reached: after.coverage_pct >= target, aps: aps, mesh_nodes: mesh,
+                 oriented_aps: orient, channel_conflicts_after: channels.conflicts_after, before: before, after: after,
+                 delta: { score: round(after.score - before.score, 2), coverage_pct: round(after.coverage_pct - before.coverage_pct, 2) } };
+    plan.text = narratePlan(plan);
+    return plan;
+  }
+
+  function coveragePct(floor, base, floorId, po) {
+    return E.analyzeFloor(base, floorId, { env: po.env, cellM: po.cellM, band: po.band, mode: po.mode }).coverage_pct;
+  }
+
+  /** Deterministic plain-language summary of a designNetwork result. Used with the LLM off and when the server is not reachable. */
+  function narratePlan(plan) {
+    var lines = ["MODEL ESTIMATE, not a measurement. Network plan for floor " + plan.floor + ": " + plan.aps.length + " access points, coverage " +
+      plan.before.coverage_pct + "% to " + plan.after.coverage_pct + "% (target " + plan.target_pct + "%" + (plan.reached ? ", reached" : ", not reached") + "), score " +
+      plan.before.score + " to " + plan.after.score + " out of 100."];
+    plan.aps.forEach(function (a) {
+      lines.push(a.id + " at (" + a.x + " m, " + a.y + " m), " + a.band + " GHz channel " + (a.channel === undefined ? "default" : a.channel) +
+        (a.pattern === "sector" ? ", sector pointing at " + a.azimuth_deg + " degrees" : ", omni") + ".");
+    });
+    plan.mesh_nodes.forEach(function (m) { lines.push("Mesh node on floor " + m.floor + " at (" + m.x + " m, " + m.y + " m) with " + m.parent_ap_id + " as uplink, backhaul " + m.backhaul_dbm + " dBm."); });
+    return lines.join("\n");
+  }
+
+  /** Body for POST /api/planner/explain from a designNetwork result: engine numbers and texts only (the server keeps number grounding). */
+  function planPayload(plan) {
+    return { title: "Network plan for floor " + plan.floor,
+      metrics: [{ label: "Access points", value: plan.aps.length, unit: "" }, { label: "Coverage before", value: plan.before.coverage_pct, unit: "%" },
+                { label: "Coverage after", value: plan.after.coverage_pct, unit: "%" }, { label: "Score before", value: plan.before.score, unit: "/100" },
+                { label: "Score after", value: plan.after.score, unit: "/100" }, { label: "Mesh nodes", value: plan.mesh_nodes.length, unit: "" }],
+      issues: plan.reached ? [] : ["The coverage target of " + plan.target_pct + "% is not reached within the access point limit."],
+      recommendations: plan.aps.slice(0, 12).map(function (a) {
+        return { text: "Place " + a.id + " at (" + a.x + " m, " + a.y + " m) on channel " + (a.channel === undefined ? "default" : a.channel) + "." };
+      }) };
+  }
+
   var api = { detectIssues: detectIssues, suggestPlacements: suggestPlacements, evaluatePlacement: evaluatePlacement,
               recommendApCount: recommendApCount, detectPowerIssues: detectPowerIssues, planChannels: planChannels,
-              planChannelsSinr: planChannelsSinr, suggestMeshNodes: suggestMeshNodes, suggestDeadZoneFixes: suggestDeadZoneFixes };
+              planChannelsSinr: planChannelsSinr, suggestMeshNodes: suggestMeshNodes, suggestDeadZoneFixes: suggestDeadZoneFixes,
+              metricsOf: metricsOf, diffAnalytics: diffAnalytics, applyChange: applyChange, whatIf: whatIf, recommend: recommend,
+              designNetwork: designNetwork, narratePlan: narratePlan, planPayload: planPayload };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFOptimizer = api;
 })(typeof self !== "undefined" ? self : this);

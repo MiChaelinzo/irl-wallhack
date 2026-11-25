@@ -19,6 +19,7 @@ WALL_KINDS = ("interior", "exterior")
 OPENING_KINDS = ("door", "window")
 FURNITURE_KINDS = tuple(rfmodel.LIMITS["furniture_kinds"])
 SENSOR_KINDS = tuple(rfmodel.LIMITS["sensor_kinds"])
+CLIENT_DEVICES = tuple(rfmodel.CONFIG["client_devices"]["devices"])
 TWIN_FILE = "twin.json"
 # Limits shared with the browser planner live in rf-config.json ("limits").
 MAX_FLOORS = rfmodel.LIMITS["max_floors"]
@@ -162,6 +163,12 @@ def _ap_model_fields(a: dict, ap: dict, q: str) -> None:
         ap["beamwidth_deg"] = _num(a["beamwidth_deg"], f"{q}.beamwidth_deg", *sector["beamwidth_deg_range"])
     if "front_to_back_db" in a:
         ap["front_to_back_db"] = _num(a["front_to_back_db"], f"{q}.front_to_back_db", *sector["front_to_back_db_range"])
+    if "beamforming" in a:
+        if not isinstance(a["beamforming"], bool):
+            raise TwinError(f"{q}.beamforming: must be true or false")
+        ap["beamforming"] = a["beamforming"]
+    if "profile" in a:
+        ap["profile"] = _choice(a, "profile", tuple(rfmodel.CONFIG["ap_profiles"]["profiles"]), q)
 
 
 def _point_in_floor(value: Any, path: str, width: float, depth: float) -> List[float]:
@@ -301,6 +308,8 @@ def validate_twin(data: Any) -> dict:
                  "height_m": _num(f.get("height_m", 2.5), f"{p}.height_m", 2, 6),
                  "width_m": width, "depth_m": depth,
                  "rooms": [], "walls": [], "openings": [], "furniture": [], "sensors": [], "aps": []}
+        if "elevation_m" in f:
+            floor["elevation_m"] = _num(f["elevation_m"], f"{p}.elevation_m", *rfmodel.CONFIG["floor_elevation"]["elevation_m_range"])
         if "scale_m_per_px" in f:
             floor["scale_m_per_px"] = _num(f["scale_m_per_px"], f"{p}.scale_m_per_px", *SCALE_M_PER_PX_RANGE)
         if "background" in f:
@@ -375,7 +384,15 @@ def validate_twin(data: Any) -> dict:
                 ap["channel"] = a["channel"]
             _ap_model_fields(a, ap, q)
             floor["aps"].append(ap)
-        for key in ("rooms", "walls", "openings", "furniture", "sensors", "aps"):
+        if "clients" in f:
+            floor["clients"] = []
+            for i, c in enumerate(_items(f, "clients", p)):
+                q = f"{p}.clients[{i}]"
+                x, y = inside(c.get("x"), c.get("y"), q)
+                floor["clients"].append({"id": _text(c, "id", q), "device": _choice(c, "device", CLIENT_DEVICES, q), "x": x, "y": y})
+        for key in ("rooms", "walls", "openings", "furniture", "sensors", "aps", "clients"):
+            if key not in floor:
+                continue
             _unique([i["id"] for i in floor[key]], f"{p}.{key}")
         out["floors"].append(floor)
     _unique([f["id"] for f in out["floors"]], "floors")

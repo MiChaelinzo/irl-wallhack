@@ -123,6 +123,7 @@
       var floor = { id: text(f, "id", p, maxText), name: text(f, "name", p, maxText), level: Math.round(num(f.level === undefined ? fi : f.level, p + ".level", -5, 50)),
                     height_m: num(f.height_m === undefined ? 2.5 : f.height_m, p + ".height_m", 2, 6),
                     width_m: width, depth_m: depth, rooms: [], walls: [], openings: [], furniture: [], sensors: [], aps: [], labels: [], annotations: [], devices: [] };
+      if (f.elevation_m !== undefined) { floor.elevation_m = num(f.elevation_m, p + ".elevation_m", cfg.floor_elevation.elevation_m_range[0], cfg.floor_elevation.elevation_m_range[1]); }
       if (f.scale_m_per_px !== undefined) { floor.scale_m_per_px = num(f.scale_m_per_px, p + ".scale_m_per_px", SCALE_RANGE[0], SCALE_RANGE[1]); }
       if (f.background !== undefined) {
         if (typeof f.background !== "string" || !BACKGROUND_PATTERN.test(f.background)) {
@@ -229,6 +230,15 @@
       if (f.voids !== undefined) {
         floor.voids = list(f, "voids", p, maxItems).map(function (v, i) { return validateVoid(v, p + ".voids[" + i + "]", width, depth, cfg, maxText); });
         unique(floor.voids.map(function (v) { return v.id; }), p + ".voids");
+      }
+      if (f.clients !== undefined) {
+        var clientDevices = Object.keys(cfg.client_devices.devices);
+        floor.clients = list(f, "clients", p, maxItems).map(function (c, i) {
+          var q = p + ".clients[" + i + "]";
+          if (!c || typeof c !== "object") { throw ProjectError(q + ": must be an object"); }
+          return { id: text(c, "id", q, maxText), device: choice(c, "device", clientDevices, q), x: num(c.x, q + ".x", 0, width), y: num(c.y, q + ".y", 0, depth) };
+        });
+        unique(floor.clients.map(function (c) { return c.id; }), p + ".clients");
       }
       unique(floor.aps.map(function (a) { return a.id; }), p + ".aps");
       unique(floor.labels.map(function (l) { return l.id; }), p + ".labels");
@@ -358,6 +368,11 @@
       if (!antenna.patterns[a.pattern]) { throw ProjectError(q + ".pattern: must be one of " + Object.keys(antenna.patterns).join(", ")); }
       ap.pattern = a.pattern;
     }
+    if (a.beamforming !== undefined) {
+      if (typeof a.beamforming !== "boolean") { throw ProjectError(q + ".beamforming: must be true or false"); }
+      ap.beamforming = a.beamforming;
+    }
+    if (a.profile !== undefined) { ap.profile = choice(a, "profile", Object.keys(cfg.ap_profiles.profiles), q); }
     var sector = antenna.patterns.sector;
     if (a.beamwidth_deg !== undefined) { ap.beamwidth_deg = num(a.beamwidth_deg, q + ".beamwidth_deg", sector.beamwidth_deg_range[0], sector.beamwidth_deg_range[1]); }
     if (a.front_to_back_db !== undefined) { ap.front_to_back_db = num(a.front_to_back_db, q + ".front_to_back_db", sector.front_to_back_db_range[0], sector.front_to_back_db_range[1]); }
@@ -438,7 +453,7 @@
   // ------------------------------------------------------------------ operations
   // An operation is plain data. applyOp mutates the project, invertOp returns the operation that
   // undoes it. Builders (below) capture everything an inverse needs, so no operation reads state later.
-  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices", opening: "openings", void: "voids" };
+  var LISTS = { wall: "walls", ap: "aps", label: "labels", annotation: "annotations", device: "devices", client: "clients", opening: "openings", void: "voids" };
 
   function setProps(target, props) {
     Object.keys(props).forEach(function (k) { if (props[k] === undefined || props[k] === null) { delete target[k]; } else { target[k] = clone(props[k]); } });

@@ -21,8 +21,47 @@ Frequency exponent `n` is derived from the typical values as `ln(L6 / L2.4) / ln
 | Insulation (`insulation`) | low | 0.41 | 1 / 2 / 4 | 1.5 / 2.5 / 5 | 2 / 3 / 6 | 14 | 13 | 13 |
 | Office partition (`office_partition`) | medium | 0.29 | 2 / 3 / 5 | 2.5 / 3.5 / 6 | 3 / 4 / 7 | 13 | 12 | 12 |
 | Industrial wall (`industrial_wall`) | low | 0.34 | 8 / 15 / 25 | 10 / 19 / 30 | 11 / 21 / 33 | 5 | 4 | 4 |
+| Steel (`steel`) | low | 0.17 | 20 / 32 / 50 | 24 / 36 / 55 | 26 / 38 / 58 | 0.5 | 0.5 | 0.5 |
+| Aluminium (`aluminium`) | low | 0.22 | 14 / 24 / 38 | 17 / 28 / 42 | 19 / 30 / 45 | 1 | 1 | 1 |
+| Tiles (`tiles`) | low | 0.32 | 5 / 8 / 13 | 6 / 10 / 16 | 7 / 11 / 18 | 6 | 5 | 5 |
+| Insulated wall (`insulated_wall`) | low | 0.32 | 5 / 8 / 12 | 6 / 10 / 14 | 7 / 11 / 16 | 5 | 5 | 5 |
+| Metal door (`metal_door`) | low | 0.26 | 12 / 20 / 30 | 15 / 24 / 35 | 17 / 26 / 38 | 2 | 2 | 2 |
+| Fire door (`fire_door`) | low | 0.31 | 9 / 14 / 22 | 11 / 17 / 26 | 12 / 19 / 28 | 3 | 3 | 3 |
 | Flooring (`flooring`) | low | 0.41 | 3 / 6 / 12 | 4 / 8 / 15 | 4 / 9 / 17 | 10 | 9 | 9 |
 | Roofing (`roofing`) | low | 0.32 | 4 / 8 / 16 | 5 / 10 / 20 | 6 / 11 / 22 | 9 | 8 | 8 |
+
+## Derived fields
+
+Saved projects store only `attenuation_db` and `reflection_loss_db` per band. The planner and the engines derive the rest (`rfmodel.material_fields`, `RFEngine.materialFields`), nothing extra is stored:
+
+- `attenuation24GHz`, `attenuation5GHz`, `attenuation6GHz`: `attenuation_db` of that band, in dB.
+- `penetrationRate`: linear power fraction that passes one crossing, `10^(-attenuation_db / 10)`.
+- `reflectionRate`: linear power fraction reflected, `10^(-reflection_loss_db / 10)`.
+
+MODEL ESTIMATE: the rates only restate the typical dB values as fractions, they are not separate measurements. The table shows the rates per band.
+
+| Material | 2.4 GHz penetration | 5 GHz penetration | 6 GHz penetration | 2.4 GHz reflection | 5 GHz reflection | 6 GHz reflection |
+|---|---|---|---|---|---|---|
+| Glass (`glass`) | 0.5012 | 0.3981 | 0.3548 | 0.1000 | 0.1259 | 0.1259 |
+| Drywall (`drywall`) | 0.3981 | 0.3162 | 0.2818 | 0.0631 | 0.0794 | 0.0794 |
+| Wood (`wood`) | 0.3162 | 0.2239 | 0.1995 | 0.0794 | 0.1000 | 0.1000 |
+| Brick (`brick`) | 0.1259 | 0.0794 | 0.0631 | 0.1585 | 0.1995 | 0.1995 |
+| Concrete (`concrete`) | 0.0501 | 0.0200 | 0.0126 | 0.2512 | 0.3162 | 0.3162 |
+| Metal (`metal`) | 0.0025 | 0.0010 | 0.0006 | 0.7943 | 0.7943 | 0.7943 |
+| Reinforced concrete (`reinforced_concrete`) | 0.0100 | 0.0025 | 0.0013 | 0.3981 | 0.5012 | 0.5012 |
+| Stone (`stone`) | 0.0631 | 0.0316 | 0.0200 | 0.1995 | 0.2512 | 0.2512 |
+| Plaster (`plaster`) | 0.5012 | 0.3981 | 0.3548 | 0.0631 | 0.0794 | 0.0794 |
+| Insulation (`insulation`) | 0.6310 | 0.5623 | 0.5012 | 0.0398 | 0.0501 | 0.0501 |
+| Office partition (`office_partition`) | 0.5012 | 0.4467 | 0.3981 | 0.0501 | 0.0631 | 0.0631 |
+| Industrial wall (`industrial_wall`) | 0.0316 | 0.0126 | 0.0079 | 0.3162 | 0.3981 | 0.3981 |
+| Steel (`steel`) | 0.0006 | 0.0003 | 0.0002 | 0.8913 | 0.8913 | 0.8913 |
+| Aluminium (`aluminium`) | 0.0040 | 0.0016 | 0.0010 | 0.7943 | 0.7943 | 0.7943 |
+| Tiles (`tiles`) | 0.1585 | 0.1000 | 0.0794 | 0.2512 | 0.3162 | 0.3162 |
+| Insulated wall (`insulated_wall`) | 0.1585 | 0.1000 | 0.0794 | 0.3162 | 0.3162 | 0.3162 |
+| Metal door (`metal_door`) | 0.0100 | 0.0040 | 0.0025 | 0.6310 | 0.6310 | 0.6310 |
+| Fire door (`fire_door`) | 0.0398 | 0.0200 | 0.0126 | 0.5012 | 0.5012 | 0.5012 |
+| Flooring (`flooring`) | 0.2512 | 0.1585 | 0.1259 | 0.1000 | 0.1259 | 0.1259 |
+| Roofing (`roofing`) | 0.1585 | 0.1000 | 0.0794 | 0.1259 | 0.1585 | 0.1585 |
 
 ## Notes, simulation cost and sources
 
@@ -117,6 +156,54 @@ Modular office partition of fabric or laminate panels on a light frame, typicall
 ### Industrial wall (`industrial_wall`)
 
 Thick concrete block, precast panel or corrugated steel cladding of a factory or warehouse. The range is wide because cladding, racking and stored goods change the loss; use the metal material for a solid steel sheet.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Steel (`steel`)
+
+Structural steel plate, beams and heavy cladding. Effectively a blocker, the measured loss is set by leakage at joints, gaps and openings, not by the steel itself.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Aluminium (`aluminium`)
+
+Aluminium sheet, window frames, curtain wall mullions and foil-backed boards. Thin sheet leaks at edges, so the range is wide.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Tiles (`tiles`)
+
+Ceramic or stone tile on a masonry or board backing, as in bathrooms and kitchens. The tile layer adds a few dB over the bare backing, the backing sets most of the loss.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Insulated wall (`insulated_wall`)
+
+Stud wall with mineral wool or foam insulation and plasterboard on both sides. Foil-faced insulation raises the loss towards the upper end of the range.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Metal door (`metal_door`)
+
+Steel or aluminium skinned door in a frame. Loss is lower than the solid metal wall because of gaps around the leaf, a closed door is assumed.
+
+- Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
+- Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)
+- Source: Published indoor measurements and vendor site-survey guides, summarised as rounded typical values
+
+### Fire door (`fire_door`)
+
+Fire-rated door with a steel skin, mineral core and a closed frame. Between a wooden door and a metal door, a closed door is assumed.
 
 - Simulation cost: One attenuation lookup per wall crossed in every mode, plus one reflection path per wall in range in enhanced and multipath modes.
 - Source: ITU-R P.2040 (effects of building materials and structures on radiowave propagation above about 100 MHz)

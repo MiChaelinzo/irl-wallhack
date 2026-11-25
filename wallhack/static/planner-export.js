@@ -43,6 +43,10 @@
     rows.push([], ["AP", "Band (GHz)", "Channel", "Width (MHz)", "Served area (m2)", "Usable throughput (ESTIMATE, Mbps)", "Client capacity (ESTIMATE)",
                    "Expected clients", "Channel utilisation (ESTIMATE, %)", "Co-channel neighbours"]);
     an.aps.forEach(function (a) { rows.push([a.id, a.band, a.channel, a.width_mhz, a.served_area_m2, a.usable_mbps, a.client_capacity, a.expected_clients, a.channel_utilisation_pct, a.cochannel_neighbours.join(" ")]); });
+    if (an.sinr && an.sinr.aps && an.sinr.aps.length) {   // present only when the access points carry a WiFi standard
+      rows.push([], ["AP", "Standard", "Mean SINR (ESTIMATE, dB)", "Mean throughput (ESTIMATE, Mbps)", "Served cells", "Interfering APs"]);
+      an.sinr.aps.forEach(function (a) { rows.push([a.id, a.standard, a.mean_sinr_db, a.mean_throughput_mbps, a.served_cells, a.interferers.join(" ")]); });
+    }
     rows.push([], ["Dead zone", "Area (m2)", "Centre x (m)", "Centre y (m)"]);
     an.dead_zones.forEach(function (z, i) { rows.push([i + 1, z.area_m2, z.centroid.x, z.centroid.y]); });
     return rows;
@@ -160,6 +164,9 @@
     if (data.ap_locations && data.ap_locations.length > 1) { heading("Access point locations"); tableOut(data.ap_locations, [0, 90, 190, 260, 330, 400]); }
     if (data.spectrum && data.spectrum.length > 1) { heading("Spectrum summary (" + ESTIMATE_LINE + ")"); tableOut(data.spectrum, [0, 80, 130, 200, 280]); }
     if (data.performance && data.performance.length) { heading("Performance of this analysis"); tableOut(data.performance, [0, 230]); }
+    if (data.network_health && data.network_health.length) { heading("Network health (" + ESTIMATE_LINE + ")"); tableOut(data.network_health, [0, 230]); }
+    if (data.device_recommendations && data.device_recommendations.length > 1) { heading("Device recommendations (" + ESTIMATE_LINE + ")"); tableOut(data.device_recommendations, [0, 25, 330, 430]); }
+    if (data.what_if && data.what_if.length > 1) { heading("Before and after (what-if, " + ESTIMATE_LINE + ")"); tableOut(data.what_if, [0, 200, 290, 380]); }
     heading("Issues");
     if (!data.issues.length) { para("No issues recorded. Run the Smart planner before exporting to include them.", 10); }
     data.issues.forEach(function (t) { para("- " + t, 9); });
@@ -241,6 +248,23 @@
   }
 
   /** Optional report sections computed from the live project and last analysis. */
+  /**
+   * PDF tables from the last Timeline and what-if tab results (`recs` from the recommend job, `whatIf` from the what-if panel).
+   * Missing results give empty tables, which the report leaves out: nothing is computed here, so nothing is invented.
+   */
+  function labReportTables(recs, whatIf) {
+    var health = [], devices = [], diff = [];
+    if (recs) { health = [["Metric", "Value"], ["Coverage score", recs.score + " out of 100"], ["Ranked actions found", String(recs.actions.length)]]; }
+    if (recs && recs.actions.length) {
+      devices = [["#", "Action", "Score", "Confidence"]].concat(recs.actions.slice(0, 8).map(function (a) { return [a.rank, a.text, a.before.score + " to " + a.after.score, a.confidence]; }));
+    }
+    if (whatIf && whatIf.before && whatIf.after) {
+      diff = [["Measure", "Before", "After", "Change"], ["Coverage score", whatIf.before.score, whatIf.after.score, whatIf.delta.score], ["Coverage (%)", whatIf.before.coverage_pct, whatIf.after.coverage_pct, whatIf.delta.coverage_pct],
+        ["Mean speed (Mbps)", whatIf.before.mean_throughput_mbps, whatIf.after.mean_throughput_mbps, whatIf.delta.mean_throughput_mbps]];
+    }
+    return { health: health, devices: devices, what_if: diff };
+  }
+
   function reportExtras(app, an) {
     var project = app.store.project, fl = app.currentFloor(), res = app.lastResult;
     var floors = [["Floor", "Level", "APs", "Walls", "Size (m)", "Status"]].concat(project.floors.map(function (f) {
@@ -254,7 +278,8 @@
     var modes = root.RFEngine.modeIds().map(function (m) { return modeMap(app, m); });
     var text = "Floor " + fl.name + " of " + project.name + ": coverage " + an.coverage_pct + " percent at " + app.config.analytics.coverage_dbm + " dBm, " + an.dead_zones.length +
       " dead zones, " + an.aps.length + " access points. All values are model estimates, not measurements.";
-    return { floors: floors, ap_locations: locations, spectrum: spectrum, performance: performance, mode_maps: modes, accessible_text: text };
+    var lab = app.twinLab && app.twinLab.state ? app.twinLab.state : {}, extra = labReportTables(lab.recs, lab.whatIf);
+    return { network_health: extra.health, device_recommendations: extra.devices, what_if: extra.what_if, floors: floors, ap_locations: locations, spectrum: spectrum, performance: performance, mode_maps: modes, accessible_text: text };
   }
 
   function pngBytes(app) { return bytesOfDataUrl(composeView(app).toDataURL("image/png")); }
@@ -372,7 +397,7 @@
   }
 
   var api = { register: register, list: list, get: get, csvCell: csvCell, toCsv: toCsv, analyticsRows: analyticsRows, createPdf: createPdf, buildReport: buildReport,
-              wrapText: wrapText, drawAnnotations: drawAnnotations, composeView: composeView, mount: mount, ESTIMATE_LINE: ESTIMATE_LINE };
+              wrapText: wrapText, drawAnnotations: drawAnnotations, composeView: composeView, mount: mount, labReportTables: labReportTables, ESTIMATE_LINE: ESTIMATE_LINE };
   registerBuiltins();
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.PlannerExport = api;

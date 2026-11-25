@@ -132,6 +132,106 @@
     return rows;
   }
 
+  // ------------------------------------------------------------------ timeline chart model
+  /** Pixel geometry of the timeline chart: signal line points, handoff markers and the roam threshold line. Pure, tested under node. */
+  function timelineChartModel(result, config, size) {
+    var an = config.analytics, lo = config.engine.no_signal_dbm, hi = -30, total = Math.max(result.summary.length_m, 1e-9), pad = 24;
+    function px(sM) { return pad + (size.w - 2 * pad) * sM / total; }
+    function py(dbm) { var v = Math.min(hi, Math.max(lo, dbm)); return size.h - pad - (size.h - 2 * pad) * (v - lo) / (hi - lo); }
+    return { line: result.samples.map(function (s) { return [px(s.s_m), py(s.rssi_dbm)]; }),
+             best: result.samples.map(function (s) { return [px(s.s_m), py(s.best_rssi_dbm)]; }),
+             events: result.events.map(function (e) { return { kind: e.kind, x: px(e.s_m), label: e.kind === "handoff" ? e.from_ap + " to " + e.to_ap : e.kind === "coverage_lost" ? "coverage lost" : "coverage regained" }; }),
+             roam_y: py(an.roam_min_dbm), dead_y: py(an.dead_zone_dbm), x_of: px, pad: pad };
+  }
+
+  /** Text lines of the events of a timeline, in walking order. */
+  function timelineEventLines(result) {
+    return result.events.map(function (e) {
+      var at = "at " + e.s_m + " m (" + e.x + " m, " + e.y + " m)";
+      return e.kind === "handoff" ? "Handoff from " + e.from_ap + " (" + e.from_rssi_dbm + " dBm) to " + e.to_ap + " (" + e.to_rssi_dbm + " dBm) " + at
+        : (e.kind === "coverage_lost" ? "Coverage lost " : "Coverage regained ") + at + ", " + e.rssi_dbm + " dBm";
+    });
+  }
+
+  // ------------------------------------------------------------------ beam pattern, generation comparison, load balance (pure)
+  var BEAM_LABEL = "ILLUSTRATION: the engine applies beamforming as one scalar gain (capacity_models.beamforming). The steered lobe is drawn with the sector formula, the engine gain at its peak and an assumed beam width (planner_3d.steered_beamwidth_deg). It is not a measured antenna pattern.";
+
+  /**
+   * Polar samples of the omnidirectional and the steered pattern of an AP, in dBi per bearing (0 = +x east, clockwise on the plan).
+   * @param {any} config rf-config.json @param {any} ap @param {number} steerDeg bearing the lobe points at
+   */
+  function beamPattern(config, ap, steerDeg) {
+    var c3 = config.planner_3d, sector = config.antenna.patterns.sector, base = ap.antenna_gain_dbi !== undefined ? ap.antenna_gain_dbi : 0;
+    var bf = E.beamformingGainDb(config, Object.assign({}, ap, { beamforming: true })), peak = base + bf, omni = [], steered = [];
+    for (var deg = 0; deg < 360; deg += c3.beam_polar_step_deg) {
+      var off = ((deg - steerDeg + 540) % 360) - 180, r = off / c3.steered_beamwidth_deg;
+      omni.push({ deg: deg, gain_dbi: E.antennaGainDb(config, { antenna_gain_dbi: base, pattern: "omni" }, deg) });
+      steered.push({ deg: deg, gain_dbi: bf === 0 ? base : peak - Math.min(config.antenna.parabolic_coefficient * r * r, sector.default_front_to_back_db) });
+    }
+    return { label: BEAM_LABEL, steer_deg: steerDeg, omni_dbi: base, peak_dbi: peak, beamforming_gain_db: bf, beamwidth_deg: c3.steered_beamwidth_deg, omni: omni, steered: steered,
+             floor_dbi: peak - sector.default_front_to_back_db, supported: bf > 0 };
+  }
+
+  /**
+   * One reference link per Wi-Fi generation on a band: widest channel, default streams, peak PHY rate, rate at reference SINR,
+   * range at the lowest MCS, rate behind one wall at the reference distance, and the capacity gains of the capacity models.
+   * Coverage in dBm does not depend on the generation in this model, speed, range (through the noise floor) and capacity do.
+   */
+  function generationTable(config, band) {
+    var cmp = config.planner_3d.compare, b = config.bands[band], std = config.wifi_standards;
+    if (!b) { throw new Error("band must be one of " + Object.keys(config.bands).join(", ")); }
+    var mcs0 = std.mcs[0].min_snr_db;
+    function pl(d) { return b.pl0_db + 10.0 * b.path_loss_exponent * Math.log10(Math.max(d, config.engine.min_distance_m)); }
+    return Object.keys(std.standards).map(function (id) {
+      var spec = std.standards[id], widths = spec.widths_mhz_by_band[band], row = { id: id, label: spec.label, ieee: spec.ieee, band: band, supported: !!widths };
+      if (!widths) { return row; }
+      var width = Math.max.apply(null, widths), streams = Math.min(std.default_streams, spec.max_streams), noise = E.noiseFloorDbm(config, width);
+      row.width_mhz = width; row.streams = streams;
+      row.peak_mbps = round(E.standardPhyRateMbps(config, id, spec.max_mcs, width, streams));
+      row.rate_at_sinr = cmp.sinr_db.map(function (s) { return { sinr_db: s, mbps: round(E.sinrPhyRateMbps(config, id, s, width, streams)) }; });
+      row.range_m = round(Math.pow(10, (cmp.tx_dbm - noise - mcs0 - b.pl0_db) / (10.0 * b.path_loss_exponent)));
+      row.behind_wall = cmp.walls.map(function (w) {
+        var loss = config.materials[w].attenuation_db[band], sinr = cmp.tx_dbm - pl(cmp.distance_m) - loss - noise;
+        return { material: w, loss_db: loss, sinr_db: round(sinr), mbps: round(E.sinrPhyRateMbps(config, id, sinr, width, streams)) };
+      });
+      row.ofdma_gain = round(E.ofdmaCapacityGain(config, id, cmp.clients), 2);
+      row.mu_users = E.muMimoUsers(config, id, streams, cmp.clients);
+      row.beamforming_db = E.beamformingGainDb(config, { standard: id, beamforming: true, spatial_streams: streams });
+      return row;
+    });
+  }
+
+  /** A copy of the project with every access point set to one generation on one band (widths, channels and streams reset). Null when the band is not allowed. */
+  function projectWithStandard(project, config, standard, band) {
+    var spec = config.wifi_standards.standards[standard];
+    if (!spec || !spec.widths_mhz_by_band[band]) { return null; }
+    var copy = JSON.parse(JSON.stringify(project));
+    copy.floors.forEach(function (f) {
+      f.aps.forEach(function (a) {
+        a.standard = standard; a.band = band;
+        ["width_mhz", "channel", "mlo_bands", "spatial_streams"].forEach(function (k) { delete a[k]; });
+      });
+    });
+    return copy;
+  }
+
+  /** Per-AP share of the floor, expected clients and utilisation from an analyzeFloor result, with Jain's fairness index of the utilisation (1 = even). */
+  function loadBalance(an) {
+    var cells = an.aps.reduce(function (n, a) { return n + a.served_cells; }, 0), rows = an.aps.map(function (a) {
+      return { id: a.id, served_pct: cells ? round(100 * a.served_cells / cells) : 0, expected_clients: a.expected_clients, utilisation_pct: a.own_utilisation_pct, saturated: !!a.saturated };
+    });
+    var sum = rows.reduce(function (s, r) { return s + r.utilisation_pct; }, 0), sq = rows.reduce(function (s, r) { return s + r.utilisation_pct * r.utilisation_pct; }, 0);
+    return { rows: rows, fairness: sq > 0 ? round(sum * sum / (rows.length * sq), 2) : 1 };
+  }
+
+  /** Free-space reference ring radii in metres for an AP: where the straight-line signal falls to each quality band limit. Walls are ignored. */
+  function coverageRings(config, ap, band) {
+    var b = config.bands[band], tx = ap.tx_dbm + (ap.antenna_gain_dbi || 0);
+    return config.analytics.quality_bands.filter(function (q) { return q.min_dbm !== null; }).map(function (q) {
+      return { id: q.id, min_dbm: q.min_dbm, radius_m: round(Math.pow(10, (tx - q.min_dbm - b.pl0_db) / (10.0 * b.path_loss_exponent)), 2) };
+    });
+  }
+
   // ------------------------------------------------------------------ UI
   function mount(app) {
     var P = root.PlannerPanels, X = root.PlannerExport, S = root.PlannerState, el = P.el, H = root.PlannerHeat;
@@ -310,6 +410,10 @@
     } });
     if (app.tabs.rerenderExport) { app.tabs.rerenderExport(); }
 
+
+    mountTwinLab(app);
+    mountAntennaLab(app);
+
     function renderAll() { renderMesh(); renderCapacity(); renderIot(); renderEnterprise(); }
     app.onAnalysis = renderAll;
     app.store.subscribe(function (ev) { if (ev.source !== "select") { renderAll(); } });
@@ -317,8 +421,412 @@
     app.modes = { renderAll: renderAll, last: last };
   }
 
+  // ------------------------------------------------------------------ timeline, what-if, recommendations, design (tab "Timeline and what-if")
+  function mountTwinLab(app) {
+    var P = root.PlannerPanels, S = root.PlannerState, el = P.el, E_ = root.RFEngine, Opt = root.RFOptimizer, doc = root.document;
+    var demo = !!root.WALLHACK_DEMO, tl = app.config.timeline, rc = app.config.recommendations;
+    var panel = app.tabs.add("twinlab", "Timeline and what-if");
+    var st = { path: [], result: null, index: 0, plan: null, recs: null, whatIf: null };
+    function floor() { return app.currentFloor(); }
+    function note(t) { return el("p", { class: "muted hint", text: t }); }
+    function box(title, kids) { return el("section", { class: "mode-box" }, [el("h3", { text: title })].concat(kids)); }
+    var host = el("div", { class: "mode-grid" });
+    panel.appendChild(el("p", { class: "muted hint", text: tl.label }));
+    panel.appendChild(host);
+
+    // ---- walking timeline
+    var tlOut = el("div"), tlMsg = el("p", { class: "muted", role: "status" }), scrub = el("input", { type: "range", id: "tlScrub", min: "0", max: "0", step: "1", value: "0", "aria-label": "Position along the walking path" });
+    var chart = el("canvas", { id: "tlChart", class: "tl-chart", width: "560", height: "180", role: "img", "aria-label": "Signal strength along the walking path with handoff markers" });
+    var readout = el("p", { id: "tlReadout", role: "status", "aria-live": "polite" });
+    function drawChart() {
+      var c = chart.getContext("2d"), w = chart.width, h = chart.height;
+      c.clearRect(0, 0, w, h);
+      if (!st.result) { return; }
+      var m = timelineChartModel(st.result, app.config, { w: w, h: h });
+      c.lineWidth = 1; c.strokeStyle = "#475569"; c.setLineDash([4, 4]);
+      [m.roam_y, m.dead_y].forEach(function (y) { c.beginPath(); c.moveTo(m.pad, y); c.lineTo(w - m.pad, y); c.stroke(); });
+      c.setLineDash([]); c.lineWidth = 1; c.strokeStyle = "#64748b";
+      c.beginPath(); m.best.forEach(function (p, i) { if (i) { c.lineTo(p[0], p[1]); } else { c.moveTo(p[0], p[1]); } }); c.stroke();
+      c.lineWidth = 2; c.strokeStyle = "#38bdf8"; c.beginPath(); m.line.forEach(function (p, i) { if (i) { c.lineTo(p[0], p[1]); } else { c.moveTo(p[0], p[1]); } }); c.stroke();
+      c.fillStyle = "#fbbf24"; c.font = "11px sans-serif";
+      m.events.forEach(function (e) { c.fillRect(e.x - 1, m.pad, 2, h - 2 * m.pad); c.fillText(e.label, Math.min(e.x + 3, w - 90), m.pad - 6); });
+      var cur = m.line[st.index];
+      if (cur) { c.fillStyle = "#f8fafc"; c.beginPath(); c.arc(cur[0], cur[1], 4, 0, Math.PI * 2); c.fill(); }
+    }
+    function showSample() {
+      var s = st.result && st.result.samples[st.index];
+      readout.textContent = s ? "At " + s.s_m + " m on floor " + s.floor + ": " + s.rssi_dbm + " dBm from " + (s.ap_id || "no AP") + " (" + s.quality + "), about " + s.throughput_mbps + " Mbps" +
+        (s.in_handoff_zone ? ", in a handoff zone" : "") + (s.best_ap_id && s.best_ap_id !== s.ap_id ? ", " + s.best_ap_id + " is stronger at " + s.best_rssi_dbm + " dBm but the client has not roamed yet" : "") + "." : "";
+      drawChart(); app.editor.invalidate();
+    }
+    scrub.addEventListener("input", function () { st.index = parseInt(scrub.value, 10) || 0; showSample(); });
+    function renderTimeline() {
+      tlOut.textContent = "";
+      var r = st.result;
+      if (!r) { return; }
+      var sm = r.summary;
+      tlOut.appendChild(P.table("Walk summary (" + ESTIMATE + ")", ["Item", "Value"], [["Length", sm.length_m + " m"], ["Samples", String(sm.samples) + " every " + sm.step_m + " m"], ["Handoffs", String(sm.handoffs)],
+        ["Time in a handoff zone", P.pct(sm.handoff_zone_pct)], ["Samples below the dead zone level", P.pct(sm.dead_samples_pct)], ["Weakest signal", sm.min_rssi_dbm + " dBm"],
+        ["Mean signal", (sm.mean_rssi_dbm === null ? "n/a" : sm.mean_rssi_dbm + " dBm")], ["Mean speed", (sm.mean_throughput_mbps === null ? "n/a" : sm.mean_throughput_mbps + " Mbps")],
+        ["Samples on a weaker AP than the best (sticky client)", sm.sticky_samples + (sm.sticky_samples ? ", up to " + sm.max_sticky_gap_db + " dB" : "")]]));
+      var lines = timelineEventLines(r), ul = el("ul", { id: "tlEvents" });
+      lines.forEach(function (l) { ul.appendChild(el("li", { text: l })); });
+      tlOut.appendChild(el("h4", { text: "Events" })); tlOut.appendChild(lines.length ? ul : note("No handoffs or coverage changes on this path."));
+    }
+    function runTimeline() {
+      if (!st.path.length) { tlMsg.textContent = "Draw a path first: press Draw path, then click at least two points on the plan."; return; }
+      try {
+        st.result = E_.signalTimeline(app.store.project, st.path, { env: app.env, band: app.settings.band || undefined, mode: app.settings.mode });
+      } catch (e) { tlMsg.textContent = "Could not run the timeline: " + e.message; return; }
+      st.index = 0; scrub.max = String(st.result.samples.length - 1); scrub.value = "0";
+      tlMsg.textContent = "Walk of " + st.result.summary.length_m + " m with " + st.result.summary.handoffs + " handoffs (" + ESTIMATE + ").";
+      renderTimeline(); showSample();
+    }
+    app.pathTool = function (phase, raw) {
+      if (phase !== "down") { return phase === "move"; }
+      var f = floor();
+      if (st.path.length >= tl.max_waypoints) { tlMsg.textContent = "A path can have at most " + tl.max_waypoints + " points."; return true; }
+      st.path.push({ floor: f.id, x: round(Math.min(f.width_m, Math.max(0, raw.x)), 2), y: round(Math.min(f.depth_m, Math.max(0, raw.y)), 2) });
+      st.result = null; tlMsg.textContent = st.path.length + " points. Press Run timeline when the path is done."; renderTimeline(); drawChart(); app.editor.invalidate();
+      return true;
+    };
+    app.overlay(function (c, view) {
+      if (!st.path.length) { return; }
+      var f = floor(), pts = st.path.filter(function (p) { return p.floor === f.id; });
+      function sx(x) { return view.ox + x * view.scale; }
+      function sy(y) { return view.oy + y * view.scale; }
+      c.save(); c.strokeStyle = "#38bdf8"; c.lineWidth = 2; c.setLineDash([6, 4]); c.beginPath();
+      pts.forEach(function (p, i) { if (i) { c.lineTo(sx(p.x), sy(p.y)); } else { c.moveTo(sx(p.x), sy(p.y)); } }); c.stroke(); c.setLineDash([]);
+      pts.forEach(function (p) { c.fillStyle = "#38bdf8"; c.beginPath(); c.arc(sx(p.x), sy(p.y), 4, 0, Math.PI * 2); c.fill(); });
+      var s = st.result && st.result.samples[st.index];
+      if (s && s.floor === f.id) { c.fillStyle = "#fbbf24"; c.beginPath(); c.arc(sx(s.x), sy(s.y), 6, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+    });
+    host.appendChild(box("Walking timeline and handoffs", [note("Draw a walking path on the plan. The client keeps its AP until a stronger one wins by " + tl.hysteresis_db + " dB or the signal drops below " + app.config.analytics.roam_min_dbm + " dBm."),
+      el("div", { class: "tool-row" }, [P.button("Draw path", function () { app.editor.setTool("path"); }, { id: "tlDraw", "data-tool": "path", "aria-pressed": "false" }),
+        P.button("Run timeline", runTimeline, { id: "tlRun" }), P.button("Clear path", function () { st.path = []; st.result = null; tlMsg.textContent = "Path cleared."; renderTimeline(); drawChart(); app.editor.invalidate(); }, { id: "tlClear" })]),
+      tlMsg, chart, el("label", { class: "inline" }, ["Scrub ", scrub]), readout, tlOut]));
+
+    // ---- what-if
+    var kindSel = el("select", { id: "wiKind", "aria-label": "Kind of change" }), apSel = el("select", { id: "wiAp", "aria-label": "Access point" }), valSel = el("select", { id: "wiValue", "aria-label": "New value" });
+    var xIn = el("input", { type: "number", id: "wiX", step: "0.5", "aria-label": "X in metres" }), yIn = el("input", { type: "number", id: "wiY", step: "0.5", "aria-label": "Y in metres" });
+    var wiOut = el("div", { id: "wiOut" }), wiMsg = el("p", { class: "muted", role: "status" });
+    var KINDS = [["move_ap", "Move an AP"], ["upgrade_standard", "Upgrade the WiFi standard"], ["upgrade_profile", "Switch to an AP class profile"], ["remove_wall", "Remove a wall"], ["add_mesh_node", "Add a mesh node"], ["set_channels", "Change the channel"]];
+    KINDS.forEach(function (k) { kindSel.appendChild(el("option", { value: k[0], text: k[1] })); });
+    function fillOptions(sel, pairs) { sel.textContent = ""; pairs.forEach(function (p) { sel.appendChild(el("option", { value: p[0], text: p[1] })); }); }
+    function refreshWhatIf() {
+      var f = floor(), k = kindSel.value;
+      fillOptions(apSel, f.aps.map(function (a) { return [a.id, a.id]; }));
+      if (k === "remove_wall") { fillOptions(valSel, f.walls.map(function (w) { return [w.id, w.id + " (" + w.material + ")"]; })); }
+      else if (k === "upgrade_standard") { fillOptions(valSel, Object.keys(app.config.wifi_standards.standards).map(function (id) { return [id, app.config.wifi_standards.standards[id].label]; })); }
+      else if (k === "upgrade_profile") { fillOptions(valSel, Object.keys(app.config.ap_profiles.profiles).map(function (id) { return [id, app.config.ap_profiles.profiles[id].label]; })); }
+      else if (k === "set_channels") { var ch = app.config.planner.channel_sets[app.settings.band || app.config.planner.default_band] || []; fillOptions(valSel, ch.map(function (c) { return [String(c), "Channel " + c]; })); }
+      else { fillOptions(valSel, []); }
+      apSel.disabled = k === "remove_wall" || k === "add_mesh_node"; valSel.disabled = k === "move_ap" || k === "add_mesh_node";
+      xIn.disabled = yIn.disabled = !(k === "move_ap" || k === "add_mesh_node");
+    }
+    kindSel.addEventListener("change", refreshWhatIf);
+    function changeFromForm() {
+      var f = floor(), k = kindSel.value, x = parseFloat(xIn.value), y = parseFloat(yIn.value);
+      if (k === "move_ap") { return { kind: k, ap_id: apSel.value, x: x, y: y }; }
+      if (k === "upgrade_standard") { return { kind: k, ap_id: apSel.value, standard: valSel.value }; }
+      if (k === "upgrade_profile") { return { kind: k, ap_id: apSel.value, profile_id: valSel.value }; }
+      if (k === "remove_wall") { return { kind: k, floor: f.id, wall_id: valSel.value }; }
+      if (k === "add_mesh_node") { return { kind: k, floor: f.id, x: x, y: y, parent_ap_id: f.aps.length ? f.aps[0].id : undefined }; }
+      return { kind: k, assignments: [{ ap_id: apSel.value, channel: parseInt(valSel.value, 10) }] };
+    }
+    function showDiff(target, w, caption) {
+      var b = w.before, a = w.after, d = w.delta;
+      target.textContent = "";
+      target.appendChild(P.table(caption, ["Measure", "Before", "After", "Change"], [
+        ["Coverage score (out of 100)", b.score, a.score, P.signed(d.score)], ["Coverage", P.pct(b.coverage_pct), P.pct(a.coverage_pct), P.signed(d.coverage_pct) + " pts"],
+        ["Dead zone", P.pct(b.dead_zone_pct), P.pct(a.dead_zone_pct), P.signed(d.dead_zone_pct) + " pts"], ["Average speed", b.mean_throughput_mbps + " Mbps", a.mean_throughput_mbps + " Mbps", P.signed(d.mean_throughput_mbps) + " Mbps"],
+        ["Client capacity", String(b.client_capacity), String(a.client_capacity), P.signed(d.client_capacity)], ["Optimiser score", b.optimiser_score, a.optimiser_score, P.signed(d.optimiser_score)]]));
+      target.appendChild(note("Confidence " + w.confidence + ". " + w.reason));
+    }
+    function runWhatIf() {
+      try {
+        var change = changeFromForm(), f = floor();
+        var w = Opt.whatIf(app.store.project, f.id, change, { env: app.env, band: app.settings.band || undefined, mode: app.settings.mode, cellM: P.analysisCell(f), floor: f.id });
+        st.whatIf = w;
+        showDiff(wiOut, w, "Before and after (" + ESTIMATE + ", " + (KINDS.filter(function (k) { return k[0] === change.kind; })[0][1]) + ")"); wiMsg.textContent = "";
+      } catch (e) { wiMsg.textContent = "Could not run the what-if: " + e.message; }
+    }
+    host.appendChild(box("What-if comparison", [note("Pick one change. The plan is copied, the change applied to the copy, and both runs of the engine are compared."),
+      el("div", { class: "tool-row" }, [kindSel, apSel, valSel, el("label", { class: "inline" }, ["x ", xIn]), el("label", { class: "inline" }, ["y ", yIn]), P.button("Compare", runWhatIf, { id: "wiRun" })]), wiMsg, wiOut]));
+
+    // ---- apply helpers shared by recommendations and the design
+    function opsFor(change, f) {
+      var p = app.store.project;
+      if (change.kind === "move_ap") { return [S.setOp("ap", p, f.id, change.ap_id, { x: change.x, y: change.y })]; }
+      if (change.kind === "upgrade_standard") { return [S.setOp("ap", p, f.id, change.ap_id, { standard: change.standard })]; }
+      if (change.kind === "set_channels") { return change.assignments.map(function (a) { return S.setOp("ap", p, f.id, a.ap_id, { channel: a.channel }); }); }
+      if (change.kind === "add_mesh_node") {
+        var target = S.findFloor(p, change.floor), node = { id: S.nextId(target.aps, "mesh"), x: change.x, y: change.y, tx_dbm: app.config.planner.default_tx_dbm, band: app.config.planner.default_band };
+        if (change.parent_ap_id) { node.mesh_parent = change.parent_ap_id; }
+        return [S.addOp("ap", p, change.floor, node)];
+      }
+      return [];
+    }
+
+    // ---- recommendations
+    var recOut = el("div", { id: "recOut" }), recMsg = el("p", { class: "muted", role: "status" });
+    function renderRecs() {
+      recOut.textContent = "";
+      var r = st.recs;
+      if (!r) { return; }
+      recOut.appendChild(el("p", { id: "recScore", class: "stat-v", text: "Coverage score " + r.score + " out of 100" }));
+      if (!r.actions.length) { recOut.appendChild(note(r.note)); return; }
+      recOut.appendChild(P.table("Ranked actions, each measured on a copy of the plan (" + ESTIMATE + ")", ["#", "Action", "Score", "Coverage", "Speed", "Confidence", "Apply"],
+        r.actions.map(function (a) {
+          var ops = opsFor(a.change, floor());
+          return [String(a.rank), a.text, a.before.score + " to " + a.after.score + " (" + P.signed(a.delta.score) + ")", P.signed(a.delta.coverage_pct) + " pts", P.signed(a.delta.mean_throughput_mbps) + " Mbps", String(a.confidence),
+            ops.length ? P.button("Apply", function () { app.store.exec({ label: a.text, ops: ops }); recMsg.textContent = "Applied: " + a.text + ". Undo with Ctrl+Z."; }, { "aria-label": "Apply: " + a.text }) : "-"];
+        })));
+      recOut.appendChild(note("Confidence is sensitivity to wall attenuation errors, not accuracy. " + r.label));
+    }
+    function runRecs() {
+      recMsg.textContent = "Testing actions...";
+      var f = floor();
+      app.runJob({ type: "recommend", floor: f.id, cell_m: P.analysisCell(f) }, { result: function (m) { st.recs = m; recMsg.textContent = ""; renderRecs(); }, error: function (m) { recMsg.textContent = "Failed: " + m.message; } });
+    }
+    host.appendChild(box("Recommendations", [note("Ranked by the measured gain in the coverage score. Each action is a what-if on a copy of your plan."),
+      el("div", { class: "tool-row" }, [P.button("Find best actions", runRecs, { id: "recRun" })]), recMsg, recOut]));
+
+    // ---- design my network
+    var planOut = el("div", { id: "planOut" }), planMsg = el("p", { class: "muted", role: "status" }), narration = el("div", { id: "planNarration", "aria-live": "polite" });
+    function narrate(plan) {
+      narration.textContent = "";
+      function local(why) {
+        plan.text.split("\n").forEach(function (line) { narration.appendChild(el("p", { text: line })); });
+        narration.appendChild(el("p", { class: "muted hint", text: "Rule-based text (no LLM used)" + (why ? ": " + why : "") + "." }));
+      }
+      if (demo || !root.fetch) { local("the static demo has no server"); return; }
+      function ask(confirm) {
+        var body = Opt.planPayload(plan); if (confirm) { body.confirm_off_device = true; }
+        root.fetch("/api/planner/explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (r) {
+            narration.textContent = "";
+            if (r.status === 409) { narration.appendChild(el("p", { text: r.body.detail })); narration.appendChild(P.button("Send the numbers to the cloud provider", function () { ask(true); }, { id: "planConfirm" })); return; }
+            if (r.status !== 200) { local("the server refused the request"); return; }
+            narration.appendChild(el("p", { class: "muted hint", text: (r.body.source === "llm" ? "Reworded by " + r.body.provider + ", checked against the plan numbers" : "Rule-based text (no LLM used)") + ". " + r.body.note }));
+            r.body.explanation.split("\n").forEach(function (line) { narration.appendChild(el("p", { text: line })); });
+          })
+          .catch(function (e) { narration.textContent = ""; local(e.message); });
+      }
+      local("asking the server"); ask(false);
+    }
+    function renderPlan() {
+      planOut.textContent = "";
+      var p = st.plan;
+      if (!p) { return; }
+      planOut.appendChild(P.table("Planned access points (" + ESTIMATE + ")", ["AP", "Position", "Band", "Channel", "Standard", "Antenna"],
+        p.aps.map(function (a) { return [a.id, a.x + " m, " + a.y + " m", a.band + " GHz", a.channel === undefined ? "default" : String(a.channel), a.standard, a.pattern === "sector" ? "sector at " + a.azimuth_deg + " degrees" : "omni"]; })));
+      if (p.mesh_nodes.length) { planOut.appendChild(P.table("Mesh nodes", ["Floor", "Position", "Uplink", "Backhaul"], p.mesh_nodes.map(function (m) { return [m.floor, m.x + " m, " + m.y + " m", m.parent_ap_id, m.backhaul_dbm + " dBm"]; }))); }
+      showDiff(planOut.appendChild(el("div")), { before: p.before, after: p.after, delta: Object.assign({}, { score: p.delta.score, coverage_pct: p.delta.coverage_pct, dead_zone_pct: p.after.dead_zone_pct - p.before.dead_zone_pct,
+        mean_throughput_mbps: p.after.mean_throughput_mbps - p.before.mean_throughput_mbps, client_capacity: p.after.client_capacity - p.before.client_capacity, optimiser_score: p.after.optimiser_score - p.before.optimiser_score }),
+        confidence: "n/a", reason: p.reached ? "The coverage target is reached." : "The coverage target is not reached." }, "Your plan compared with the generated plan (" + ESTIMATE + ")");
+      planOut.appendChild(P.button("Apply plan", function () {
+        var f = floor(), st2 = app.store, ops = f.aps.map(function (a) { return S.removeOp("ap", st2.project, f.id, a.id); }).concat(p.aps.map(function (a) { return S.addOp("ap", st2.project, f.id, a); }));
+        p.mesh_nodes.forEach(function (m) { ops.push(S.addOp("ap", st2.project, m.floor, { id: m.id, x: m.x, y: m.y, tx_dbm: m.tx_dbm, band: m.band, mesh_parent: m.parent_ap_id })); });
+        if (!root.confirm("Replace the " + f.aps.length + " access points on " + f.name + " with the " + p.aps.length + " planned ones? You can undo this.")) { return; }
+        st2.exec({ label: "Apply network plan", ops: ops }); planMsg.textContent = "Applied the plan. Undo restores the old layout.";
+      }, { id: "planApply" }));
+      planOut.appendChild(el("h4", { text: "In plain language" })); planOut.appendChild(narration);
+    }
+    function runDesign() {
+      planMsg.textContent = "Designing..."; var f = floor();
+      app.runJob({ type: "design", floor: f.id, cell_m: P.analysisCell(f) }, { result: function (m) { st.plan = m; planMsg.textContent = ""; renderPlan(); narrate(m); }, error: function (m) { planMsg.textContent = "Failed: " + m.message; } });
+    }
+    host.appendChild(box("Design my network", [note(rc.design.label + " It ignores the access points now on this floor."),
+      el("div", { class: "tool-row" }, [P.button("Design my network", runDesign, { id: "designRun" })]), planMsg, planOut]));
+
+    app.store.subscribe(function (ev) { if (ev.source !== "select") { refreshWhatIf(); } });
+    refreshWhatIf();
+    app.twinLab = { state: st, runTimeline: runTimeline };
+  }
+
+  // ------------------------------------------------------------------ beams, generations, mesh links and rings (tab "Beams and generations")
+  function mountAntennaLab(app) {
+    var P = root.PlannerPanels, el = P.el, doc = root.document, c3 = app.config.planner_3d, reduced = !!(root.matchMedia && root.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    var panel = app.tabs.add("beams", "Beams and generations");
+    var st = { steer: 0, animate: !reduced, beamOnMap: true, ringsOnMap: true, ringsAnimate: false, meshOnMap: true, running: false, ringPhase: 0, band: "5", last: 0 };
+    var hostEl = el("div", { class: "mode-grid" });
+    function note(t) { return el("p", { class: "muted hint", text: t }); }
+    function box(title, kids) { return el("section", { class: "mode-box" }, [el("h3", { text: title })].concat(kids)); }
+    function floor() { return app.currentFloor(); }
+    function selectedAp() { var f = floor(), id = apSel.value; return f.aps.filter(function (a) { return a.id === id; })[0] || f.aps[0] || null; }
+    function check(id, label, key, after) {
+      var input = el("input", { id: id, type: "checkbox" }); input.checked = !!st[key]; input.disabled = reduced && key === "ringsAnimate";
+      input.addEventListener("change", function () { st[key] = input.checked; if (after) { after(); } app.editor.invalidate(); });
+      return el("label", { class: "check" }, [input, doc.createTextNode(" " + label)]);
+    }
+
+    // ---- beam pattern: animated polar plot and on-map lobe
+    var apSel = el("select", { id: "beamAp", "aria-label": "Access point for the beam pattern" });
+    var polar = el("canvas", { id: "beamPolar", class: "beam-polar", width: "320", height: "320", role: "img", "aria-describedby": "beamText", "aria-label": "Polar plot of the omnidirectional and the steered antenna pattern" });
+    var beamText = el("p", { id: "beamText", class: "muted", role: "status" });
+    var steer = el("input", { id: "beamSteer", type: "range", min: "0", max: "355", step: "5", value: "0", "aria-label": "Steering direction in degrees" });
+    function drawPolar() {
+      var c = polar.getContext("2d"), w = polar.width, h = polar.height, ap = selectedAp();
+      c.clearRect(0, 0, w, h);
+      c.strokeStyle = "#475569"; c.lineWidth = 1;
+      [0.33, 0.66, 1].forEach(function (f) { c.beginPath(); c.arc(w / 2, h / 2, f * (w / 2 - 14), 0, Math.PI * 2); c.stroke(); });
+      if (!ap) { beamText.textContent = "This floor has no access point."; return; }
+      var pat = beamPattern(app.config, ap, st.steer), lo = pat.floor_dbi, span = Math.max(1, pat.peak_dbi - lo), R = w / 2 - 14;
+      function trace(list, colour, fill) {
+        c.beginPath();
+        list.forEach(function (s, i) { var a = s.deg * Math.PI / 180, r = R * Math.max(0.05, (s.gain_dbi - lo) / span), x = w / 2 + Math.cos(a) * r, y = h / 2 + Math.sin(a) * r; if (i) { c.lineTo(x, y); } else { c.moveTo(x, y); } });
+        c.closePath(); if (fill) { c.fillStyle = fill; c.fill(); } c.strokeStyle = colour; c.lineWidth = 2; c.stroke();
+      }
+      trace(pat.omni, "#94a3b8", null); trace(pat.steered, "#2dd4bf", "rgba(45,212,191,0.25)");
+      c.fillStyle = "#e8edf6"; c.font = "11px sans-serif"; c.fillText("0 deg = east, clockwise", 8, h - 8);
+      beamText.textContent = "Omnidirectional " + P.f1(pat.omni_dbi) + " dBi. Steered toward " + st.steer + " degrees: peak " + P.f1(pat.peak_dbi) + " dBi (beamforming gain " + P.f1(pat.beamforming_gain_db) + " dB)" +
+        (pat.supported ? "." : ". The standard of this access point has no beamforming gain in the model, so the two patterns are the same.");
+    }
+    function refreshAps() {
+      var f = floor(), cur = apSel.value; apSel.textContent = "";
+      f.aps.forEach(function (a) { apSel.appendChild(el("option", { value: a.id, text: a.id })); });
+      if (f.aps.some(function (a) { return a.id === cur; })) { apSel.value = cur; }
+      drawPolar();
+    }
+    steer.addEventListener("input", function () { st.steer = parseInt(steer.value, 10); drawPolar(); app.editor.invalidate(); });
+    apSel.addEventListener("change", function () { drawPolar(); app.editor.invalidate(); });
+
+    // ---- animation loop (steering sweep, ring pulse): never runs under reduced motion, paused when the page is hidden
+    function loop(now) {
+      st.running = false;
+      var steerOn = st.animate && !panel.hidden;
+      if (reduced || doc.hidden || !(steerOn || st.ringsAnimate)) { return; }
+      if (now - st.last > 50) {
+        st.last = now;
+        if (steerOn) { st.steer = (st.steer + 2) % 360; steer.value = String(st.steer - (st.steer % 5)); drawPolar(); }
+        st.ringPhase = (now / 2000) % 1; app.editor.invalidate();
+      }
+      start();
+    }
+    function start() { if (!st.running && !reduced) { st.running = true; root.requestAnimationFrame(loop); } }
+    app.tabs.onSelect("beams", function () { refreshAps(); start(); });
+
+    var animBox = el("input", { id: "beamAnimate", type: "checkbox" }); animBox.checked = st.animate; animBox.disabled = reduced;
+    animBox.addEventListener("change", function () { st.animate = animBox.checked; start(); });
+    hostEl.appendChild(box("Beamforming: omnidirectional versus steered", [note(BEAM_LABEL),
+      el("div", { class: "tool-row" }, [el("label", { class: "inline" }, ["Access point ", apSel]), el("label", { class: "inline" }, ["Steer ", steer]),
+        el("label", { class: "check" }, [animBox, doc.createTextNode(reduced ? " Animate (off: reduced motion is on, use the slider)" : " Animate steering")]), check("beamMap", "Show the lobe on the plan", "beamOnMap")]),
+      polar, beamText]));
+
+    // ---- generation comparison
+    var bandSel = el("select", { id: "genBand", "aria-label": "Band for the generation comparison" });
+    Object.keys(app.config.bands).forEach(function (b) { bandSel.appendChild(el("option", { value: b, text: b + " GHz" })); });
+    bandSel.value = st.band;
+    var genOut = el("div", { id: "genOut" }), genFloor = el("div", { id: "genFloor" }), genMsg = el("p", { class: "muted", role: "status" });
+    function renderGenerations() {
+      st.band = bandSel.value; genOut.textContent = "";
+      var rows = generationTable(app.config, st.band), cmp = c3.compare, head = ["Generation", "Channel and streams", "Peak PHY"];
+      cmp.sinr_db.forEach(function (s) { head.push("At " + s + " dB SINR"); });
+      head.push("Range at MCS 0");
+      cmp.walls.forEach(function (w) { head.push("Behind " + w.replace(/_/g, " ")); });
+      head.push("OFDMA gain", "MU-MIMO users", "Beamforming");
+      genOut.appendChild(P.table("Generations on " + st.band + " GHz, reference link at " + cmp.tx_dbm + " dBm and " + cmp.distance_m + " m for the walls, " + cmp.clients + " clients (MODEL ESTIMATE)", head, rows.map(function (r) {
+        if (!r.supported) { return [r.label, "not on this band"].concat(head.slice(2).map(function () { return "-"; })); }
+        return [r.label, r.width_mhz + " MHz, " + r.streams + " streams", r.peak_mbps + " Mbps"].concat(r.rate_at_sinr.map(function (x) { return x.mbps + " Mbps"; }), [r.range_m + " m"],
+          r.behind_wall.map(function (w) { return w.mbps + " Mbps (" + w.loss_db + " dB wall)"; }), ["x" + r.ofdma_gain, String(r.mu_users), r.beamforming_db ? "+" + r.beamforming_db + " dB" : "none"]);
+      })));
+      genOut.appendChild(note(cmp.label + ". Range uses the engine noise floor of the widest channel and the lowest MCS. Wall loss depends on the band, not the generation."));
+    }
+    function runOnFloor() {
+      var f = floor(), rows = [], std = app.config.wifi_standards.standards;
+      Object.keys(std).forEach(function (id) {
+        var copy = projectWithStandard(app.store.project, app.config, id, st.band);
+        if (!copy) { rows.push([std[id].label, "not on this band", "-", "-", "-"]); return; }
+        try {
+          var an = E.analyzeFloor(copy, f.id, { env: app.env, cellM: P.analysisCell(f) * 2, mode: app.settings.mode });
+          rows.push([std[id].label, an.coverage_pct + "%", an.mean_throughput_mbps + " Mbps", String(an.total_client_capacity), an.dead_zone_pct + "%"]);
+        } catch (e) { rows.push([std[id].label, "error: " + e.message, "-", "-", "-"]); }
+      });
+      genFloor.textContent = "";
+      genFloor.appendChild(P.table("This floor with every access point set to each generation on " + st.band + " GHz (MODEL ESTIMATE)", ["Generation", "Coverage", "Mean speed", "Client capacity", "Dead zone"], rows));
+      genMsg.textContent = "Coverage is the same for every generation on one band: the model computes signal level from path loss and walls, and the generation changes speed and capacity. Channel widths, channels and stream counts were reset to defaults on the copy.";
+    }
+    bandSel.addEventListener("change", function () { renderGenerations(); genFloor.textContent = ""; genMsg.textContent = ""; });
+    hostEl.appendChild(box("Generation comparison (Wi-Fi 4, 5, 6, 6E, 7)", [el("div", { class: "tool-row" }, [el("label", { class: "inline" }, ["Band ", bandSel]), P.button("Run on this floor", runOnFloor, { id: "genRun" })]), genOut, genMsg, genFloor]));
+
+    // ---- mesh links, load balance, coverage rings (on the plan and as tables)
+    var meshOut = el("div", { id: "meshLoadOut" });
+    function lastAnalysis() { var a = app.panels && app.panels.state.analysis; return a && a.floor === app.store.floorId ? a.analytics : null; }
+    function meshRows() {
+      var an = lastAnalysis(), usable = {};
+      if (an) { an.aps.forEach(function (a) { usable[a.id] = a.usable_mbps; }); }
+      return meshReport(app.store.project, app.config, { env: app.env, mode: app.settings.mode, usable: usable });
+    }
+    function renderLoad() {
+      meshOut.textContent = "";
+      var an = lastAnalysis(), rep = meshRows();
+      if (!rep.length) { meshOut.appendChild(note("No mesh nodes yet. Set an uplink for an access point in the Modes tab to see backhaul links on the plan.")); }
+      else {
+        meshOut.appendChild(P.table("Backhaul links (MODEL ESTIMATE, halved per wireless hop)", ["Node", "Uplink", "Hops", "Backhaul", "End to end", "Notes"],
+          rep.map(function (r) { return r.error ? [r.id, r.parent, String(r.hops), "-", "-", r.error] : [r.id, r.parent, String(r.hops), P.f1(r.backhaul_rssi_dbm) + " dBm", P.f1(r.e2e_mbps) + " Mbps", (r.notes || []).join("; ") || "ok"]; })));
+      }
+      if (!an) { meshOut.appendChild(note("Load balance appears after the next analysis of this floor.")); return; }
+      var lb = loadBalance(an);
+      meshOut.appendChild(P.table("Load balance on this floor (fairness index " + lb.fairness + ", 1 means even; MODEL ESTIMATE)", ["Access point", "Floor area served", "Expected clients", "Utilisation"],
+        lb.rows.map(function (r) {
+          var bar = el("span", { class: "load-bar", role: "img", "aria-label": "Utilisation " + P.f1(r.utilisation_pct) + " percent" }, [el("span", { class: "load-fill" + (r.saturated ? " over" : "") })]);
+          bar.firstChild.style.width = Math.min(100, r.utilisation_pct) + "%";
+          return [r.id, r.served_pct + "%", String(r.expected_clients), el("span", {}, [bar, " " + P.f1(r.utilisation_pct) + "%" + (r.saturated ? " saturated" : "")])];
+        })));
+    }
+    hostEl.appendChild(box("Mesh backhaul and load balance", [el("div", { class: "tool-row" }, [check("meshMap", "Show backhaul links on the plan", "meshOnMap"),
+      check("ringsMap", "Show coverage rings on the plan", "ringsOnMap"), check("ringsAnim", reduced ? "Animate rings (off: reduced motion is on)" : "Animate rings", "ringsAnimate", start)]),
+      note("Rings are free-space reference distances to each quality limit, walls ignored. Backhaul lines join an access point to its uplink on the same floor."), meshOut]));
+
+    // ---- plan overlay
+    var RING_COLOURS = ["#4ade80", "#fbbf24", "#fb923c", "#f87171"];
+    app.overlay(function (c, view) {
+      var f = floor(), aps = f.aps, animated = st.ringsAnimate && !reduced;
+      function sx(x) { return view.ox + x * view.scale; }
+      function sy(y) { return view.oy + y * view.scale; }
+      if (st.ringsOnMap) {
+        aps.forEach(function (a) {
+          var rings = coverageRings(app.config, a, app.settings.band || a.band || "2.4");
+          rings.forEach(function (r, i) {
+            var pulse = animated ? (st.ringPhase + i / rings.length) % 1 : 0;
+            c.save(); c.setLineDash([3, 5]); c.lineWidth = 1.5; c.strokeStyle = RING_COLOURS[i % RING_COLOURS.length]; c.globalAlpha = animated ? 0.8 - 0.55 * pulse : 0.55;
+            c.beginPath(); c.arc(sx(a.x), sy(a.y), r.radius_m * view.scale * (animated ? 0.9 + 0.1 * pulse : 1), 0, Math.PI * 2); c.stroke(); c.restore();
+          });
+        });
+      }
+      if (st.meshOnMap) {
+        meshRows().forEach(function (r) {
+          if (r.error) { return; }
+          var child = aps.filter(function (a) { return a.id === r.id; })[0], parent = aps.filter(function (a) { return a.id === r.parent; })[0];
+          if (!child || !parent) { return; }
+          var weak = r.backhaul_rssi_dbm < app.config.planner_modes.mesh.weak_backhaul_dbm;
+          c.save(); c.strokeStyle = weak ? "#fb7185" : "#a78bfa"; c.lineWidth = 3; c.setLineDash([8, 5]); c.beginPath(); c.moveTo(sx(child.x), sy(child.y)); c.lineTo(sx(parent.x), sy(parent.y)); c.stroke();
+          c.setLineDash([]); c.fillStyle = "#e8edf6"; c.font = "11px sans-serif"; c.fillText(P.f1(r.backhaul_rssi_dbm) + " dBm", (sx(child.x) + sx(parent.x)) / 2 + 4, (sy(child.y) + sy(parent.y)) / 2 - 4); c.restore();
+        });
+      }
+      var ap = st.beamOnMap && selectedAp();
+      if (ap) {
+        var pat = beamPattern(app.config, ap, st.steer), lo = pat.floor_dbi, span = Math.max(1, pat.peak_dbi - lo), R = 70;
+        c.save(); c.translate(sx(ap.x), sy(ap.y)); c.strokeStyle = "#94a3b8"; c.setLineDash([4, 4]); c.beginPath(); c.arc(0, 0, R * Math.max(0.05, (pat.omni_dbi - lo) / span), 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
+        c.fillStyle = "rgba(45,212,191,0.25)"; c.strokeStyle = "#2dd4bf"; c.lineWidth = 2; c.beginPath();
+        pat.steered.forEach(function (s, i) { var a = s.deg * Math.PI / 180, r = R * Math.max(0.05, (s.gain_dbi - lo) / span); if (i) { c.lineTo(Math.cos(a) * r, Math.sin(a) * r); } else { c.moveTo(Math.cos(a) * r, Math.sin(a) * r); } });
+        c.closePath(); c.fill(); c.stroke(); c.restore();
+      }
+    });
+    panel.appendChild(note("ILLUSTRATIONS and MODEL ESTIMATES built on rf-engine.js, see each box for what is computed and what is drawn."));
+    panel.appendChild(hostEl);
+    app.store.subscribe(function () { refreshAps(); renderLoad(); });
+    var prevOn = app.onAnalysis; app.onAnalysis = function () { if (prevOn) { prevOn.apply(null, arguments); } renderLoad(); };
+    renderGenerations(); refreshAps(); renderLoad();
+    app.antennaLab = { state: st, renderGenerations: renderGenerations, runOnFloor: runOnFloor };
+  }
+
   var api = { wouldLoop: wouldLoop, meshReport: meshReport, capacityReport: capacityReport, iotReport: iotReport, enterpriseLayout: enterpriseLayout,
-              billOfQuantities: billOfQuantities, mount: mount };
+              billOfQuantities: billOfQuantities, timelineChartModel: timelineChartModel, timelineEventLines: timelineEventLines,
+              beamPattern: beamPattern, generationTable: generationTable, projectWithStandard: projectWithStandard, loadBalance: loadBalance, coverageRings: coverageRings, mount: mount };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.PlannerModes = api;
 })(typeof self !== "undefined" ? self : this);

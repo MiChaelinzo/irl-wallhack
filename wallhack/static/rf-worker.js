@@ -364,6 +364,17 @@
          ["looking for mesh node positions", function () { result.mesh = Opt.suggestMeshNodes(project, msg.floor, po); }],
          ["planning dead-zone fixes", function () { result.dead_zone_fixes = Opt.suggestDeadZoneFixes(project, msg.floor, po); }]
         ].forEach(function (s) { steps.push({ text: s[0], run: s[1] }); });
+      } else if (msg.type === "recommend" || msg.type === "design") {
+        if (!Opt) { throw new Error("the smart planner is not loaded (rf-optimizer.js)"); }
+        o = settings(msg);
+        var ro = { env: env, config: config, band: o.band, mode: o.mode, cellM: o.cellM };
+        if (msg.type === "recommend") {
+          result = { type: "recommendations", floor: msg.floor };
+          steps.push({ text: "testing actions on copies of the project", run: function () { Object.assign(result, Opt.recommend(project, msg.floor, ro)); } });
+        } else {
+          result = { type: "design", floor: msg.floor };
+          steps.push({ text: "designing the network", run: function () { Object.assign(result, Opt.designNetwork(project, msg.floor, Object.assign({ targetPct: msg.target_pct, max_aps: msg.max_aps }, ro))); } });
+        }
       } else { throw new Error("unknown job type " + msg.type); }
       return { steps: steps, result: function () { return result; } };
     }
@@ -399,7 +410,7 @@
           if (msg.band !== undefined) { band = msg.band || null; }
         } else if (msg.type === "update") { applyDelta(msg.ops); }
         else if (msg.type === "cancel") { cancelled[msg.id] = true; jobCancelled[msg.id] = true; }
-        else if (msg.type === "analyze" || msg.type === "compare" || msg.type === "rank" || msg.type === "plan" || msg.type === "stack") { return startJob(msg); }
+        else if (msg.type === "analyze" || msg.type === "compare" || msg.type === "rank" || msg.type === "plan" || msg.type === "stack" || msg.type === "recommend" || msg.type === "design") { return startJob(msg); }
         else if (msg.type === "compute") {
           latestId = msg.id;
           return run({ id: msg.id, floor: msg.floor, cell_m: msg.cell_m }).catch(function (e) {

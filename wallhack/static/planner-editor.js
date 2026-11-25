@@ -465,7 +465,7 @@
       say({ select: "Select tool", wall: "Draw wall tool: drag on the plan", ap: "Place access point tool: click on the plan",
             label: "Room label tool: click on the plan", pan: "Pan tool", calibrate: "Calibrate: click two points on the floor-plan image",
             "note-text": "Text note tool: click on the plan", "note-arrow": "Arrow note tool: drag on the plan", "note-pin": "Pin note tool: click on the plan",
-            "device": "IoT device tool: click on the plan", door: "Door tool: click on a wall", window: "Window tool: click on a wall",
+            "device": "IoT device tool: click on the plan", path: "Walking path tool: click each waypoint on the plan", door: "Door tool: click on a wall", window: "Window tool: click on a wall",
             void: "Floor opening tool: drag a rectangle for a stairwell, atrium or shaft", interferer: "Interference source tool: click on the plan" }[t]);
       self.invalidate();
     };
@@ -990,7 +990,7 @@
       Object.keys(o.materials).forEach(function (id) {
         var b = doc.createElement("button"), sw = doc.createElement("i"), label = o.materials[id].label || id;
         b.type = "button"; b.draggable = true; b.dataset.material = id; b.className = "mat";
-        b.setAttribute("aria-pressed", String(id === st.material)); b.title = label + ": click to draw with it, or drag onto the plan";
+        b.setAttribute("aria-pressed", String(id === st.material)); b.title = label + (o.materials[id].info ? ". " + o.materials[id].info : "") + ": click to draw with it, or drag onto the plan";
         sw.style.background = materialColor(id); sw.setAttribute("aria-hidden", "true");
         b.appendChild(sw); b.appendChild(doc.createTextNode(label));
         b.addEventListener("click", function () { self.setMaterial(id); self.setTool("wall"); });

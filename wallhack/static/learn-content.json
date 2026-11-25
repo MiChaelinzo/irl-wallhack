@@ -33,7 +33,19 @@
   {"id": "interference", "title": "Interference",
    "summary": "Interference is any energy on your channel that is not your signal: neighbours, other access points of your own, microwaves and Bluetooth. It lowers SINR, and with it speed and reliability.",
    "try_it": "Add an interference source from the toolbar near an access point and watch the SINR layer.",
-   "model_limit": "Sources are planning assumptions with a typical power and duty cycle."}
+   "model_limit": "Sources are planning assumptions with a typical power and duty cycle."},
+  {"id": "reflection", "title": "Reflections (multipath)",
+   "summary": "Signal also arrives after bouncing off walls. Reflected copies can add to the direct signal, which fills in some weak spots and is why the Enhanced and Multipath propagation modes read higher than Basic.",
+   "try_it": "Switch Propagation from Basic to Enhanced and probe a spot behind a corner.",
+   "model_limit": "The model adds single bounces off walls using a reflection loss per material. It does not trace every path or the phase of each one."},
+  {"id": "beamforming", "title": "Beamforming",
+   "summary": "Beamforming focuses the transmit power towards a client instead of spreading it in every direction. More antennas (spatial streams) give more focusing gain, up to a limit.",
+   "try_it": "Turn on beamforming for an access point, give it 4 streams, and open the Beams and generations tab.",
+   "model_limit": "The model applies one gain figure to capacity. The lobe in the polar plot is an illustration, not a measured pattern."},
+  {"id": "sixghz", "title": "The 6 GHz band",
+   "summary": "6 GHz has wide, uncrowded channels and needs Wi-Fi 6E or Wi-Fi 7. Its signal loses more through walls and over distance than 5 GHz or 2.4 GHz.",
+   "try_it": "Set the access point to Wi-Fi 6E, select the 6 GHz band, and compare the probe reading.",
+   "model_limit": "Loss per band follows free-space scaling plus typical material figures, not a site survey."}
  ],
  "lessons": [
   {"id": "propagation", "title": "Distance and walls (propagation)", "topic": "propagation", "scenario": "small_apartment", "floor": "main",
@@ -71,6 +83,25 @@
    "limit": "A new access point also needs a cable and power, which the model does not check.",
    "steps": [{"instruction": "Add an access point in the middle of the racks (about 20 m, 12.5 m), or press Show me. The dead zone should drop to 2% or less.",
               "check": {"metric": "dead_zone_pct", "op": "<=", "value": 2}}],
-   "solution": {"ops": [{"t": "ap.add", "floor": "hall", "ap": {"id": "ap-mid", "x": 20.0, "y": 12.5, "tx_dbm": 20.0, "band": "2.4", "standard": "wifi6"}}]}}
+   "solution": {"ops": [{"t": "ap.add", "floor": "hall", "ap": {"id": "ap-mid", "x": 20.0, "y": 12.5, "tx_dbm": 20.0, "band": "2.4", "standard": "wifi6"}}]}},
+  {"id": "reflections", "title": "Bouncing signal (reflections)", "topic": "reflection", "scenario": "small_apartment", "floor": "main",
+   "goal": "Raise the reading in the far corner by letting the model include reflections.",
+   "limit": "Reflections help in the model where a wall bounces signal towards you. Real rooms with furniture and people change this.",
+   "steps": [{"instruction": "Set Propagation to Enhanced, or press Show me. The reading at the far corner (7 m, 1 m) should reach -60 dBm.",
+              "check": {"metric": "rssi_at", "x": 7, "y": 1, "op": ">=", "value": -60}}],
+   "solution": {"settings": {"mode": "enhanced"}, "ops": []}},
+  {"id": "beamforming", "title": "Focusing the signal (beamforming)", "topic": "beamforming", "scenario": "small_apartment", "floor": "main",
+   "goal": "Give the router a beamforming gain of at least 3 dB.",
+   "limit": "Beamforming needs clients that support it, and the gain shrinks with distance and movement.",
+   "steps": [{"instruction": "Select the router, turn on beamforming and set 4 spatial streams, or press Show me. The engine gain should reach 3 dB.",
+              "check": {"metric": "beamforming_gain_db", "ap": "router", "op": ">=", "value": 3}}],
+   "solution": {"ops": [{"t": "ap.set", "floor": "main", "id": "router", "set": {"beamforming": true, "spatial_streams": 4}}]}},
+  {"id": "six_ghz", "title": "Wide channels, weaker walls (6 GHz)", "topic": "sixghz", "scenario": "small_apartment", "floor": "main",
+   "goal": "See what 6 GHz costs at the bedroom.",
+   "limit": "6 GHz needs a Wi-Fi 6E or Wi-Fi 7 router and client. Many homes still have none.",
+   "steps": [{"instruction": "Change the router standard to Wi-Fi 6E.", "check": {"metric": "ap_standard", "ap": "router", "op": "==", "value": "wifi6e"}},
+             {"instruction": "Set the Band control to 6 GHz.", "check": {"metric": "setting_band", "op": "==", "value": "6"}},
+             {"instruction": "Read the probe at the bedroom point (6 m, 5 m). It falls to about -73 dBm, below -70.", "check": {"metric": "rssi_at", "x": 6, "y": 5, "op": "<=", "value": -70}}],
+   "solution": {"settings": {"band": "6"}, "ops": [{"t": "ap.set", "floor": "main", "id": "router", "set": {"standard": "wifi6e"}}]}}
  ]
 }

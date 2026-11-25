@@ -49,12 +49,17 @@ def wait_for(url: str) -> None:
     raise SystemExit("FAIL: server did not start: " + url)
 
 
-def check_page(browser, url: str, axe_js: Path, ready: str, theme: str, contrast: bool):
+def check_page(browser, url: str, axe_js: Path, ready: str, theme: str, contrast: bool, tab: str = ""):
     page = browser.new_page(viewport=VIEWPORT)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(url)
     page.wait_for_function(ready, timeout=20000)
+    if tab:   # open a planner tab first so axe sees its panel
+        page.click("#tab-" + tab)
+        page.wait_for_selector("#panel-%s:not([hidden])" % tab)
+        if tab == "view3d":
+            page.wait_for_function("() => /^Ready/.test(document.getElementById('view3dMsg').textContent)", timeout=30000)
     if theme:
         page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
     if contrast:
@@ -107,6 +112,10 @@ def main() -> int:
                                 cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
     targets = [("planner (live)", "http://127.0.0.1:%d/planner" % PORT, "window.PlannerApp && window.PlannerApp.ready"),
                ("dashboard (live)", "http://127.0.0.1:%d/" % PORT, "document.readyState === 'complete'")]
+    planner_ready = "window.PlannerApp && window.PlannerApp.ready"
+    targets += [("planner 3D view tab (live)", targets[0][1], planner_ready, "view3d"),
+                ("planner timeline tab (live)", targets[0][1], planner_ready, "twinlab"),
+                ("planner beams tab (live)", targets[0][1], planner_ready, "beams")]
     if (ROOT / "dist" / "planner.html").is_file():
         servers.append(subprocess.Popen([sys.executable, "-m", "http.server", str(DEMO_PORT), "--bind", "127.0.0.1", "--directory", str(ROOT / "dist")],
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -120,8 +129,8 @@ def main() -> int:
         with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
             axe_js = fetch_axe(Path(tmp))
             browser = p.chromium.launch()
-            for name, url, ready in targets:
-                violations, version, errors = check_page(browser, url, axe_js, ready, theme, args.contrast)
+            for name, url, ready, *tab in targets:
+                violations, version, errors = check_page(browser, url, axe_js, ready, theme, args.contrast, tab[0] if tab else "")
                 report[name] = violations
                 blocking = [v for v in violations if v["impact"] in BLOCKING]
                 print("%s (axe-core %s%s): %d violation(s), %d serious or critical" % (name, version, ", theme " + theme if theme else "", len(violations), len(blocking)))

@@ -11,7 +11,7 @@
   var S = (typeof module !== "undefined" && module.exports) ? require("./planner-state.js") : root.PlannerState;
   var STORAGE_KEY = "wallhack.planner.learn";
   var OPS = { ">=": function (a, b) { return a >= b; }, "<=": function (a, b) { return a <= b; }, "==": function (a, b) { return a === b; } };
-  var METRICS = ["rssi_at", "coverage_pct", "dead_zone_pct", "mean_sinr_db", "cochannel_pairs", "setting_band"];
+  var METRICS = ["rssi_at", "coverage_pct", "dead_zone_pct", "mean_sinr_db", "cochannel_pairs", "setting_band", "ap_standard", "beamforming_gain_db"];
   var SOLUTION_OPS = ["ap.set", "ap.add", "wall.set", "interferer.remove"];
 
   function fail(msg) { var e = new Error(msg); e.name = "LearnContentError"; return e; }
@@ -60,7 +60,15 @@
   function metricValue(project, floorId, check, ctx) {
     var st = ctx.settings || {}, band = st.band || undefined, mode = st.mode || "basic";
     if (check.metric === "setting_band") { return st.band || ""; }
-    if (check.metric === "rssi_at") { return E.probeAt(project, floorId, check.x, check.y, { env: ctx.env, band: band, mode: mode }).rssi_dbm; }
+    if (check.metric === "ap_standard" || check.metric === "beamforming_gain_db") {
+      var ap = E.findFloor(project, floorId).aps.filter(function (a) { return a.id === check.ap; })[0];
+      if (!ap) { return null; }
+      return check.metric === "ap_standard" ? (ap.standard || "") : E.beamformingGainDb(ctx.config || ctx.env.config, ap);
+    }
+    if (check.metric === "rssi_at") {
+      // a band the access point's standard cannot use (for example 6 GHz on Wi-Fi 6) has no value: the check cannot pass yet
+      try { return E.probeAt(project, floorId, check.x, check.y, { env: ctx.env, band: band, mode: mode }).rssi_dbm; } catch (e) { return null; }
+    }
     var an = E.analyzeFloor(project, floorId, { env: ctx.env, cellM: ctx.cellM || 1, band: band, mode: mode });
     if (check.metric === "coverage_pct") { return an.coverage_pct; }
     if (check.metric === "dead_zone_pct") { return an.dead_zone_pct; }
@@ -240,6 +248,7 @@
       var sol = l.solution;
       if (sol.ops.length) { app.store.exec({ label: "Lesson: " + l.title, ops: solutionOps(app.store.project, sol) }); }
       if (sol.settings && sol.settings.band) { setBand(sol.settings.band); }
+      if (sol.settings && sol.settings.mode) { $("modeSel").value = sol.settings.mode; $("modeSel").dispatchEvent(new root.Event("change")); }
       renderLesson(); app.say("Applied the lesson solution. Undo with Ctrl+Z.");
     }
 

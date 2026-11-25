@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import json
 import math
+import re
 import shutil
 import subprocess
 
@@ -30,7 +31,7 @@ def _is_type(value, name):
 
 def validate(value, schema, root, path="$"):
     """Return a list of error strings. Supports $ref, type, enum, required, properties, additionalProperties,
-    minProperties, items, minItems, maxItems, minLength, minimum, maximum, exclusiveMinimum."""
+    minProperties, items, minItems, maxItems, minLength, minimum, maximum, exclusiveMinimum, pattern, uniqueItems."""
     if "$ref" in schema:
         node = root
         for part in schema["$ref"].lstrip("#/").split("/"):
@@ -50,11 +51,15 @@ def validate(value, schema, root, path="$"):
             errors.append(f"{path}: not above {schema['exclusiveMinimum']}")
     if isinstance(value, str) and len(value) < schema.get("minLength", 0):
         errors.append(f"{path}: shorter than {schema['minLength']}")
+    if isinstance(value, str) and "pattern" in schema and not re.search(schema["pattern"], value):
+        errors.append(f"{path}: does not match {schema['pattern']}")
     if isinstance(value, list):
         if len(value) < schema.get("minItems", 0):
             errors.append(f"{path}: fewer than {schema['minItems']} items")
         if len(value) > schema.get("maxItems", len(value)):
             errors.append(f"{path}: more than {schema['maxItems']} items")
+        if schema.get("uniqueItems") and len({json.dumps(v, sort_keys=True) for v in value}) != len(value):
+            errors.append(f"{path}: items are not unique")
         for i, item in enumerate(value):
             if "items" in schema:
                 errors += validate(item, schema["items"], root, f"{path}[{i}]")
@@ -166,3 +171,40 @@ def test_material_doc_matches_config():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod.DOC_PATH.read_text() == mod.render(CONFIG), "run: python3 tools/material_doc.py"
+
+
+def test_v2_blocks_are_validated_and_mistakes_are_caught():
+    for block in ("floor_elevation", "ap_profiles", "client_devices", "capacity_models"):
+        assert block in SCHEMA["required"]
+    for mutate in (lambda c: c["ap_profiles"]["profiles"]["consumer"].pop("tx_dbm"),
+                   lambda c: c["ap_profiles"]["profiles"]["consumer"].update(beamforming="yes"),
+                   lambda c: c["ap_profiles"]["profiles"]["consumer"]["tx_dbm"].update({"5": 90}),
+                   lambda c: c["client_devices"]["devices"]["tv"].update(demand_mbps=0),
+                   lambda c: c["client_devices"]["devices"]["tv"].update(bands=["5", "5"]),
+                   lambda c: c["capacity_models"].update(label="Capacity gains"),
+                   lambda c: c["capacity_models"]["mu_mimo"].update(spatial_efficiency=2),
+                   lambda c: c["capacity_models"]["ofdma"]["gain_by_standard"].update(wifi6=-1),
+                   lambda c: c["floor_elevation"].update(reference_height_m=0)):
+        broken = copy.deepcopy(CONFIG)
+        mutate(broken)
+        assert validate(broken, SCHEMA, SCHEMA), mutate
+
+
+def test_v2_config_cross_references():
+    standards = CONFIG["wifi_standards"]["standards"]
+    cm = CONFIG["capacity_models"]
+    for section in (cm["ofdma"]["gain_by_standard"], cm["mu_mimo"]["max_users_by_standard"]):
+        assert set(section) <= set(standards)
+    assert set(cm["beamforming"]["standards"]) <= set(standards)
+    for dev in CONFIG["client_devices"]["devices"].values():
+        assert set(dev["bands"]) <= set(CONFIG["bands"])
+    lo, hi = CONFIG["floor_elevation"]["elevation_m_range"]
+    assert lo < 0 < hi
+    assert set(CONFIG["ap_profiles"]["profiles"]) == {"consumer", "gaming", "mesh", "enterprise"}
+
+
+def test_new_materials_in_database_doc():
+    doc = (STATIC.parent.parent / "docs" / "platform" / "material-database.md").read_text()
+    for mid in ("steel", "aluminium", "tiles", "insulated_wall", "metal_door", "fire_door"):
+        assert f"(`{mid}`)" in doc
+    assert "penetrationRate" in doc and "reflectionRate" in doc

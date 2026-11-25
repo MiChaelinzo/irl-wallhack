@@ -39,6 +39,27 @@ def render(config: dict) -> str:
         ranges = " | ".join("{} / {} / {}".format(*(_fmt(m["range_db"][b][k]) for k in ("min", "typical", "max"))) for b in bands)
         refl = " | ".join(_fmt(m["reflection_loss_db"][b]) for b in bands)
         lines.append(f"| {m['label']} (`{mid}`) | {m['confidence']} | {m['frequency_exponent']:g} | {ranges} | {refl} |")
+    lines += [
+        "",
+        "## Derived fields",
+        "",
+        "Saved projects store only `attenuation_db` and `reflection_loss_db` per band. The planner and the engines derive the rest "
+        "(`rfmodel.material_fields`, `RFEngine.materialFields`), nothing extra is stored:",
+        "",
+        "- `attenuation24GHz`, `attenuation5GHz`, `attenuation6GHz`: `attenuation_db` of that band, in dB.",
+        "- `penetrationRate`: linear power fraction that passes one crossing, `10^(-attenuation_db / 10)`.",
+        "- `reflectionRate`: linear power fraction reflected, `10^(-reflection_loss_db / 10)`.",
+        "",
+        "MODEL ESTIMATE: the rates only restate the typical dB values as fractions, they are not separate measurements. "
+        "The table shows the rates per band.",
+        "",
+        "| Material | " + " | ".join(f"{b} GHz penetration" for b in bands) + " | " + " | ".join(f"{b} GHz reflection" for b in bands) + " |",
+        "|---|" + "---|" * (2 * len(bands)),
+    ]
+    for mid, m in config["materials"].items():
+        pen = " | ".join(f"{10 ** (-m['attenuation_db'][b] / 10):.4f}" for b in bands)
+        ref = " | ".join(f"{10 ** (-m['reflection_loss_db'][b] / 10):.4f}" for b in bands)
+        lines.append(f"| {m['label']} (`{mid}`) | {pen} | {ref} |")
     lines += ["", "## Notes, simulation cost and sources", ""]
     for mid, m in config["materials"].items():
         lines += [f"### {m['label']} (`{mid}`)", "", m["notes"], "",

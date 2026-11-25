@@ -130,6 +130,13 @@
       <p id="floorInfo" class="muted hint"></p>
       <h3>Access points</h3>
       <ul id="apList" class="ap-list"></ul>
+      <h3 id="pClients">Smart Home clients</h3>
+      <p class="muted hint">CAPACITY MODEL: devices that draw on the access points, with typical demand. Results appear in the list after the next analysis.</p>
+      <div class="ctl-grid">
+        <label class="field">Device <select id="clientKind"></select></label>
+        <button id="clientAdd" type="button">Add client</button>
+      </div>
+      <ul id="clientList" class="ap-list" aria-labelledby="pClients"></ul>
       <div id="inspector" hidden>
         <h3>Selected walls</h3>
         <label class="field">Material <select id="wallMaterial"></select></label>
@@ -179,6 +186,7 @@
 <script src="/static/planner-panels.js"></script>
 <script src="/static/planner-export.js"></script>
 <script src="/static/planner-modes.js"></script>
+<script src="/static/planner-3d.js"></script>
 <script src="/static/planner-learn.js"></script>
 <script src="/static/planner.js"></script>
 </body>

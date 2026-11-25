@@ -9,6 +9,7 @@
   OpenAI or Azure OpenAI services.
 """
 import json
+import math
 import os
 import re
 import urllib.error
@@ -146,6 +147,10 @@ MAX_PLANNER_ITEMS = 40
 MAX_PLANNER_TEXT_CHARS = 400
 MAX_PLANNER_PAYLOAD_CHARS = 20000
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+# Numbers that are formatting, not claims: list markers at the start of a line ("1.", "2)", "(3)") and the fixed
+# WiFi band and channel width units ("5 GHz", "2.4 GHz", "160 MHz"). Any other number must come from the payload.
+_LIST_MARKER = re.compile(r"^[ \t]*(?:\(\d{1,2}\)|\d{1,2}[.)])(?=\s)", re.MULTILINE)
+_BAND_UNIT = re.compile(r"\b(?:2\.4|5|6)\s?GHz\b|\b(?:20|40|80|160|320)\s?MHz\b", re.IGNORECASE)
 
 
 def _clean_text(value, path: str) -> str:
@@ -170,7 +175,8 @@ def validate_planner_payload(body) -> dict:
         if not isinstance(items, list) or len(items) > MAX_PLANNER_ITEMS:
             raise LlmError(f"{key}: must be a list of at most {MAX_PLANNER_ITEMS} items")
     for i, m in enumerate(body.get("metrics", [])):
-        if not isinstance(m, dict) or isinstance(m.get("value"), bool) or not isinstance(m.get("value"), (int, float)):
+        if (not isinstance(m, dict) or isinstance(m.get("value"), bool) or not isinstance(m.get("value"), (int, float))
+                or not math.isfinite(m["value"])):
             raise LlmError(f"metrics[{i}]: needs a label and a numeric value")
         out["metrics"].append({"label": _clean_text(m.get("label"), f"metrics[{i}].label"), "value": m["value"],
                                "unit": str(m.get("unit", ""))[:12]})
@@ -182,7 +188,7 @@ def validate_planner_payload(body) -> dict:
         rec = {"text": _clean_text(r.get("text"), f"recommendations[{i}].text")}
         if r.get("confidence") is not None:
             c = r["confidence"]
-            if isinstance(c, bool) or not isinstance(c, (int, float)) or not 0 <= c <= 1:
+            if isinstance(c, bool) or not isinstance(c, (int, float)) or not math.isfinite(c) or not 0 <= c <= 1:
                 raise LlmError(f"recommendations[{i}].confidence: must be a number from 0 to 1")
             rec["confidence"] = c
         if r.get("rationale") is not None:
@@ -219,6 +225,7 @@ def _payload_numbers(payload: dict) -> set:
 def ungrounded_numbers(reply: str, payload: dict) -> List[str]:
     """Numbers in `reply` that do not occur in `payload`. Empty list means the reply is grounded."""
     allowed = _payload_numbers(payload)
+    reply = _BAND_UNIT.sub(" ", _LIST_MARKER.sub("", reply))
     return [n for n in _NUMBER.findall(reply) if float(n) not in allowed and float(n.lstrip("-")) not in allowed]
 
 

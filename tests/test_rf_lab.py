@@ -300,7 +300,7 @@ def test_roaming_map_marks_handoff_and_overlap_cells_between_two_aps():
     assert m["second_ap"][row][10] in (0, 1)
     assert m["zone"][row][0] == 0 and m["blend_pct"][row][0] == 100.0 and m["second_ap"][row][0] == 1
     handoff = sum(v == m["zone_ids"].index("handoff") for r in m["zone"] for v in r)
-    assert handoff == a["roaming"]["cells"] and "bbox" not in a["roaming"]["zones"][0]
+    assert handoff == a["roaming"]["cells"] and set(a["roaming"]["zones"][0]["bbox"]) == {"x_min", "y_min", "x_max", "y_max"}   # bbox restored (v2 audit)
     assert a["best_ap"][row][2] == 0 and a["best_ap"][row][17] == 1
 
 
@@ -434,3 +434,4 @@ def test_js_spectrum_decay_and_formulas_match_python():
         assert js == pytest.approx(rfmodel.link_reliability(*args), rel=1e-12, abs=1e-12)
     assert subprocess.run(["node", "--check", str(STATIC / "rf-engine.js")]).returncode == 0
     assert json.dumps(rfmodel.CONFIG["spectrum"]["levels"][-1]["max"]) == "null"
+

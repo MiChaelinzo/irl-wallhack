@@ -38,7 +38,8 @@ def test_best_ap_overlap_and_roaming():
     assert r["best_ap"] == [[0, 0, 1, 1], [0, -1, -1, -1]]
     assert r["overlap"]["cells"] == 2 and r["overlap"]["pairs"] == [{"a": "A", "b": "B", "cells": 2, "area_m2": 2.0}]
     assert r["roaming"]["cells"] == 2
-    assert r["roaming"]["zones"] == [{"cells": 2, "area_m2": 2.0, "centroid": {"x": 2.0, "y": 0.5}}]   # no bounding box any more
+    assert r["roaming"]["zones"] == [{"cells": 2, "area_m2": 2.0, "bbox": {"x_min": 1.0, "y_min": 0.0, "x_max": 3.0, "y_max": 1.0},
+                                 "centroid": {"x": 2.0, "y": 0.5}}]
 
 
 def test_roaming_map_is_exact_per_cell():

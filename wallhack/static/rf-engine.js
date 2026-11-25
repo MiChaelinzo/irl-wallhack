@@ -340,9 +340,16 @@
     return false;
   }
 
+  /** Floors crossed for the floor loss (rfmodel.floors_crossed): the level difference, or with elevation_m on both floors
+   *  |elevation difference| / reference_height_m, at least one. */
+  function floorsCrossed(config, apFloor, floor, apart) {
+    if (apart === 0 || !apFloor || apFloor.elevation_m === undefined || floor.elevation_m === undefined) { return apart; }
+    return Math.max(1.0, Math.abs(floor.elevation_m - apFloor.elevation_m) / config.floor_elevation.reference_height_m);
+  }
+
   /** Floor loss between the AP floor and the receiving floor with voids (rfmodel.floor_penetration_db). */
   function floorPenetrationDb(config, ap, apFloor, floor, x, y, apart, band) {
-    var base = config.floor_loss_db[band] * apart;
+    var base = config.floor_loss_db[band] * floorsCrossed(config, apFloor, floor, apart);
     if (apart === 0 || !apFloor) { return base; }
     var open = (inVoid(apFloor, ap.x, ap.y) ? 1 : 0) + (inVoid(floor, x, y) ? 1 : 0);
     if (open === 0) { return base; }
@@ -368,7 +375,7 @@
     var ctx = { env: env, prep: prep, ap: ap, band: band, reflectors: null };
     var fn = modes[o.mode];
     if (o.mode !== DEFAULT_MODE) { ctx.reflectors = reflectorsNear(env, prep, ap.x, ap.y); }
-    var floorLoss = env.config.floor_loss_db[band] * floorsApart, cfg = env.config;
+    var floorLoss = env.config.floor_loss_db[band] * floorsCrossed(env.config, apFloor, floor, floorsApart), cfg = env.config;
     var hasVoids = floorsApart > 0 && !!((apFloor && apFloor.voids && apFloor.voids.length) || (floor.voids && floor.voids.length));
     var ax = gridAxes(floor, o.cellM), i = 0;
     if (region) {   // cells [c0,c1) x [r0,r1) only, written at their place in the full row-major grid
@@ -506,7 +513,7 @@
   // ---------------------------------------------------------------- WiFi standards, SINR, MLO (ESTIMATES)
   // Mirror of the wifi_standards, interference and MLO functions of wallhack/rfmodel.py. Formulas: docs/rf-planner.md.
   var AP_MODEL_FIELDS = ["standard", "spatial_streams", "mlo_bands", "antenna_gain_dbi", "azimuth_deg", "pattern",
-                         "beamwidth_deg", "front_to_back_db"];
+                         "beamwidth_deg", "front_to_back_db", "beamforming"];
   var SINR_LABEL = "MODEL ESTIMATE: SINR throughput from co-channel and adjacent-channel interference, not a measurement";
 
   function standardSpec(config, standard) {
@@ -777,7 +784,7 @@
   }
 
   /** 4-connected regions of true cells (flood fill), ordered by first cell in a row-major scan. */
-  function regionsOf(cells, cols, rows, cellM, withBbox) {
+  function regionsOf(cells, cols, rows, cellM) {
     var seen = new Uint8Array(cells.length), out = [];
     for (var start = 0; start < cells.length; start++) {
       if (!cells[start] || seen[start]) { continue; }
@@ -795,10 +802,8 @@
       var rs = members.map(function (n) { return Math.floor(n / cols); }), cs = members.map(function (n) { return n % cols; });
       var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
       var region = { cells: members.length, area_m2: roundTo(members.length * cellM * cellM, 2) };
-      if (withBbox !== false) {
-        region.bbox = { x_min: roundTo(Math.min.apply(null, cs) * cellM, 2), y_min: roundTo(Math.min.apply(null, rs) * cellM, 2),
-                        x_max: roundTo((Math.max.apply(null, cs) + 1) * cellM, 2), y_max: roundTo((Math.max.apply(null, rs) + 1) * cellM, 2) };
-      }
+      region.bbox = { x_min: roundTo(Math.min.apply(null, cs) * cellM, 2), y_min: roundTo(Math.min.apply(null, rs) * cellM, 2),
+                      x_max: roundTo((Math.max.apply(null, cs) + 1) * cellM, 2), y_max: roundTo((Math.max.apply(null, rs) + 1) * cellM, 2) };
       region.centroid = { x: roundTo((sum(cs) / cs.length + 0.5) * cellM, 2), y: roundTo((sum(rs) / rs.length + 0.5) * cellM, 2) };
       out.push(region);
     }
@@ -809,7 +814,7 @@
    * Coverage analytics of one floor, same output as rfmodel.analytics. `gridResult` is a coverageGrid
    * result, `aps` the apGrids list. ESTIMATES only.
    */
-  function analytics(gridResult, aps, config, mloGrids, external) {
+  function analytics(gridResult, aps, config, mloGrids, external, placedClients) {
     var a = config.analytics, rows = gridResult.rows, cols = gridResult.cols, cellM = gridResult.cell_m;
     var area = cellM * cellM, total = rows * cols, n, i, j;
     var best = [].concat.apply([], gridResult.rssi);
@@ -900,14 +905,111 @@
       dead_zones: regionsOf(dead, cols, rows, cellM), best_ap: bestRows,
       overlap: { cells: overlapN, area_m2: roundTo(overlapN * area, 2), pct: pct(overlapN), pairs: pairList(pairCells) },
       roaming: { cells: roamN, area_m2: roundTo(roamN * area, 2), pct: pct(roamN), pairs: pairList(roamPairs),
-                 zones: regionsOf(roamCells, cols, rows, cellM, false),
+                 zones: regionsOf(roamCells, cols, rows, cellM),
                  map: { label: config.roaming.label, zone_ids: zoneIds, second_ap: secondRows, margin_db: marginRows, zone: zoneRows, blend_pct: blendRows } },
       throughput_mbps: rateRows,
       mean_throughput_mbps: total ? roundTo(rates.reduce(function (s, v) { return s + v; }, 0) / total, 1) : 0,
       aps: perAp, total_client_capacity: perAp.reduce(function (s, e) { return s + e.client_capacity; }, 0)
     };
     if (aps.some(function (ap) { return ap.standard !== undefined; })) { result.sinr = sinrSection(aps, bestAp, flats, cols, rows, config, mloGrids, external, cellM); }
+    if (placedClients && placedClients.length) { result.clients = clientCapacitySection(placedClients, aps, bestAp, best, cols, rows, cellM, config); }
     return result;
+  }
+
+  // ---------------------------------------------------------------- v2 data models (ESTIMATES)
+  // Mirror of the "v2 data models" section of wallhack/rfmodel.py: derived material fields, AP class profiles,
+  // and the OFDMA, MU-MIMO and beamforming CAPACITY MODELS with the Smart Home client section.
+  var CLIENT_LABEL = "CAPACITY MODEL: client demand against estimated link rates, OFDMA, MU-MIMO and beamforming are planning models, not measurements";
+  var MATERIAL_BAND_FIELDS = { "2.4": "attenuation24GHz", "5": "attenuation5GHz", "6": "attenuation6GHz" };
+  function has(obj, key) { return Object.prototype.hasOwnProperty.call(obj, String(key)); }
+
+  function dbToPowerFraction(lossDb) { return Math.pow(10, -lossDb / 10); }
+
+  /** Derived, read-only material fields (rfmodel.material_fields): attenuationNGHz in dB, penetrationRate and reflectionRate as power fractions at `band`. */
+  function materialFields(config, material, band) {
+    band = band || DEFAULT_BAND;
+    if (!config.bands[band]) { throw new Error("band must be one of " + Object.keys(config.bands).join(", ")); }
+    var out = {};
+    Object.keys(MATERIAL_BAND_FIELDS).forEach(function (b) { out[MATERIAL_BAND_FIELDS[b]] = has(material.attenuation_db, b) ? material.attenuation_db[b] : null; });
+    out.penetrationRate = roundTo(dbToPowerFraction(material.attenuation_db[band]), 4);
+    out.reflectionRate = roundTo(dbToPowerFraction(material.reflection_loss_db[band]), 4);
+    return out;
+  }
+
+  /** A copy of `ap` with the radio fields of a generic class profile (rfmodel.apply_ap_profile). */
+  function applyApProfile(config, ap, profileId, band) {
+    var profiles = config.ap_profiles.profiles;
+    if (!has(profiles, profileId)) { throw new Error("profile must be one of " + Object.keys(profiles).join(", ")); }
+    var profile = profiles[profileId], chosen = band || profile.band;
+    if (profile.bands.indexOf(chosen) < 0) { throw new Error("profile '" + profileId + "' supports the bands " + profile.bands.join(", ")); }
+    var out = {};
+    ["id", "x", "y", "name"].forEach(function (k) { if (ap[k] !== undefined) { out[k] = ap[k]; } });
+    out.tx_dbm = profile.tx_dbm[chosen]; out.band = chosen; out.standard = profile.standard;
+    out.spatial_streams = profile.spatial_streams; out.antenna_gain_dbi = profile.antenna_gain_dbi;
+    out.pattern = profile.pattern; out.beamforming = profile.beamforming; out.profile = profileId;
+    return out;
+  }
+
+  function apStreams(config, ap) { return ap.spatial_streams || defaultStreams(config, ap.standard); }
+
+  function ofdmaCapacityGain(config, standard, nClients) {
+    var m = config.capacity_models.ofdma;
+    if (standard === undefined || !has(m.gain_by_standard, standard) || nClients < 2) { return 1.0; }
+    return 1.0 + m.gain_by_standard[standard] * Math.min(1.0, (nClients - 1) / m.saturation_clients);
+  }
+
+  function muMimoUsers(config, standard, streams, nClients) {
+    var limits = config.capacity_models.mu_mimo.max_users_by_standard;
+    if (standard === undefined || !has(limits, standard) || nClients < 1) { return 1; }
+    return Math.max(1, Math.min(nClients, streams, limits[standard]));
+  }
+
+  function muMimoCapacityGain(config, users) { return 1.0 + (users - 1) * config.capacity_models.mu_mimo.spatial_efficiency; }
+
+  function beamformingGainDb(config, ap) {
+    var m = config.capacity_models.beamforming;
+    if (!ap.beamforming || m.standards.indexOf(ap.standard) < 0) { return 0.0; }
+    return Math.min(m.max_gain_db, m.array_gain_db_per_doubling * Math.log2(apStreams(config, ap)) * m.steering_efficiency);
+  }
+
+  /** Smart Home client demand against estimated links (rfmodel.client_capacity_section). */
+  function clientCapacitySection(clients, aps, bestAp, best, cols, rows, cellM, config) {
+    var devices = config.client_devices.devices, attached = {}, entries = [];
+    clients.forEach(function (c) {
+      var dev = devices[c.device];
+      var col = Math.min(cols - 1, Math.max(0, Math.floor(c.x / cellM))), row = Math.min(rows - 1, Math.max(0, Math.floor(c.y / cellM)));
+      var n = row * cols + col, i = bestAp[n];
+      var entry = { id: c.id, device: c.device, ap: i >= 0 ? aps[i].id : null, status: "ok", rssi_dbm: roundTo(best[n], 1),
+                    beamforming_gain_db: 0.0, link_mbps: 0.0, demand_mbps: dev.demand_mbps, airtime_pct: 0.0, delivered_mbps: 0.0, satisfied: false };
+      var airtime = 0;
+      entries.push(entry);
+      if (i < 0) { entry.status = "no_coverage"; return; }
+      if (dev.bands.indexOf(aps[i].band) < 0) { entry.status = "band_unsupported"; return; }
+      var gain = beamformingGainDb(config, aps[i]);
+      var link = throughputMbps(config, best[n] + gain, aps[i].band, tableWidth(config, aps[i]));
+      if (link <= 0) { entry.status = "no_link"; return; }
+      entry.beamforming_gain_db = roundTo(gain, 2); entry.link_mbps = roundTo(link, 1);
+      airtime = dev.demand_mbps / link;
+      (attached[i] = attached[i] || []).push({ entry: entry, airtime: airtime });
+    });
+    var perAp = aps.map(function (ap, i) {
+      var members = attached[i] || [], standard = ap.standard;
+      var users = muMimoUsers(config, standard, standard !== undefined ? apStreams(config, ap) : 1, members.length);
+      var ofdma = ofdmaCapacityGain(config, standard, members.length), mu = muMimoCapacityGain(config, users);
+      var raw = members.reduce(function (s, m) { return s + m.airtime; }, 0), load = raw / (ofdma * mu);
+      members.forEach(function (m) {
+        m.entry.airtime_pct = roundTo(100.0 * m.airtime / (ofdma * mu), 1);
+        m.entry.delivered_mbps = roundTo(m.entry.demand_mbps / Math.max(1.0, load), 2);
+        m.entry.satisfied = load <= 1.0;
+      });
+      return { id: ap.id, clients: members.length, demand_mbps: roundTo(members.reduce(function (s, m) { return s + m.entry.demand_mbps; }, 0), 2),
+               raw_airtime_pct: roundTo(100.0 * raw, 1), ofdma_gain: roundTo(ofdma, 3), mu_mimo_users: users,
+               mu_mimo_gain: roundTo(mu, 3), airtime_pct: roundTo(100.0 * load, 1), saturated: load > 1.0 };
+    });
+    return { label: CLIENT_LABEL, clients: entries, aps: perAp,
+             demand_mbps: roundTo(entries.reduce(function (s, e) { return s + e.demand_mbps; }, 0), 2),
+             delivered_mbps: roundTo(entries.reduce(function (s, e) { return s + e.delivered_mbps; }, 0), 2),
+             satisfied_pct: entries.length ? roundTo(100.0 * entries.filter(function (e) { return e.satisfied; }).length / entries.length, 1) : 0.0 };
   }
 
   /** coverageGrid, apGrids and analytics for one floor in one call (like rfmodel.analyze_floor). */
@@ -934,7 +1036,7 @@
       return Object.assign({}, src, { grid: [].concat.apply([], grid) });
     });
     var grid = coverageGrid(project, floorId, shared);
-    return { analytics: analytics(grid, apGrids(project, floorId, shared), o.env.config, mloGrids, external), grid: grid };
+    return { analytics: analytics(grid, apGrids(project, floorId, shared), o.env.config, mloGrids, external, findFloor(project, floorId).clients), grid: grid };
   }
 
   /** (walls, openings) crossed by the straight path p->q; a crossing through an opening counts as an opening. */
@@ -988,6 +1090,84 @@
         best.ap.standard !== undefined ? legacyTableWidth(cfg, best.band, radio.width) : radio.width), 1) });
     if (opts.explain) { out.explain = explainPoint(env, project, floor, best.ap, best.floor, x, y, best.band, o.mode, rssi, cache); }
     return out;
+  }
+
+  // ---------------------------------------------------------------- signal timeline along a walking path (like rfmodel.signal_timeline)
+  function pathPoints(project, path, step, tl) {
+    if (!Array.isArray(path) || !path.length) { throw new Error("path needs at least one waypoint"); }
+    if (path.length > tl.max_waypoints) { throw new Error("path has more than " + tl.max_waypoints + " waypoints"); }
+    if (!(step > 0)) { throw new Error("step_m must be positive"); }
+    path.forEach(function (w) { findFloor(project, w.floor); });
+    var points = [{ floor: path[0].floor, x: path[0].x, y: path[0].y, s: 0 }], travelled = 0;
+    for (var n = 1; n < path.length; n++) {
+      var a = path[n - 1], b = path[n];
+      if (a.floor !== b.floor) { points.push({ floor: b.floor, x: b.x, y: b.y, s: travelled }); continue; }
+      var dx = b.x - a.x, dy = b.y - a.y, length = Math.sqrt(dx * dx + dy * dy);
+      for (var k = 1; k * step < length - 1e-9; k++) {
+        var d = k * step, t = d / length;
+        points.push({ floor: a.floor, x: a.x + dx * t, y: a.y + dy * t, s: travelled + d });
+      }
+      travelled += length;
+      points.push({ floor: b.floor, x: b.x, y: b.y, s: travelled });
+      if (points.length > tl.max_samples) { throw new Error("path needs more than " + tl.max_samples + " samples, use a larger step_m"); }
+    }
+    return points;
+  }
+
+  /**
+   * Signal along a walking path for a client that roams with hysteresis. path: [{floor, x, y}].
+   * opts: {env | config, band, mode, step_m, hysteresis_db}. Same output as rfmodel.signal_timeline.
+   */
+  function signalTimeline(project, path, opts) {
+    var o = optionsOf({ env: opts.env, config: opts.config, project: project, band: opts.band, mode: opts.mode });
+    var env = o.env, cfg = env.config, tl = cfg.timeline, an = cfg.analytics, noSignal = cfg.engine.no_signal_dbm;
+    var step = opts.step_m === undefined ? tl.step_m : opts.step_m, hyst = opts.hysteresis_db === undefined ? tl.hysteresis_db : opts.hysteresis_db;
+    var points = pathPoints(project, path, step, tl), cache = {};
+    var entries = [];
+    project.floors.forEach(function (f) { f.aps.forEach(function (ap) { entries.push({ ap: ap, floor: f }); }); });
+    var samples = [], events = [], serving = null, inDead = false;
+    points.forEach(function (p, i) {
+      var floor = findFloor(project, p.floor), x = roundTo(p.x, 3), y = roundTo(p.y, 3), rssis = [], bands = [], best = null, k;
+      entries.forEach(function (e, idx) {
+        var used = checkBand(env, o.band || e.ap.band || DEFAULT_BAND);
+        bands.push(used); rssis.push(roundTo(levelAt(env, floor, e.ap, e.floor, x, y, used, o.mode, cache), 1));
+        if (best === null || rssis[idx] > rssis[best]) { best = idx; }
+      });
+      var sample = { i: i, s_m: roundTo(p.s, 3), floor: p.floor, x: x, y: y };
+      if (best === null) {
+        samples.push(Object.assign(sample, { ap_id: null, rssi_dbm: noSignal, quality: qualityBand(cfg, noSignal), best_ap_id: null,
+          best_rssi_dbm: noSignal, in_handoff_zone: false, throughput_mbps: 0 }));
+        return;
+      }
+      if (serving === null) { serving = best; }
+      else if (best !== serving && rssis[best] >= an.roam_min_dbm && (rssis[serving] < an.roam_min_dbm || rssis[best] - rssis[serving] >= hyst)) {
+        events.push({ kind: "handoff", i: i, s_m: sample.s_m, floor: p.floor, x: x, y: y, from_ap: entries[serving].ap.id, to_ap: entries[best].ap.id,
+          from_rssi_dbm: rssis[serving], to_rssi_dbm: rssis[best] });
+        serving = best;
+      }
+      var second = null;
+      for (k = 0; k < rssis.length; k++) { if (k !== best && (second === null || rssis[k] > second)) { second = rssis[k]; } }
+      var zone = second !== null && rssis[best] >= an.roam_min_dbm && second >= an.roam_min_dbm && rssis[best] - second <= an.roam_margin_db;
+      var rssi = Math.max(rssis[serving], noSignal), ap = entries[serving].ap, radio = apRadio(cfg, ap, bands[serving]);
+      var rate = throughputMbps(cfg, rssi, bands[serving], ap.standard !== undefined ? legacyTableWidth(cfg, bands[serving], radio.width) : radio.width);
+      if (rssi < an.dead_zone_dbm && !inDead) { events.push({ kind: "coverage_lost", i: i, s_m: sample.s_m, floor: p.floor, x: x, y: y, rssi_dbm: rssi }); }
+      else if (rssi >= an.dead_zone_dbm && inDead) { events.push({ kind: "coverage_regained", i: i, s_m: sample.s_m, floor: p.floor, x: x, y: y, rssi_dbm: rssi }); }
+      inDead = rssi < an.dead_zone_dbm;
+      samples.push(Object.assign(sample, { ap_id: ap.id, rssi_dbm: rssi, quality: qualityBand(cfg, rssi), best_ap_id: entries[best].ap.id,
+        best_rssi_dbm: rssis[best], in_handoff_zone: zone, throughput_mbps: roundTo(rate, 1) }));
+    });
+    var served = samples.filter(function (s) { return s.ap_id !== null; });
+    var sticky = served.filter(function (s) { return s.best_ap_id !== s.ap_id; }).map(function (s) { return s.best_rssi_dbm - s.rssi_dbm; });
+    function count(kind) { return events.filter(function (e) { return e.kind === kind; }).length; }
+    var summary = { length_m: roundTo(points[points.length - 1].s, 2), samples: samples.length, step_m: step, hysteresis_db: hyst,
+      handoffs: count("handoff"), coverage_lost_events: count("coverage_lost"),
+      handoff_zone_pct: roundTo(100 * samples.filter(function (s) { return s.in_handoff_zone; }).length / samples.length, 1),
+      dead_samples_pct: served.length ? roundTo(100 * served.filter(function (s) { return s.rssi_dbm < an.dead_zone_dbm; }).length / samples.length, 1) : 100,
+      min_rssi_dbm: served.length ? Math.min.apply(null, served.map(function (s) { return s.rssi_dbm; })) : noSignal,
+      mean_rssi_dbm: meanOf(served.map(function (s) { return s.rssi_dbm; })),
+      mean_throughput_mbps: meanOf(samples.map(function (s) { return s.throughput_mbps; })),
+      sticky_samples: sticky.length, max_sticky_gap_db: sticky.length ? roundTo(Math.max.apply(null, sticky), 1) : 0 };
+    return { label: cfg.timeline.label, band: o.band, mode: o.mode, samples: samples, events: events, summary: summary };
   }
 
   // ---------------------------------------------------------------- explanation of one point (MODEL)
@@ -1050,7 +1230,7 @@
       walls.push({ wall: w.id, material: w.material, material_label: w.label, through: through, loss_db: roundTo(loss, 2) });
     });
     var wallsDb = walls.reduce(function (sum, w) { return sum + w.loss_db; }, 0);
-    var floorFull = cfg.floor_loss_db[band] * apart, floorDb = floorPenetrationDb(cfg, ap, apFloor, floor, x, y, apart, band);
+    var floorFull = cfg.floor_loss_db[band] * floorsCrossed(cfg, apFloor, floor, apart), floorDb = floorPenetrationDb(cfg, ap, apFloor, floor, x, y, apart, band);
     var total = roundTo(path, 2) + wallsDb + roundTo(floorDb, 2);
     var direct = ap.tx_dbm + gain - total;
     var indirect = [];
@@ -1237,7 +1417,7 @@
   var api = { makeEnv: makeEnv, registerMode: registerMode, registerMaterials: registerMaterials, modeIds: modeIds,
               prepareFloor: prepareFloor, wallLoss: wallLoss, gridAxes: gridAxes, computeApGrid: computeApGrid, computeApRegion: computeApRegion,
               mergeBest: mergeBest, coverageGrid: coverageGrid, apGrids: apGrids, analytics: analytics,
-              analyzeFloor: analyzeFloor, analyzeFloorWithGrid: analyzeFloorWithGrid, probeAt: probeAt, scoreAnalytics: scoreAnalytics,
+              analyzeFloor: analyzeFloor, analyzeFloorWithGrid: analyzeFloorWithGrid, probeAt: probeAt, signalTimeline: signalTimeline, scoreAnalytics: scoreAnalytics,
               compareScenarios: compareScenarios, phyRateMbps: phyRateMbps, throughputMbps: throughputMbps,
               qualityBand: qualityBand, antennaGainDb: antennaGainDb, noiseFloorDbm: noiseFloorDbm,
               standardPhyRateMbps: standardPhyRateMbps, sinrPhyRateMbps: sinrPhyRateMbps, interferenceCoupling: interferenceCoupling,
@@ -1245,7 +1425,10 @@
               resolveInterferers: resolveInterferers, externalCoupling: externalCoupling, packetErrorRate: packetErrorRate,
               linkReliability: linkReliability, spectrumAnalysis: spectrumAnalysis, signalDecay: signalDecay,
               inVoid: inVoid, floorPenetrationDb: floorPenetrationDb, apRadio: apRadio, sourceSpanMhz: sourceSpanMhz,
-              channelCentreMhz: channelCentreMhz };
+              channelCentreMhz: channelCentreMhz,
+              floorsCrossed: floorsCrossed, materialFields: materialFields, applyApProfile: applyApProfile,
+              ofdmaCapacityGain: ofdmaCapacityGain, muMimoUsers: muMimoUsers, muMimoCapacityGain: muMimoCapacityGain,
+              beamformingGainDb: beamformingGainDb, clientCapacitySection: clientCapacitySection };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   root.RFEngine = api;
 })(typeof self !== "undefined" ? self : this);

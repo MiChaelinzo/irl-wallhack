@@ -129,6 +129,8 @@ def run(page, base, problems, args):
     wait_idle(page)
     run_features(page, problems)
     run_lab_features(page, problems, args)
+    run_twin_lab_features(page, problems, args)
+    run_view3d_features(page, problems, args)
     run_learn_features(page, problems, args)
     if not args.no_screenshot:
         page.screenshot(path=str(ROOT / "docs" / ("screenshot-planner-demo.png" if args.demo else "screenshot-planner.png")), full_page=True)
@@ -477,6 +479,15 @@ def run_lab_features(page, problems, args):
     lab_idle(page)
     saved = app_eval(page, "return window.PlannerState.exportProjectJson(a.store.project)")
     app_eval(page, "return window.PlannerState.parseProjectJson(" + repr(saved) + ", a.validateOpts()) && 0")
+    # V2: class profile, beamforming and a Smart Home client with CAPACITY MODEL results
+    ap_select(page, "ap1", "Class").select_option("enterprise")
+    got_profile = app_eval(page, "const x = a.store.project.floors[0].aps[0]; return [x.profile, x.standard, x.spatial_streams, x.beamforming, x.band, x.tx_dbm]")
+    if got_profile != ["enterprise", "wifi7", 4, True, "5", 19.0]:
+        problems.append("class profile did not set the AP fields: %r" % (got_profile,))
+    page.select_option("#clientKind", "phone"); page.click("#clientAdd"); wait_idle(page); lab_idle(page)
+    page.wait_for_function("() => document.querySelector('#clientList li p') && /CAPACITY MODEL/.test(document.querySelector('#clientList li p').textContent)", timeout=30000)
+    if app_eval(page, "return (a.store.project.floors[0].clients || []).length") != 1:
+        problems.append("Add client did not add one client")
     # floors: up and down buttons, Page Up, floor stack
     if app_eval(page, "return a.store.floorId") != "g" or not page.locator("#floorDown").is_disabled():
         problems.append("floor down should be disabled on the lowest floor")
@@ -509,14 +520,126 @@ def run_lab_features(page, problems, args):
         page.set_viewport_size(VIEWPORT)
 
 
+def run_twin_lab_features(page, problems, args):
+    """Timeline with handoffs, what-if, ranked recommendations and the generated network plan (dialogs are accepted by run_features)."""
+    page.evaluate("(p) => window.PlannerApp.loadProject(p)", LAB)
+    wait_idle(page)
+    tab(page, "twinlab")
+    page.click("#tlRun")
+    if "Draw a path first" not in page.inner_text("#panel-twinlab"):
+        problems.append("timeline ran without a path")
+    page.click("#tlDraw")
+    click_world(page, 3, 3); click_world(page, 15, 10); click_world(page, 27, 17)
+    if app_eval(page, "return a.twinLab.state.path.length") != 3:
+        problems.append("path tool did not add 3 waypoints")
+    page.click("#tlRun")
+    page.wait_for_selector("#tlEvents, #panel-twinlab :text('No handoffs')", timeout=10000)
+    if "Handoff from ap1" not in page.inner_text("#panel-twinlab"):
+        problems.append("timeline shows no handoff from ap1 to ap2: " + page.inner_text("#tlEvents")[:200])
+    page.fill("#tlScrub", "5")
+    if "dBm" not in page.inner_text("#tlReadout"):
+        problems.append("scrubber readout empty")
+    page.select_option("#wiKind", "move_ap"); page.fill("#wiX", "10"); page.fill("#wiY", "10"); page.click("#wiRun")
+    page.wait_for_selector("#wiOut table", timeout=30000)
+    if "Coverage score" not in page.inner_text("#wiOut"):
+        problems.append("what-if panel lacks the coverage score row")
+    if not args.no_screenshot:
+        suffix = "-demo" if args.demo else ""
+        page.locator("#panel-twinlab").scroll_into_view_if_needed()
+        page.locator("#panel-twinlab").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-timeline%s.png" % suffix)))
+    page.click("#recRun")
+    page.wait_for_selector("#recScore", timeout=60000)
+    if "out of 100" not in page.inner_text("#recScore"):
+        problems.append("recommendation score missing")
+    page.click("#designRun")
+    page.wait_for_selector("#planOut table", timeout=60000)
+    page.wait_for_selector("#planNarration p", timeout=15000)
+    if "MODEL ESTIMATE" not in page.inner_text("#planNarration"):
+        problems.append("plan narration lacks the estimate label: " + page.inner_text("#planNarration")[:200])
+    before = n_aps_now(page)
+    page.click("#planApply")
+    page.wait_for_function("() => window.PlannerApp.store.project.floors[0].aps.every(a => a.id.indexOf('plan-ap') === 0)", timeout=5000)
+    app_eval(page, "a.store.undo(); return 0")
+    if n_aps_now(page) != before:
+        problems.append("undo of the network plan did not restore the APs")
+    print("twin lab checks done")
+
+
+def n_aps_now(page):
+    return page.evaluate("() => window.PlannerApp.store.project.floors.reduce((n, f) => n + f.aps.length, 0)")
+
+
+def run_view3d_features(page, problems, args):
+    """3D building view (two floors, one basement), slicing plane, keyboard and drag orbit, fallback renderer, beams and generation tabs."""
+    page.evaluate("""async () => { const a = window.PlannerApp, lib = await (await fetch(a.assetUrl('scenarios.json'))).json();
+      const p = JSON.parse(JSON.stringify(lib.scenarios.find(s => s.id === 'large_home').project));
+      p.floors[0].elevation_m = -3; p.floors[0].level = -1; p.floors[1].level = 0; p.floors[1].elevation_m = 0;
+      a.loadProject(p); }""")
+    wait_idle(page)
+    tab(page, "view3d")
+    page.wait_for_function("() => document.getElementById('view3dMsg').textContent.indexOf('Ready') === 0", timeout=30000)
+    chip = page.inner_text("#view3dRenderer")
+    print("3D renderer:", chip)
+    if args.canvas2d and "canvas projection" not in chip:
+        problems.append("3D view ignored the canvas 2D request: " + chip)
+    if "renderer:" not in chip:
+        problems.append("3D renderer chip missing: " + chip)
+    text = page.inner_text("#view3dText")
+    if "below ground" not in text or "Slicing plane" not in text or "not a 3D propagation simulation" not in text:
+        problems.append("3D text alternative incomplete: " + text[:300])
+    if not page.evaluate("() => { const c = document.getElementById('view3dCanvas'); return c.width > 0 && c.getAttribute('aria-describedby') === 'view3dText'; }"):
+        problems.append("3D canvas not sized or not described")
+    yaw0 = app_eval(page, "return a.view3d.state.cam.yaw")
+    page.focus("#view3dCanvas"); page.keyboard.press("ArrowLeft")
+    if app_eval(page, "return a.view3d.state.cam.yaw") == yaw0:
+        problems.append("arrow key did not orbit the 3D camera")
+    box = page.locator("#view3dCanvas").bounding_box()
+    page.mouse.move(box["x"] + 100, box["y"] + 100); page.mouse.down(); page.mouse.move(box["x"] + 200, box["y"] + 140, steps=4); page.mouse.up()
+    if app_eval(page, "return a.view3d.state.cam.yaw") == yaw0:
+        problems.append("dragging did not orbit the 3D camera")
+    page.fill("#view3dSlice", "-1.5")
+    if "interpolated" not in page.inner_text("#view3dText"):
+        problems.append("slicing plane between floors is not described as interpolated: " + page.inner_text("#view3dText")[-200:])
+    page.fill("#view3dSlice", "0")
+    page.uncheck("#view3dVolume")
+    n = app_eval(page, "return a.view3d.state.scene.quads.filter(q => q.kind === 'volume').length")
+    if n != 0:
+        problems.append("volume toggle left %d slices" % n)
+    page.check("#view3dVolume")
+    page.click("#view3dTour")
+    page.click("#view3dReset")
+    if not args.no_screenshot:
+        page.locator("#view3dCanvas").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-3d%s.png" % ("-demo" if args.demo else ""))))
+    tab(page, "beams")
+    page.wait_for_selector("#genOut table")
+    if "Wi-Fi 7" not in page.inner_text("#genOut") or "ILLUSTRATION" not in page.inner_text("#panel-beams"):
+        problems.append("beams and generations panel incomplete")
+    page.select_option("#genBand", "6")
+    if "not on this band" not in page.inner_text("#genOut"):
+        problems.append("6 GHz table does not mark Wi-Fi 4 to 6 as unsupported")
+    page.click("#genRun")
+    page.wait_for_selector("#genFloor table", timeout=60000)
+    page.fill("#beamSteer", "90")
+    if "Steered toward 90" not in page.inner_text("#beamText"):
+        problems.append("beam text did not follow the steering slider: " + page.inner_text("#beamText"))
+    if not args.no_screenshot:
+        suffix = "-demo" if args.demo else ""
+        page.locator("#panel-beams").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-beams%s.png" % suffix)))
+        wall_id = app_eval(page, "return a.store.project.floors[0].walls[0].id")
+        app_eval(page, "a.store.select({ walls: [%r] }); a.editor.invalidate(); return 0" % wall_id)
+        page.wait_for_selector("#inspector:not([hidden])", timeout=5000)
+        page.locator("#inspector").screenshot(path=str(ROOT / "docs" / ("screenshot-planner-materials%s.png" % suffix)))
+    print("3D view checks done")
+
+
 def run_learn_features(page, problems, args):
     """Scenario presets, educational mode, lessons, probe explanation, plan explanation and the report sections."""
     suffix = "-demo" if args.demo else ""
     docs = ROOT / "docs"
     page.set_viewport_size({"width": 1400, "height": 1100})
     ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
-    if len(ids) != 7:
-        problems.append("preset picker lists %d scenarios instead of 7" % len(ids))
+    if len(ids) != 10:
+        problems.append("preset picker lists %d scenarios instead of 10" % len(ids))
     for pid in ids:
         page.select_option("#presetSel", pid); page.click("#presetLoad")
         page.wait_for_function("(n) => window.PlannerApp.store.project.name === n", arg=page.evaluate("(id) => window.PlannerApp.learn.presets.find(p => p.id === id).project.name", pid), timeout=5000)
