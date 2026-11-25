@@ -252,3 +252,86 @@ Findings:
 - Raising the slice length from 8 to 50 ms roughly halved the move time (3.3 and 2.8 s down to 1.4 s, 2 runs each), which shows that the per-slice overhead matters. It also makes each main-thread block up to 50 ms, which is a long task and defeats the point of slicing, so it was not adopted.
 
 Conclusion: the profile does not point to a cheap, safe fix. The supported way to avoid this cost is the Web Worker, where the main thread stays free (no long task over 50 ms while dragging, see the planner page table). This measurement is an approximation of a slow CPU, see the throttling caveats above. The slice length versus overhead trade-off is open work.
+
+## WiFi architect round: speed against the goals (measured in FEAT-006)
+
+Measured on Intel(R) Xeon(R) Platinum 8488C, 8 logical cores, node v22.23.4, Chromium 159 headless with SwiftShader software GL, 2026-11-25. Not Raspberry Pi 4, integrated graphics or phone numbers: claims about those stay UNVERIFIED. Commands: `node tools/perf_architect.js --repeat 5`, `node tools/perf_rf_v2.js`, `.venv/bin/python tools/perf_3d.py --frames 60`. Each timing is the median of the runs after one warm-up; the min and max are in the tables.
+
+### Goals and outcome
+
+| Goal | Result | Verdict |
+|---|---|---|
+| Simulation update after an AP move under 100 ms | `analyze` (one engine run with all per-cell grids) after moving the AP: 2.8 ms small apartment, 3.6 ms large home, 8 ms 13 room hotel floor (0.5 m cells). The engine only (no insight) on the 100 m x 60 m stress floor with 4 APs and 1000 walls: 518 ms | MET on every preset. MISSED on the stress floor (518 ms for `analyze`, 1377 ms for the optimizer `whatIf` that adds the model perturbation runs). The page itself uses the Web Worker and tile cache, 135 ms final on the stress floor, see the first table |
+| Insight functions interactive | `roomStats`, `gamerMode` and `scoreCard` are 1 to 13 ms on all three presets. `diagnose`, `placementReport` and `meshTopologies` are 4 to 44 ms on the small apartment and large home, but 336 ms, 363 ms and 390 ms on the 13 room hotel floor, and `timeMachine` with three versions 204 ms there | MET for the small presets. MISSED (above 100 ms) on the hotel floor for the three functions that run many engine passes. They run on a button press with a progress bar, not on every drag |
+| 10,000+ rays per update | See the path table below. One "ray" is one source-to-cell path evaluation: one call of the direct, image-method reflected or diffracted path function for one access point and one grid cell, counted exactly in an instrumented copy of `rf-engine.js` | REACHED only for larger or multipath runs. Basic mode on the small presets is 576 and 1,280 evaluations (below 10,000), the hotel floor 8,064 (below), the stress floor 192,000. In multipath mode (direct plus image-method reflections plus diffraction) the large home is 12,864 and the hotel floor 169,776. The default basic mode on a small plan does NOT reach 10,000 |
+| Signal waves frame time | The wave overlay costs 0.1 ms per frame (max 0.2 to 2.1 ms) at low, medium and high quality; `requestAnimationFrame` intervals stay at 16.7 ms (60 Hz) with the waves on and off, p95 17.1 ms | MET in headless Chromium. UNVERIFIED on integrated graphics and phones |
+| 3D view frame time | WebGL 1.3 ms median, p95 2.6 to 3.0 ms; canvas projection 1.2 ms (large home preset, 8 quads and 88 lines) | MET in software GL. The scene is small, so this says little about a large building |
+
+### Node timings of the insight functions (`tools/perf_architect.js`)
+
+| Measurement | Median ms | Min | Max | Notes |
+|---|---|---|---|---|
+| simulate after an AP move (analyze), small_apartment, 0.5 m cells | 2.8 | 2.4 | 4.3 | 192 cells, 1 AP |
+| roomStats, small_apartment | 1.4 | 1.2 | 2 |  |
+| gamerMode, small_apartment | 1.5 | 1.3 | 2 |  |
+| scoreCard, small_apartment | 1.3 | 1.2 | 1.6 |  |
+| diagnose, small_apartment | 5.6 | 3.8 | 7 | includes a second engine run per tested fix |
+| placementReport, small_apartment | 16.6 | 10.8 | 18.6 | searches the optimizer candidate lattice |
+| meshTopologies, small_apartment | 4.2 | 3.7 | 4.3 | single, dual and whole-home |
+| timeMachine, small_apartment, 3 versions | 7.8 | 7.4 | 9.3 | preset items built inside the timed call |
+| simulate after an AP move (analyze), large_home, 0.5 m cells | 3.6 | 2.6 | 4.3 | 640 cells, 1 AP |
+| roomStats, large_home | 2.7 | 2.6 | 2.9 |  |
+| gamerMode, large_home | 2.8 | 2.3 | 3 |  |
+| scoreCard, large_home | 3 | 2.5 | 4.3 |  |
+| diagnose, large_home | 7.1 | 6.6 | 13.2 | includes a second engine run per tested fix |
+| placementReport, large_home | 43.7 | 40.1 | 63.6 | searches the optimizer candidate lattice |
+| meshTopologies, large_home | 8.6 | 7.4 | 9.5 | single, dual and whole-home |
+| timeMachine, large_home, 3 versions | 32.8 | 30.1 | 35.8 | preset items built inside the timed call |
+| simulate after an AP move (analyze), hotel_floor, 0.5 m cells | 8 | 7.5 | 9.9 | 2016 cells, 2 AP |
+| roomStats, hotel_floor | 9.8 | 8.5 | 10.1 |  |
+| gamerMode, hotel_floor | 9.6 | 8.4 | 9.8 |  |
+| scoreCard, hotel_floor | 8.7 | 8.6 | 9.4 |  |
+| diagnose, hotel_floor | 335.9 | 328.7 | 345.8 | includes a second engine run per tested fix |
+| placementReport, hotel_floor | 362.5 | 358.1 | 367.8 | searches the optimizer candidate lattice |
+| meshTopologies, hotel_floor | 390.4 | 388 | 399.1 | single, dual and whole-home |
+| timeMachine, hotel_floor, 3 versions | 204.2 | 197.5 | 206.1 | preset items built inside the timed call |
+| simulate after an AP move (analyze), stress floor 4 AP 1000 walls, 0.5 m | 517.6 | 511.8 | 532 | 24,000 cells |
+| what-if move one AP (optimizer), stress floor 4 AP | 1377.3 | 1354.2 | 1394.3 | known miss against 100 ms |
+
+### Path evaluations per engine run
+
+A run is one `analyzeFloorWithGrid` call. The direct count is a multiple of cells x APs (for example 576 for 192 cells and 1 AP on the small apartment, 3 times; the large home is 2 times), so the engine makes more than one grid pass per call. Which passes was not traced here, so only the exact counts below are claimed. "Reflected tried" counts image-method candidates before the side and hit tests; "reflected valid" counts the ones that returned a level. The last row uses a 2 m grid because the 0.5 m multipath run on the stress floor is 69.4 million evaluations and took about 5 minutes (309 s instrumented, one run, not repeated).
+
+| Case | Mode | Direct | Reflected tried | Reflected valid | Diffracted | Total path evaluations | Run ms (instrumented) |
+|---|---|---|---|---|---|---|---|
+| small_apartment, 0.5 m | basic | 576 | 0 | 0 | 0 | 576 | 7.5 |
+| large_home, 0.5 m | basic | 1280 | 0 | 0 | 0 | 1280 | 11.9 |
+| hotel_floor, 0.5 m | basic | 8064 | 0 | 0 | 0 | 8064 | 50.6 |
+| small_apartment, 0.5 m | multipath | 576 | 3456 | 2707 | 806 | 4838 | 32.2 |
+| large_home, 0.5 m | multipath | 1280 | 8960 | 6442 | 2624 | 12864 | 70.7 |
+| hotel_floor, 0.5 m | multipath | 8064 | 129024 | 55704 | 32688 | 169776 | 605.3 |
+| stress floor 4 AP, 0.5 m | basic | 192000 | 0 | 0 | 0 | 192000 | 1705.4 |
+| stress floor 4 AP, 2 m | multipath | 12000 | 3789000 | 229842 | 544556 | 4345556 | 19611.8 |
+
+The instrumented run time is slower than the normal engine because of the counters and the fresh engine load per case; do not read it as a speed figure.
+
+### Rendering in headless Chromium (`tools/perf_3d.py`)
+
+| Renderer | Tab open (ms) | Median frame (ms) | p95 frame (ms) |
+|---|---|---|---|
+| WebGL | 18 | 1.3 | 2.6 |
+| canvas projection | 12 | 1.2 | 1.8 |
+
+| Signal waves, quality | rAF interval, waves off (ms) | rAF interval median, waves on (ms) | rAF interval p95 (ms) | Draw cost median (ms) | Draw cost max (ms) |
+|---|---|---|---|---|---|
+| low | 16.7 | 16.7 | 17.1 | 0.10 | 2.10 |
+| medium | 16.7 | 16.7 | 17.1 | 0.09 | 0.40 |
+| high | 16.9 | 16.7 | 17.1 | 0.10 | 0.60 |
+
+The rAF interval is bounded by the 60 Hz display clock, so 16.7 ms means "no dropped frames", not "fast". The draw cost is the mean of the 20 wave draw times that `planner-quick.js` keeps for its own frame budget. Right after a quality change the CSS blur and particle layer restart and frames take 45 to 90 ms for about a second in software GL; the benchmark waits 1.5 s for that before measuring, so these figures describe the steady state.
+
+### Honest summary
+
+- Misses: stress floor `whatIf` 1.38 s and `analyze` 0.52 s; hotel floor `diagnose`, `placementReport`, `meshTopologies` 0.34 to 0.39 s. Not optimised in this round (no profile pointed to a cheap safe fix, and the engine is the Python reference parity target).
+- Default basic mode on the small presets does not evaluate 10,000 paths per update; it does in multipath mode and on large floors.
+- Nothing here measures a GPU, a Pi 4 or a phone.

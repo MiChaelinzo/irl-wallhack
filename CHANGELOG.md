@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### WiFi architect: measurements, screenshots and docs
+- perf: `tools/perf_architect.js` times the insight functions on presets and the stress floor and counts path evaluations (one "ray" = one direct, reflected or diffracted path call for one AP and one cell) from an instrumented copy of the engine; `tools/perf_3d.py` also measures the Signal waves frame time per quality level. Results and misses in `docs/perf-rf.md`: re-simulation after an AP move is 3 to 8 ms on presets and 518 ms on the stress floor (what-if 1.4 s, a miss); `diagnose`, `placementReport` and `meshTopologies` take 0.34 to 0.39 s on the 13 room hotel preset (a miss); 10,000+ path evaluations per run only in multipath mode or on large floors.
+- docs: `tools/screenshot.py` captures the Quick start result, Rooms and gaming, Score card, Assistant, Mesh, Time Machine and the aurora palette with waves (`docs/screenshot-planner-*.png`, demo shots stay in a temp folder); the README leads with the Quick start image, gains a five step walkthrough and honesty rows; `docs/platform/26-wifi-architect-round.md` lists the ten priority features and extras as already existed, extended, new, partial or deferred; tables 21, 24 and 25 updated.
+- style: the sticky header is more opaque (0.82 dark, 0.92 light) so page content no longer shows through it in the light theme screenshot.
+- Verification: VERIFIED for the measurements on the benchmark machine (Xeon, node 22, headless Chromium with SwiftShader). UNVERIFIED on integrated graphics, a Raspberry Pi 4 and phones.
+
 ### WiFi architect: Quick start, new tabs, signal waves
 - feat: `planner-quick.js` adds a Quick start card at the top of `/planner` (pick one of 14 templates or keep your plan, press Analyse my WiFi): big grade, coverage, dead zones, Gaming, Streaming and Video call ratings, per-room Gamer Mode table, top diagnosis, a computed "Best router spot" line with Show (ghost marker) and Apply (undoable), a link to the signal against interference layers, and an Ask box with a suggested question chip per room.
 - feat: tabs Rooms and gaming (table, room cards, Smart Home check per room), Score card, Assistant (optional "Explain in plain words" through `POST /api/planner/explain`, live server only), Mesh (three topologies side by side) and Time Machine (up to four versions A to D, delta table, thumbnails and a wipe viewer). The Scenarios tab compare is unchanged.

@@ -3,9 +3,9 @@
 **See how WiFi moves through your home, on your own machine.** Wallhack is a local, offline dashboard with two halves:
 
 - **Sensing dashboard** (`/`): watches how your WiFi signal changes and estimates **presence, motion, activity, breathing rate, an experimental heart rate and a coarse zone**, with optional air-quality sensors. Without WiFi hardware it runs a clearly labelled simulator.
-- **RF planner** (`/planner`): draw a floor plan, drop access points and get a **model-based signal heat map** (a MODEL ESTIMATE, not a measurement), analytics, placement advice and PDF, PNG, CSV and JSON reports.
+- **RF planner and WiFi architect** (`/planner`): draw a floor plan with wall materials and thicknesses, drop access points and get a **model-based signal heat map** (a MODEL ESTIMATE, not a measurement), a letter grade, per-room gaming ratings, the best router spot, mesh and before/after comparisons, and PDF, PNG, CSV and JSON reports. Everything stays in your browser.
 
-![RF planner: floor plan with a signal heat map, quality bands and contours (model estimate)](docs/screenshot-planner.png)
+![WiFi architect Quick start: pick a plan, press Analyse my WiFi, get a grade, per-room gaming ratings and the main cause (model estimate)](docs/screenshot-planner-quick.png)
 
 ## Try it in a minute
 Needs Python 3.9+. No WiFi hardware or account is needed; after `make install` it runs offline.
@@ -19,7 +19,7 @@ Then open `/planner` for the RF planner, `/mobile` for the phone view and `/judg
 | Page | What you get | Honesty label on screen |
 |---|---|---|
 | `/` dashboard | presence, vitals, zones, 3D signal view, timeline, insights, router game | SIMULATED (simulator), EXPERIMENTAL (heart rate) |
-| `/planner` | floor-plan editor, heat map layers, analytics, smart planner, 3D view, lessons, exports | MODEL ESTIMATE, not a measurement |
+| `/planner` | Quick start (grade, rooms, best router spot), floor-plan editor, heat map layers, analytics, Score card, Assistant, Mesh, Time Machine, smart planner, 3D view, lessons, exports | MODEL ESTIMATE, not a measurement |
 | `/mobile` | phone companion with occupancy, vitals and alerts | SIMULATED when simulated |
 | `/judge` | every capability with Built / Experimental / Future / Unsupported and its verification label | taken from the README table |
 
@@ -45,6 +45,19 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 | ![Planner SINR layer with the colour-blind safe viridis palette](docs/screenshot-planner-layers.png) | ![Planner analytics: coverage, dead zones and capacity estimates](docs/screenshot-planner-analytics.png) |
 | ![Planner, light theme](docs/screenshot-planner-light.png) | ![Judge mode: each capability with its status and verification label](docs/screenshot-judge.png) |
 | ![Planner on a phone](docs/screenshot-planner-mobile.png) | ![Dashboard on a phone](docs/screenshot-mobile.png) |
+
+### WiFi architect in five steps (no RF knowledge needed)
+1. Open `/planner`. The Quick start card is at the top.
+2. Step 1: pick a starting plan (a studio, a two bedroom condo, a small office, a three story house and ten more) or keep the plan on screen.
+3. Step 2: press **Analyse my WiFi**. The result takes well under a second on the presets (0.1 to 0.5 s measured in headless Chromium, see [docs/perf-rf.md](docs/perf-rf.md)).
+4. Read the big letter grade, the three chips (Gaming, Streaming, Video calls) and the room table. Ping is always a range and packet loss risk is Low, Medium or High: there is no standard formula from signal strength to ping, so these are MODEL ESTIMATES.
+5. Press **Show** on the best router spot to preview it, **Apply** to move the router (Ctrl+Z undoes it), or type "Why is my bedroom WiFi slow?" in the Ask box. The tabs **Mesh** and **Time Machine** compare a single router, mesh nodes and what-if upgrades, and **Score card** downloads `wifi_assessment.pdf`.
+
+| | |
+|---|---|
+| ![Rooms and gaming tab with per-room ping range, loss risk and grade](docs/screenshot-planner-rooms.png) | ![Score card with the grade breakdown and the PDF button](docs/screenshot-planner-scorecard.png) |
+| ![Assistant answering why a bedroom is slow](docs/screenshot-planner-assistant.png) | ![Mesh topologies side by side](docs/screenshot-planner-mesh.png) |
+| ![Time Machine comparing three versions with a wipe](docs/screenshot-planner-timemachine.png) | ![Aurora palette with signal waves](docs/screenshot-planner-aurora.png) |
 
 More screenshots (spectrum, engineering dashboard, scenario comparison, 3D view, timeline, beams, lessons, advice, report) are in [`docs/`](docs/). They are produced by `tools/screenshot.py` and `tools/planner_smoke.py` in headless Chromium.
 
@@ -224,6 +237,13 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
 | RF planner lab UI: AP WiFi standard, width, streams and MLO controls, 11 map layers plus a combined layer, side-by-side compare, colour-blind palettes (viridis, cividis), roaming, strongest-AP and blend overlays, spectrum canvas, engineering dashboard, door, window, stairwell and interference-source editing, floor up and down | PARTIALLY VERIFIED (driven in headless Chromium by `tools/planner_smoke.py`, live, `--demo`, `--canvas2d` and `--no-worker`, zero console errors; pure parts tested in node; AP panel controls clicked through the page; no real GPU, no touch, no screen reader, colour-blind rendering judged from the palette definitions, not simulated) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |
+| WiFi architect insight layer (`rf-insight.js`: rooms, Gamer Mode, Score card, Assistant parser, placement report, mesh topologies, Time Machine), wall thickness and objects, `wifi_assessment.pdf` structure | VERIFIED (node driven tests `tests/test_rf_insight.py`, `tests/test_planner_quick.py`, `tests/test_rf_parity.py`, export tests) as code behaviour; the numbers are MODEL ESTIMATES |
+| WiFi architect UI (Quick start, tabs, find best spot, signal waves) in headless Chromium, live, `--demo` and canvas fallback, a11y 0 serious or critical | PARTIALLY VERIFIED (scripted run on software GL, `tools/planner_smoke.py`, `tools/a11y_check.py`, screenshots viewed; no real GPU, phone or screen reader) |
+| WiFi architect speed: presets re-simulate after an AP move in 3 to 8 ms, insight functions 1 to 400 ms, signal waves 0.1 ms draw per frame | VERIFIED on the benchmark machine (`node tools/perf_architect.js`, `tools/perf_3d.py`, `docs/perf-rf.md`). Misses: stress floor what-if about 1.4 s and `placementReport` or `diagnose` on the 13 room hotel preset about 0.35 s |
+| Ping ranges, packet loss risk, gaming grades, streaming and video call ratings against real games, calls and routers | UNVERIFIED (no standard RSSI to ping formula; thresholds are planning assumptions, never compared with measured traffic) |
+| Optional "Explain in plain words" (LLM rephrase of the assistant numbers) with a real model | UNVERIFIED (mock server only; hidden in the static demo) |
+| Mesh backhaul penalty (throughput factor and per-hop delay) and wall thickness scaling against real mesh kits and walls | UNVERIFIED (documented assumptions) |
+| WiFi architect speed on integrated graphics, a Raspberry Pi 4 or a phone | UNVERIFIED (software GL in headless Chromium only) |
 | RF planner PDF and PNG exports opened in a real viewer | UNVERIFIED (structure and signature checked by script only) |
 | LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
 | LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted, loopback client with a foreign Host header refused (DNS rebinding), `/api/pair` refused with an Origin header | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |
