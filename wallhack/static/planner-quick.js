@@ -227,6 +227,16 @@
 
     var q = { token: 0, res: null, card: null, gamer: null, placement: null, answer: null, floor: null, ready: false, ms: null, dirty: false, analysedOnce: false, timer: 0 };
     app.quick = { state: q };
+    /** Inputs of the Wi-Fi assessment PDF and CSV from the latest analysis of the current floor (mesh and Time Machine only when they were run on it). */
+    app.quick.assessmentData = function () {
+      if (!q.card || !q.gamer || q.floor !== floorId()) { throw new Error("run Analyse on this floor first, the assessment needs its result"); }
+      return { project: app.store.project.name, floor: app.currentFloor().name, date: new Date().toISOString().slice(0, 10), card: q.card, gamer: q.gamer, answer: q.answer, placement: q.placement,
+               mesh: mesh.result && mesh.floor === floorId() ? mesh.result : null, timeMachine: tm.result && tm.floor === floorId() ? tm.result : null };
+    };
+    function exportButtons() {
+      return el("p", { class: "tool-row" }, [button("Download wifi_assessment.pdf", function () { app.exportRun("assessment"); }, { "data-quick": "pdf", title: "Grade, rooms, diagnosis and fixes as a PDF that stays on this device" }),
+        button("Print or save as PDF", function () { app.exportRun("print"); }, { "data-quick": "print", title: "Uses the browser print dialog" })]);
+    }
 
     // ---------------------------------------------------------------- Quick start card
     var card = $("quick");
@@ -327,6 +337,7 @@
       box.appendChild(el("p", { class: "tool-row" }, [button("See signal against interference", function () {
         app.setView({ layer: "interference" }); app.tabs.select("layers", true); app.say("Showing the signal and interference layers");
       }, { id: "quickInterference", title: "Opens the Layers tab, where signal and interference can be compared side by side" })]));
+      box.appendChild(exportButtons());
       box.appendChild(el("p", { class: "muted hint", text: q.card.label }));
       result.appendChild(box);
     }
@@ -440,6 +451,7 @@
       host.appendChild(table("Ratings", ["Activity", "Rating", "Score"], [["Gaming", c.ratings.gaming.word + " (grade " + c.ratings.gaming.grade + ")", c.ratings.gaming.score], ["Streaming", c.ratings.streaming.word, c.ratings.streaming.score], ["Video calls", c.ratings.video.word, c.ratings.video.score]]));
       host.appendChild(table("Rooms", ["Room", "Coverage", "Ping", "Gaming", "Streaming", "Video calls"],
         c.rooms.map(function (r) { return [r.name, pct(r.coverage_pct), pingText(r.ping_ms), r.gaming_grade, r.streaming, r.video]; })));
+      host.appendChild(exportButtons());
       host.appendChild(el("p", { class: "muted hint", text: c.label }));
     }
 

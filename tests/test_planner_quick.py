@@ -128,3 +128,29 @@ def test_signal_waves_block_and_new_client_devices_are_documented_and_validated(
     src = rfmodel.CONFIG["client_devices"]["source"]
     for word in ("doorbell", "speaker", "thermostat", "robot vacuum"):
         assert word in src, "demand figure of %s is not documented" % word
+
+
+def test_wifi_assessment_pdf_pages_footer_and_determinism():
+    from tests.test_planner_panels import pdf_problems
+    r = run_js("""
+      const X = require(process.argv[1] + '/planner-export.js');
+      const p = scenario('small_apartment'), res = I.analyze(p, 'main', opts), o2 = Object.assign({}, opts, {result: res});
+      const card = I.scoreCard(p, 'main', o2), gamer = I.gamerMode(p, 'main', o2), answer = I.diagnose(p, 'main', 'Why is my bedroom WiFi slow?', opts);
+      const mesh = I.meshTopologies(p, 'main', opts);
+      const jpeg = new Uint8Array(200).map((_, i) => (i * 5) & 255); jpeg[0] = 0xff; jpeg[1] = 0xd8;
+      const data = {project: 'Flat', floor: 'main', date: '2025-01-01', card, gamer, answer, placement: null, mesh, timeMachine: null, image: {bytes: jpeg, w: 40, h: 30}};
+      const a = X.buildAssessment(data), b = X.buildAssessment(data), bare = X.buildAssessment(Object.assign({}, data, {answer: null, mesh: null, image: null}));
+      out({a: Array.from(a), same: Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0, bare: Array.from(bare), grade: card.grade, rooms: gamer.rooms.map(r => r.name),
+           csv: X.toCsv(X.assessmentCsvRows(data))});
+    """)
+    data, bare = bytes(r["a"]), bytes(r["bare"])
+    assert r["same"] and pdf_problems(data) == [] and pdf_problems(bare) == []
+    assert data.startswith(b"%PDF-1.4")
+    pages = data.count(b"/Type /Page ")
+    assert pages >= 4 and bare.count(b"/Type /Page ") == 3   # grade, rooms, diagnosis (+ mesh and Time Machine page when present)
+    assert data.count(b"MODEL ESTIMATE, not a measurement. Values come from a propagation model") == pages
+    assert bare.count(b"MODEL ESTIMATE, not a measurement. Values come from a propagation model") == 3
+    assert ("Grade %s" % r["grade"]).encode() in data and b"/Filter /DCTDecode" in data and b"Mesh topologies" in data
+    assert all(name.encode() in data for name in r["rooms"])
+    assert r["csv"].startswith("Wallhack Wi-Fi assessment,")
+    assert "Room,Coverage,Ping range,Jitter,Loss risk,Stability,Gaming grade" in r["csv"]

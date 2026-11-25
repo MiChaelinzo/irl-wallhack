@@ -115,67 +115,152 @@
     return lines;
   }
 
+  /** Page layout shared by the PDF reports: footer on every page, a running y position, headings, wrapped paragraphs and tables. */
+  function pageKit(pdf) {
+    var width = PAGE_W - 2 * MARGIN, k = { y: 0, width: width };
+    function footer() {
+      pdf.line(MARGIN, PAGE_H - 44, PAGE_W - MARGIN, PAGE_H - 44, 0.4);
+      pdf.text(MARGIN, PAGE_H - 30, 8, ESTIMATE_LINE + ". Values come from a propagation model with typical material losses. Throughput, capacity and utilisation are estimates. Verify with a site survey.");
+    }
+    k.newPage = function () { pdf.addPage(); footer(); k.y = MARGIN + 10; };
+    k.ensure = function (h) { if (k.y + h > PAGE_H - 60) { k.newPage(); } };
+    k.heading = function (t) { k.ensure(30); k.y += 8; pdf.text(MARGIN, k.y + 12, 13, t, true); k.y += 22; };
+    k.para = function (t, size) {
+      wrapText(t, size, width).forEach(function (l) { k.ensure(size * LINE_GAP); pdf.text(MARGIN, k.y + size, size, l); k.y += size * LINE_GAP; });
+    };
+    k.tableOut = function (rows, colX) {
+      rows.forEach(function (r, i) {
+        k.ensure(14);
+        r.forEach(function (c, j) { pdf.text(MARGIN + colX[j], k.y + 9, 9, String(c).slice(0, Math.floor(((colX[j + 1] || width) - colX[j]) / 4.6)), i === 0); });
+        k.y += 13;
+      });
+    };
+    return k;
+  }
+
   /**
    * Coverage report. data: {title, project, floor, date, summary: [[label, value]], aps: [header + rows],
    * issues: [text], recommendations: [text], image: {bytes, w, h} or null}. Optional sections, each skipped when absent:
    * floors, ap_locations, spectrum, performance (header + rows), mode_maps [{label, coverage_pct, image}], accessible_text (text).
    */
   function buildReport(data) {
-    var pdf = createPdf(), y = 0, width = PAGE_W - 2 * MARGIN;
-    function footer() {
-      pdf.line(MARGIN, PAGE_H - 44, PAGE_W - MARGIN, PAGE_H - 44, 0.4);
-      pdf.text(MARGIN, PAGE_H - 30, 8, ESTIMATE_LINE + ". Values come from a propagation model with typical material losses. Throughput, capacity and utilisation are estimates. Verify with a site survey.");
-    }
-    function newPage() { pdf.addPage(); footer(); y = MARGIN + 10; }
-    function ensure(h) { if (y + h > PAGE_H - 60) { newPage(); } }
-    function heading(t) { ensure(30); y += 8; pdf.text(MARGIN, y + 12, 13, t, true); y += 22; }
-    function para(t, size) {
-      wrapText(t, size, width).forEach(function (l) { ensure(size * LINE_GAP); pdf.text(MARGIN, y + size, size, l); y += size * LINE_GAP; });
-    }
-    function tableOut(rows, colX) {
-      rows.forEach(function (r, i) {
-        ensure(14);
-        r.forEach(function (c, k) { pdf.text(MARGIN + colX[k], y + 9, 9, String(c).slice(0, Math.floor(((colX[k + 1] || width) - colX[k]) / 4.6)), i === 0); });
-        y += 13;
-      });
-    }
-    newPage();
-    pdf.text(MARGIN, y + 18, 20, data.title, true); y += 30;
-    para("Project: " + data.project + "   Floor: " + data.floor + "   Date: " + data.date, 10);
-    pdf.rect(MARGIN, y + 4, width, 22, 0.9); pdf.text(MARGIN + 8, y + 19, 11, ESTIMATE_LINE + ". Not a site survey.", true); y += 34;
-    heading("Summary");
-    tableOut(data.summary, [0, 230]);
-    if (data.floors && data.floors.length) { heading("Floor overview (" + ESTIMATE_LINE + ")"); tableOut(data.floors, [0, 150, 200, 260, 360, 450]); }
+    var pdf = createPdf(), k = pageKit(pdf), width = k.width;
+    k.newPage();
+    pdf.text(MARGIN, k.y + 18, 20, data.title, true); k.y += 30;
+    k.para("Project: " + data.project + "   Floor: " + data.floor + "   Date: " + data.date, 10);
+    pdf.rect(MARGIN, k.y + 4, width, 22, 0.9); pdf.text(MARGIN + 8, k.y + 19, 11, ESTIMATE_LINE + ". Not a site survey.", true); k.y += 34;
+    k.heading("Summary");
+    k.tableOut(data.summary, [0, 230]);
+    if (data.floors && data.floors.length) { k.heading("Floor overview (" + ESTIMATE_LINE + ")"); k.tableOut(data.floors, [0, 150, 200, 260, 360, 450]); }
     if (data.image) {
       var h = Math.min(300, width * data.image.h / data.image.w), w = h * data.image.w / data.image.h;
-      ensure(h + 30); heading("Heat map (" + ESTIMATE_LINE + ")");
-      pdf.image(data.image.bytes, data.image.w, data.image.h, MARGIN, y, w, h); y += h + 6;
+      k.ensure(h + 30); k.heading("Heat map (" + ESTIMATE_LINE + ")");
+      pdf.image(data.image.bytes, data.image.w, data.image.h, MARGIN, k.y, w, h); k.y += h + 6;
     }
     if (data.mode_maps && data.mode_maps.length) {
-      heading("Coverage maps per propagation mode (" + ESTIMATE_LINE + ")");
+      k.heading("Coverage maps per propagation mode (" + ESTIMATE_LINE + ")");
       data.mode_maps.forEach(function (m) {
         var mh = Math.min(150, width * m.image.h / m.image.w), mw = mh * m.image.w / m.image.h;
-        ensure(mh + 24); pdf.text(MARGIN, y + 10, 10, m.label + ": coverage " + m.coverage_pct + " % (estimate)", true); y += 16;
-        pdf.image(m.image.bytes, m.image.w, m.image.h, MARGIN, y, mw, mh); y += mh + 6;
+        k.ensure(mh + 24); pdf.text(MARGIN, k.y + 10, 10, m.label + ": coverage " + m.coverage_pct + " % (estimate)", true); k.y += 16;
+        pdf.image(m.image.bytes, m.image.w, m.image.h, MARGIN, k.y, mw, mh); k.y += mh + 6;
       });
     }
-    heading("Access points");
-    tableOut(data.aps, [0, 60, 130, 200, 270, 350, 430]);
-    if (data.ap_locations && data.ap_locations.length > 1) { heading("Access point locations"); tableOut(data.ap_locations, [0, 90, 190, 260, 330, 400]); }
-    if (data.spectrum && data.spectrum.length > 1) { heading("Spectrum summary (" + ESTIMATE_LINE + ")"); tableOut(data.spectrum, [0, 80, 130, 200, 280]); }
-    if (data.performance && data.performance.length) { heading("Performance of this analysis"); tableOut(data.performance, [0, 230]); }
-    if (data.network_health && data.network_health.length) { heading("Network health (" + ESTIMATE_LINE + ")"); tableOut(data.network_health, [0, 230]); }
-    if (data.device_recommendations && data.device_recommendations.length > 1) { heading("Device recommendations (" + ESTIMATE_LINE + ")"); tableOut(data.device_recommendations, [0, 25, 330, 430]); }
-    if (data.what_if && data.what_if.length > 1) { heading("Before and after (what-if, " + ESTIMATE_LINE + ")"); tableOut(data.what_if, [0, 200, 290, 380]); }
-    heading("Issues");
-    if (!data.issues.length) { para("No issues recorded. Run the Smart planner before exporting to include them.", 10); }
-    data.issues.forEach(function (t) { para("- " + t, 9); });
-    heading("Recommendations");
-    if (!data.recommendations.length) { para("No recommendations recorded. Run the Smart planner before exporting to include them.", 10); }
-    data.recommendations.forEach(function (t) { para("- " + t, 9); });
-    if (data.accessible_text) { heading("Text summary (for screen readers)"); para(data.accessible_text, 9); }
-    heading("Disclaimer");
-    para("All figures in this report are " + ESTIMATE_LINE.toLowerCase() + ". The model uses log-distance path loss with typical wall losses, and recommendations carry a confidence that expresses model sensitivity, not real-world accuracy. Floor plans and images were processed in the browser and are not uploaded.", 9);
+    k.heading("Access points");
+    k.tableOut(data.aps, [0, 60, 130, 200, 270, 350, 430]);
+    if (data.ap_locations && data.ap_locations.length > 1) { k.heading("Access point locations"); k.tableOut(data.ap_locations, [0, 90, 190, 260, 330, 400]); }
+    if (data.spectrum && data.spectrum.length > 1) { k.heading("Spectrum summary (" + ESTIMATE_LINE + ")"); k.tableOut(data.spectrum, [0, 80, 130, 200, 280]); }
+    if (data.performance && data.performance.length) { k.heading("Performance of this analysis"); k.tableOut(data.performance, [0, 230]); }
+    if (data.network_health && data.network_health.length) { k.heading("Network health (" + ESTIMATE_LINE + ")"); k.tableOut(data.network_health, [0, 230]); }
+    if (data.device_recommendations && data.device_recommendations.length > 1) { k.heading("Device recommendations (" + ESTIMATE_LINE + ")"); k.tableOut(data.device_recommendations, [0, 25, 330, 430]); }
+    if (data.what_if && data.what_if.length > 1) { k.heading("Before and after (what-if, " + ESTIMATE_LINE + ")"); k.tableOut(data.what_if, [0, 200, 290, 380]); }
+    k.heading("Issues");
+    if (!data.issues.length) { k.para("No issues recorded. Run the Smart planner before exporting to include them.", 10); }
+    data.issues.forEach(function (t) { k.para("- " + t, 9); });
+    k.heading("Recommendations");
+    if (!data.recommendations.length) { k.para("No recommendations recorded. Run the Smart planner before exporting to include them.", 10); }
+    data.recommendations.forEach(function (t) { k.para("- " + t, 9); });
+    if (data.accessible_text) { k.heading("Text summary (for screen readers)"); k.para(data.accessible_text, 9); }
+    k.heading("Disclaimer");
+    k.para("All figures in this report are " + ESTIMATE_LINE.toLowerCase() + ". The model uses log-distance path loss with typical wall losses, and recommendations carry a confidence that expresses model sensitivity, not real-world accuracy. Floor plans and images were processed in the browser and are not uploaded.", 9);
+    return pdf.build();
+  }
+
+  // ------------------------------------------------------------------ Wi-Fi assessment (Score card PDF)
+  function pingRange(r) { return r ? r[0] + " to " + r[1] + " ms" : "no signal"; }
+  function signedNum(v) { return (v > 0 ? "+" : "") + v; }
+
+  /** Per-room rows of the assessment: header first, then one row per room of a gamerMode() result. Shared by the PDF table and the CSV. */
+  function assessmentRoomRows(gamer) {
+    var rows = [["Room", "Coverage", "Ping range", "Jitter", "Loss risk", "Stability", "Gaming grade"]];
+    gamer.rooms.forEach(function (r) {
+      rows.push([r.name, r.coverage_pct + " %", pingRange(r.ping_ms), r.jitter_ms === null || r.jitter_ms === undefined ? "n/a" : r.jitter_ms + " ms", r.loss_risk, r.stability_score + " / 100", r.grade]);
+    });
+    return rows;
+  }
+
+  /** CSV rows (header, estimate line, per-room table) of the assessment. */
+  function assessmentCsvRows(data) {
+    return [["Wallhack Wi-Fi assessment", ESTIMATE_LINE], ["Project", data.project], ["Floor", data.floor], ["Overall grade", data.card.grade], ["Score (out of 100)", data.card.score], []]
+      .concat(assessmentRoomRows(data.gamer));
+  }
+
+  /**
+   * Wi-Fi assessment (wifi_assessment.pdf). data: {project, floor, date, card (scoreCard), gamer (gamerMode), answer (diagnose result or null),
+   * placement (placementReport or null), mesh (meshTopologies or null), timeMachine (timeMachine or null), image {bytes, w, h} or null}.
+   * Page 1 grade and ratings, page 2 per-room table, page 3 diagnosis and fixes, optional page 4 mesh and Time Machine. Same input gives the same bytes.
+   */
+  function buildAssessment(data) {
+    var pdf = createPdf(), k = pageKit(pdf), c = data.card, width = k.width, r = c.ratings;
+    k.newPage();
+    pdf.text(MARGIN, k.y + 18, 20, "Wi-Fi assessment", true); k.y += 30;
+    k.para("Project: " + data.project + "   Floor: " + data.floor + "   Date: " + data.date, 10);
+    pdf.rect(MARGIN, k.y + 4, width, 22, 0.9); pdf.text(MARGIN + 8, k.y + 19, 11, ESTIMATE_LINE + ". Not a site survey.", true); k.y += 34;
+    pdf.text(MARGIN, k.y + 40, 44, "Grade " + c.grade, true); pdf.text(MARGIN + 190, k.y + 24, 12, "Score " + c.score + " out of 100", true);
+    pdf.text(MARGIN + 190, k.y + 40, 10, "Coverage " + c.coverage_pct + " %, " + c.dead_zones + " dead zone" + (c.dead_zones === 1 ? "" : "s") + " (" + c.dead_zone_area_m2 + " m2)"); k.y += 56;
+    k.para(c.text, 10);
+    k.heading("Ratings");
+    k.tableOut([["Activity", "Rating", "Score"], ["Gaming", r.gaming.word + " (grade " + r.gaming.grade + ")", r.gaming.score], ["Streaming", r.streaming.word, r.streaming.score], ["Video calls", r.video.word, r.video.score]], [0, 150, 330]);
+    if (data.image) {
+      var h = Math.min(260, width * data.image.h / data.image.w), w = h * data.image.w / data.image.h;
+      k.ensure(h + 30); k.heading("Heat map (" + ESTIMATE_LINE + ")");
+      pdf.image(data.image.bytes, data.image.w, data.image.h, MARGIN, k.y, w, h); k.y += h + 6;
+    }
+    k.newPage();
+    k.heading("Rooms: ping, packet loss risk and stability (" + ESTIMATE_LINE + ")");
+    k.tableOut(assessmentRoomRows(data.gamer), [0, 110, 160, 255, 305, 360, 430]);
+    k.para(data.gamer.note, 8);
+    k.newPage();
+    k.heading("Diagnosis and top recommendations");
+    var d = data.answer;
+    if (d && d.status === "diagnosed") {
+      d.text.forEach(function (t) { k.para("- " + t, 9); });
+      if (d.fixes.length) {
+        k.heading("Before and after for each tested fix (" + ESTIMATE_LINE + ")");
+        k.tableOut([["Fix", "Coverage before", "Coverage after", "Ping before", "Ping after", "Confidence"]].concat(d.fixes.map(function (f) {
+          return [f.rank, f.room.coverage_before_pct + " %", f.room.coverage_after_pct + " %", pingRange(f.room.ping_before_ms), pingRange(f.room.ping_after_ms), f.what_if.confidence];
+        })), [0, 40, 130, 220, 310, 400]);
+      }
+    } else { k.para("No diagnosis was run for this plan. Ask the Assistant about a room before exporting to include one.", 10); }
+    if (data.placement) { k.heading("Best router spot"); k.para(data.placement.text, 9); }
+    if (data.mesh || data.timeMachine) {
+      k.newPage();
+      if (data.mesh) {
+        k.heading("Mesh topologies (" + ESTIMATE_LINE + ")");
+        k.tableOut([["Topology", "Coverage", "Dead zones", "Delay", "Speed", "Grade"]].concat(data.mesh.topologies.map(function (t) {
+          return [t.label, t.coverage_pct + " %", t.dead_zones, t.mean_latency_ms === null ? "n/a" : t.mean_latency_ms + " ms", t.mean_throughput_mbps === null ? "n/a" : t.mean_throughput_mbps + " Mbps", t.grade + " (" + t.score + ")"];
+        })), [0, 140, 200, 270, 340, 430]);
+      }
+      if (data.timeMachine) {
+        k.heading("Time Machine: versions of this plan (" + ESTIMATE_LINE + ")");
+        k.tableOut([["Version", "Coverage", "Dead zones", "Delay", "Grade", "Change against first"]].concat(data.timeMachine.items.map(function (it, i) {
+          var dl = it.delta;
+          return [String.fromCharCode(65 + i) + ": " + it.label, it.coverage_pct + " %", it.dead_zones, it.mean_latency_ms === null ? "n/a" : it.mean_latency_ms + " ms", it.grade + " (" + it.score + ")",
+                  i === 0 ? "baseline" : signedNum(dl.coverage_pts) + " pts, " + signedNum(dl.dead_zones) + " dead"];
+        })), [0, 140, 200, 270, 340, 400]);
+      }
+    }
+    k.heading("Disclaimer");
+    k.para(c.label + " Grades, ratings and ping ranges come from a propagation model (" + ESTIMATE_LINE.toLowerCase() + "), not from measuring your network. The weights of the grade are planning preferences, not physics. Floor plans were processed in the browser and are not uploaded.", 9);
     return pdf.build();
   }
 
@@ -308,9 +393,17 @@
         issues: plan ? plan.issues.map(function (i) { return i.severity + ": " + i.text; }) : [], recommendations: plan ? ctx.recommendations().map(function (r) { return r.text + " (confidence " + (r.confidence === null ? "n/a" : Math.round(r.confidence * 100) + "%") + ". Why: " + r.reason + ")"; }) : [],
         image: { bytes: jpeg, w: cv.width, h: cv.height } })) };
     } });
+    register("assessment", { label: "Wi-Fi assessment PDF (wifi_assessment.pdf)", run: function (ctx) {
+      var d = ctx.app.quick.assessmentData(), cv = composeView(ctx.app);
+      d.image = { bytes: bytesOfDataUrl(cv.toDataURL("image/jpeg", JPEG_QUALITY)), w: cv.width, h: cv.height };
+      return { name: "wifi_assessment.pdf", mime: "application/pdf", data: buildAssessment(d) };
+    } });
+    register("assessment_csv", { label: "Wi-Fi assessment rooms (CSV)", run: function (ctx) {
+      return { name: "wifi_assessment_rooms.csv", mime: "text/csv", data: toCsv(assessmentCsvRows(ctx.app.quick.assessmentData())) };
+    } });
     register("print", { label: "Print or save as PDF (browser)", run: function () { root.print(); return null; } });
   }
-  registerBuiltins.names = ["png", "csv", "json", "pdf", "print"];
+  registerBuiltins.names = ["png", "csv", "json", "pdf", "assessment", "assessment_csv", "print"];
 
   // ------------------------------------------------------------------ mount (annotations, buttons, drag and drop)
   function mount(app) {
@@ -323,14 +416,15 @@
       plan: function () { return app.panels.state.plan; },
       recommendations: function () { return app.panels.state.recs; }
     };
+    function fail(e) { msg.textContent = "Export failed: " + e.message; app.say(msg.textContent); }
     function run(id) {
       try {
         var r = get(id).run(ctx);
         if (!r) { msg.textContent = "Opened " + get(id).label; return; }
         Promise.resolve(r).then(function (res) {
           app.download(res.name, res.mime, res.data); msg.textContent = "Exported " + res.name + " (" + (res.data.length || res.data.size || 0) + " bytes)";
-        }).catch(function (e) { msg.textContent = "Export failed: " + e.message; });
-      } catch (e) { msg.textContent = "Export failed: " + e.message; }
+        }).catch(fail);
+      } catch (e) { fail(e); }
     }
     app.exportRun = run;
     function render() {
@@ -396,7 +490,7 @@
     app.tabs.rerenderExport = render;
   }
 
-  var api = { register: register, list: list, get: get, csvCell: csvCell, toCsv: toCsv, analyticsRows: analyticsRows, createPdf: createPdf, buildReport: buildReport,
+  var api = { register: register, list: list, get: get, csvCell: csvCell, toCsv: toCsv, analyticsRows: analyticsRows, createPdf: createPdf, buildReport: buildReport, buildAssessment: buildAssessment, assessmentCsvRows: assessmentCsvRows, assessmentRoomRows: assessmentRoomRows,
               wrapText: wrapText, drawAnnotations: drawAnnotations, composeView: composeView, mount: mount, labReportTables: labReportTables, ESTIMATE_LINE: ESTIMATE_LINE };
   registerBuiltins();
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }

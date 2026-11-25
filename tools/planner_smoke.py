@@ -819,6 +819,17 @@ def run_quick_features(page, problems, args):
         problems.append("Time Machine did not compare three versions")
     page.select_option("#tmSlot3", "preset:high_end_router"); page.click("#tmRun")
     page.wait_for_function("() => document.querySelectorAll('#tmOut .tm-canvas').length === 4", timeout=60000)
+    tab(page, "scorecard")
+    with page.expect_download(timeout=30000) as dl:
+        page.click("#panel-scorecard [data-quick=pdf]")
+    if dl.value.suggested_filename != "wifi_assessment.pdf":
+        problems.append("assessment download is named %r" % dl.value.suggested_filename)
+    pdf = Path(dl.value.path()).read_bytes()
+    pages = pdf.count(b"/Type /Page ")
+    if not pdf.startswith(b"%PDF-1.4") or not pdf.rstrip().endswith(b"%%EOF") or pages < 4 or pdf.count(b"MODEL ESTIMATE, not a measurement. Values come") != pages:
+        problems.append("wifi_assessment.pdf is incomplete or a page lacks the estimate footer (%d pages)" % pages)
+    if b"Time Machine" not in pdf or b"Mesh topologies" not in pdf:
+        problems.append("wifi_assessment.pdf lacks the mesh or Time Machine page")
     tab(page, "scenarios")   # the old two-scenario compare is still there
     if not page.locator("#cmpRun, #cmpOut, #panel-scenarios button").count():
         problems.append("scenarios tab lost its compare controls")
