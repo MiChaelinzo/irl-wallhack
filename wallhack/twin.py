@@ -8,18 +8,33 @@ import copy
 import json
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import rfmodel
+
 WALL_KINDS = ("interior", "exterior")
 OPENING_KINDS = ("door", "window")
-FURNITURE_KINDS = ("sofa", "bed", "table", "desk", "wardrobe", "counter", "other")
-SENSOR_KINDS = ("air", "presence", "rssi")
+FURNITURE_KINDS = tuple(rfmodel.LIMITS["furniture_kinds"])
+SENSOR_KINDS = tuple(rfmodel.LIMITS["sensor_kinds"])
 TWIN_FILE = "twin.json"
-MAX_FLOORS = 6
-MAX_ITEMS_PER_LIST = 200
+# Limits shared with the browser planner live in rf-config.json ("limits").
+MAX_FLOORS = rfmodel.LIMITS["max_floors"]
+MAX_ITEMS_PER_LIST = rfmodel.LIMITS["max_items_per_list"]
+MAX_WALLS_PER_FLOOR = rfmodel.LIMITS["max_walls_per_floor"]
+MAX_OPENINGS_PER_FLOOR = rfmodel.LIMITS["max_openings_per_floor"]
+# Walls and openings have their own, larger limits (large plans); every other list uses MAX_ITEMS_PER_LIST.
+ITEM_LIMITS = {"walls": MAX_WALLS_PER_FLOOR, "openings": MAX_OPENINGS_PER_FLOOR}
+MAX_TEXT_CHARS = rfmodel.LIMITS["max_text_chars"]
 TX_DBM_RANGE = (0.0, 30.0)
+MAX_CUSTOM_MATERIALS = rfmodel.LIMITS["max_custom_materials"]
+MATERIAL_DB_RANGE = tuple(rfmodel.LIMITS["material_db_range"])
+THICKNESS_M_RANGE = (0.01, 2.0)
+SCALE_M_PER_PX_RANGE = (0.0001, 100.0)
+MAX_BACKGROUND_CHARS = rfmodel.LIMITS["max_background_chars"]     # a data URL; keeps the whole twin under the 1 MB request limit
+BACKGROUND_PATTERN = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
 
 
 class TwinError(ValueError):
@@ -81,8 +96,8 @@ def _num(value: Any, path: str, lo: Optional[float] = None, hi: Optional[float] 
 
 def _text(item: dict, key: str, path: str) -> str:
     v = item.get(key)
-    if not isinstance(v, str) or not v.strip() or len(v) > 64:
-        raise TwinError(f"{path}.{key}: must be a non-empty string up to 64 characters")
+    if not isinstance(v, str) or not v.strip() or len(v) > MAX_TEXT_CHARS:
+        raise TwinError(f"{path}.{key}: must be a non-empty string up to {MAX_TEXT_CHARS} characters")
     return v
 
 
@@ -93,10 +108,36 @@ def _choice(item: dict, key: str, allowed: tuple, path: str) -> str:
     return v
 
 
+def _optional_text(item: dict, key: str, path: str, out: dict) -> None:
+    """Copy an optional short text field into `out` when present."""
+    if key in item:
+        out[key] = _text(item, key, path)
+
+
+def _custom_materials(data: Any) -> Dict[str, dict]:
+    """Project-defined materials: {id: {label, attenuation_db{band}, reflection_loss_db{band}}}."""
+    if not isinstance(data, dict) or len(data) > MAX_CUSTOM_MATERIALS:
+        raise TwinError(f"materials: must be an object with at most {MAX_CUSTOM_MATERIALS} entries")
+    out: Dict[str, dict] = {}
+    for mid, m in data.items():
+        p = f"materials.{mid}"
+        if not isinstance(mid, str) or not mid.strip() or len(mid) > MAX_TEXT_CHARS or not isinstance(m, dict):
+            raise TwinError(f"{p}: must be an object with an id of up to {MAX_TEXT_CHARS} characters")
+        entry = {"label": _text(m, "label", p)}
+        for key in ("attenuation_db", "reflection_loss_db"):
+            table = m.get(key)
+            if not isinstance(table, dict) or set(table) != set(rfmodel.BANDS):
+                raise TwinError(f"{p}.{key}: must give a value for each band {list(rfmodel.BANDS)}")
+            entry[key] = {b: _num(v, f"{p}.{key}.{b}", *MATERIAL_DB_RANGE) for b, v in table.items()}
+        out[mid] = entry
+    return out
+
+
 def _items(floor: dict, key: str, path: str) -> List[dict]:
     items = floor.get(key, [])
-    if not isinstance(items, list) or len(items) > MAX_ITEMS_PER_LIST:
-        raise TwinError(f"{path}.{key}: must be a list of at most {MAX_ITEMS_PER_LIST} items")
+    limit = ITEM_LIMITS.get(key, MAX_ITEMS_PER_LIST)
+    if not isinstance(items, list) or len(items) > limit:
+        raise TwinError(f"{path}.{key}: must be a list of at most {limit} items")
     for i, it in enumerate(items):
         if not isinstance(it, dict):
             raise TwinError(f"{path}.{key}[{i}]: must be an object")
@@ -120,6 +161,11 @@ def validate_twin(data: Any) -> dict:
         raise TwinError(f"floors: must be a list of 1 to {MAX_FLOORS} floors")
     out: Dict[str, Any] = {"name": _text(data, "name", "twin"), "units": "m",
                            "sample": bool(data.get("sample", False)), "floors": []}
+    if "materials" in data:
+        out["materials"] = _custom_materials(data["materials"])
+    if "mode" in data:
+        out["mode"] = _choice(data, "mode", tuple(rfmodel.MODES), "twin")
+    materials = rfmodel.material_table(out)
     for fi, f in enumerate(floors_in):
         p = f"floors[{fi}]"
         if not isinstance(f, dict):
@@ -134,13 +180,23 @@ def validate_twin(data: Any) -> dict:
                  "height_m": _num(f.get("height_m", 2.5), f"{p}.height_m", 2, 6),
                  "width_m": width, "depth_m": depth,
                  "rooms": [], "walls": [], "openings": [], "furniture": [], "sensors": [], "aps": []}
+        if "scale_m_per_px" in f:
+            floor["scale_m_per_px"] = _num(f["scale_m_per_px"], f"{p}.scale_m_per_px", *SCALE_M_PER_PX_RANGE)
+        if "background" in f:
+            bg = f["background"]
+            if not isinstance(bg, str) or len(bg) > MAX_BACKGROUND_CHARS or not BACKGROUND_PATTERN.match(bg):
+                raise TwinError(f"{p}.background: must be a png, jpeg or webp base64 data URL of at most "
+                                f"{MAX_BACKGROUND_CHARS} characters")
+            floor["background"] = bg
         for i, r in enumerate(_items(f, "rooms", p)):
             q = f"{p}.rooms[{i}]"
             x, y = inside(r.get("x"), r.get("y"), q)
             w, d = _num(r.get("w"), f"{q}.w", 0.1), _num(r.get("d"), f"{q}.d", 0.1)
             if x + w > width + 1e-9 or y + d > depth + 1e-9:
                 raise TwinError(f"{q}: room extends outside the floor")
-            floor["rooms"].append({"id": _text(r, "id", q), "name": _text(r, "name", q), "x": x, "y": y, "w": w, "d": d})
+            room = {"id": _text(r, "id", q), "name": _text(r, "name", q), "x": x, "y": y, "w": w, "d": d}
+            _optional_text(r, "label", q, room)
+            floor["rooms"].append(room)
         walls = {}
         for i, w in enumerate(_items(f, "walls", p)):
             q = f"{p}.walls[{i}]"
@@ -150,6 +206,13 @@ def validate_twin(data: Any) -> dict:
                 raise TwinError(f"{q}: wall has zero length")
             wall = {"id": _text(w, "id", q), "x1": x1, "y1": y1, "x2": x2, "y2": y2,
                     "kind": _choice(w, "kind", WALL_KINDS, q)}
+            if "material" in w:
+                wall["material"] = _text(w, "material", q)
+                if wall["material"] not in materials:
+                    raise TwinError(f"{q}.material: must be one of {sorted(materials)}")
+            _optional_text(w, "name", q, wall)
+            if "thickness_m" in w:
+                wall["thickness_m"] = _num(w["thickness_m"], f"{q}.thickness_m", *THICKNESS_M_RANGE)
             walls[wall["id"]] = wall
             floor["walls"].append(wall)
         for i, o in enumerate(_items(f, "openings", p)):
@@ -176,8 +239,17 @@ def validate_twin(data: Any) -> dict:
         for i, a in enumerate(_items(f, "aps", p)):
             q = f"{p}.aps[{i}]"
             x, y = inside(a.get("x"), a.get("y"), q)
-            floor["aps"].append({"id": _text(a, "id", q), "x": x, "y": y,
-                                 "tx_dbm": _num(a.get("tx_dbm", 20.0), f"{q}.tx_dbm", *TX_DBM_RANGE)})
+            ap = {"id": _text(a, "id", q), "x": x, "y": y,
+                  "tx_dbm": _num(a.get("tx_dbm", 20.0), f"{q}.tx_dbm", *TX_DBM_RANGE)}
+            _optional_text(a, "name", q, ap)
+            if "band" in a:
+                ap["band"] = _choice(a, "band", tuple(rfmodel.BANDS), q)
+            if "channel" in a:
+                channels = rfmodel.BANDS[ap.get("band", rfmodel.DEFAULT_BAND)]["channels"]
+                if isinstance(a["channel"], bool) or a["channel"] not in channels:
+                    raise TwinError(f"{q}.channel: must be one of {channels} for this band")
+                ap["channel"] = a["channel"]
+            floor["aps"].append(ap)
         for key in ("rooms", "walls", "openings", "furniture", "sensors", "aps"):
             _unique([i["id"] for i in floor[key]], f"{p}.{key}")
         out["floors"].append(floor)

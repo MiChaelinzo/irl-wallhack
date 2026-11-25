@@ -53,6 +53,7 @@
     if (!DEMO()) { return h; }
     if (h === "/mobile") { return "mobile.html"; }
     if (h === "/judge") { return "judge.html"; }
+    if (h === "/planner") { return "planner.html"; }
     return "index.html" + (h.indexOf("#") >= 0 ? h.slice(h.indexOf("#")) : "");
   };
   function fixLinks() {
