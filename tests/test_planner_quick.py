@@ -76,8 +76,10 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
     assert "stronger average signal (+2.4 dB)" in r["stronger"] and "coverage and dead zones unchanged" in r["stronger"]
     assert r["unavailable"]["canApply"] is False and "No better router spot" in r["unavailable"]["line"]
     assert r["school"]["report"]["coverage_increase_pts"] == 0 and r["school"]["report"]["dead_zones_removed"] == 0
-    assert r["school"]["report"]["mean_rssi_delta_db"] > 0 and r["school"]["canApply"] is True
-    assert "stronger average signal" in r["school"]["line"] and "0 points coverage" not in r["school"]["line"]
+    assert r["school"]["report"]["mean_rssi_delta_db"] == 0
+    assert r["school"]["report"]["min_mean_rssi_gain_db"] == rfmodel.CONFIG["planner"]["min_mean_rssi_gain_db"]
+    assert r["school"]["canApply"] is False
+    assert "already at the best spot" in r["school"]["line"] and "stronger average signal" not in r["school"]["line"]
     assert r["add"].startswith("Add a router") and r["addKind"] == "add_ap"
     assert r["changed"] and r["restored"]
     assert r["mesh"]["id"] == "mesh1" and r["mesh"]["mesh_parent"] == "router" and r["mesh"]["tx_dbm"] == rfmodel.CONFIG["planner"]["default_tx_dbm"]

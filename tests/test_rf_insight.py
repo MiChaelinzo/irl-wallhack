@@ -157,18 +157,29 @@ def test_assistant_matches_label_text():
     assert r == {"status": "diagnosed", "room": {"kind": "label", "id": "l1", "name": "Hallway"}, "which": "worst cell"}
 
 
-def test_placement_report_searches_the_lattice_and_reports_measured_differences():
+def test_placement_report_prioritises_coverage_and_uses_mean_rssi_threshold():
     r = run_js("""
       const p = scenario('large_home'), rep = I.placementReport(p, 'ground', opts);
-      const lattice = O.candidatePositions(p, 'ground', opts), before = E.analyzeFloor(p, 'ground', {env, cellM: config.planner.cell_m});
-      out({rep, lattice: lattice.length, routerRoom: I.placeName(p.floors[0], rep.position.x, rep.position.y), none: I.placementReport(twoRooms('drywall'), 'f', opts)});
+      const trade = I.placementReport(scenario('small_office'), 'smalloffice', opts);
+      const lattice = O.candidatePositions(p, 'ground', opts), threshold = config.planner.min_mean_rssi_gain_db;
+      const boundaries = {
+        below: I.hasMeaningfulMeanGain(10 + threshold - 0.001, 10, threshold),
+        at: I.hasMeaningfulMeanGain(10 + threshold, 10, threshold),
+        above: I.hasMeaningfulMeanGain(10 + threshold + 0.001, 10, threshold)
+      };
+      out({rep, trade, threshold, boundaries, lattice: lattice.length, routerRoom: I.placeName(p.floors[0], rep.position.x, rep.position.y), none: I.placementReport(twoRooms('drywall'), 'f', opts)});
     """)
     rep = r["rep"]
     assert rep["positions_evaluated"] == r["lattice"] + 1 and rep["room"] == r["routerRoom"]
     assert rep["coverage_increase_pts"] == pytest.approx(rep["coverage_after_pct"] - rep["coverage_before_pct"], abs=0.11)
     assert rep["coverage_increase_pts"] >= 0 and rep["dead_zones_removed"] == rep["dead_zones_before"] - rep["dead_zones_after"]
-    assert rep["best_mean_rssi_dbm"] >= rep["current_mean_rssi_dbm"]
-    assert rep["mean_rssi_delta_db"] == pytest.approx(rep["best_mean_rssi_dbm"] - rep["current_mean_rssi_dbm"], abs=0.11)
+    assert rep["selected_mean_rssi_dbm"] == rep["best_mean_rssi_dbm"], "deprecated alias must remain compatible"
+    assert rep["mean_rssi_delta_db"] == pytest.approx(rep["selected_mean_rssi_dbm"] - rep["current_mean_rssi_dbm"], abs=0.11)
+    assert rep["min_mean_rssi_gain_db"] == r["threshold"] == rfmodel.CONFIG["planner"]["min_mean_rssi_gain_db"]
+    assert r["boundaries"] == {"below": False, "at": True, "above": True}
+    trade = r["trade"]
+    assert trade["moved"] and trade["coverage_increase_pts"] > 0 and trade["dead_zones_removed"] > 0
+    assert trade["selected_mean_rssi_dbm"] < trade["current_mean_rssi_dbm"] and trade["mean_rssi_delta_db"] < 0
     assert f"{rep['positions_evaluated']} positions evaluated" in rep["text"] and "percentage points" in rep["text"]
     assert r["none"]["positions_evaluated"] >= 1
 

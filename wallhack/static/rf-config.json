@@ -1553,6 +1553,7 @@
   "target_coverage_pct": 95.0,
   "max_suggestions": 4,
   "min_gain_pct": 0.5,
+  "min_mean_rssi_gain_db": 0.5,
   "power_step_db": 3.0,
   "min_tx_dbm": 5.0,
   "max_tx_dbm": 23.0,

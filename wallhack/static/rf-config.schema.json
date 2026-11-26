@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:wallhack:rf-config.schema",
   "title": "wallhack rf-config.json",
-  "description": "Structure of the shared RF configuration. Covers bands, materials, kind_defaults, floor_loss_db and wifi_standards. Other sections are allowed and validated by the engine tests.",
+  "description": "Structure of the shared RF configuration. Covers the propagation model, planner action thresholds and insight presentation. Other sections are allowed and validated by the engine tests.",
   "type": "object",
   "required": ["schema_version", "label", "source", "bands", "materials", "kind_defaults", "floor_loss_db", "wifi_standards",
-    "floor_elevation", "ap_profiles", "client_devices", "capacity_models"],
+    "floor_elevation", "ap_profiles", "client_devices", "capacity_models", "planner"],
   "properties": {
     "schema_version": {"type": "integer", "minimum": 1},
     "label": {"type": "string", "minLength": 1},
@@ -68,6 +68,18 @@
         "frame_budget_ms": {"type": "number", "exclusiveMinimum": 0}
       },
       "additionalProperties": false
+    },
+    "planner": {
+      "type": "object",
+      "required": ["label", "min_mean_rssi_gain_db"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "min_mean_rssi_gain_db": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Minimum mean RSSI improvement in dB that makes an RSSI-only router move actionable. Coverage and dead-cell gains take priority; equality qualifies."
+        }
+      }
     },
     "insight": {
       "type": "object",

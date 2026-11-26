@@ -111,7 +111,7 @@
     var expectedGrade = fix ? gradeForScore(fix.room.score_after) : null;
     var roomCoverage = fix ? (fix.room.coverage_delta_pts === 0 ? "Room coverage stays " + fix.room.coverage_after_pct + "%" : "Room coverage " + signed(fix.room.coverage_delta_pts) + " points to " + fix.room.coverage_after_pct + "%") : null;
     var floorCoverage = fix ? (fix.floor.coverage_delta_pts === 0 ? "whole-floor coverage stays " + fix.floor.coverage_after_pct + "%" : "whole-floor coverage " + signed(fix.floor.coverage_delta_pts) + " points to " + fix.floor.coverage_after_pct + "%") : null;
-    var noFix = matches && diagnosis.text && diagnosis.text.length ? diagnosis.text[diagnosis.text.length - 1] : "No measured recommendation is available for this room.";
+    var noFix = matches && diagnosis.text && diagnosis.text.length ? diagnosis.text[diagnosis.text.length - 1] : "No model-tested recommendation is available for this room.";
     return { status: fix ? "ready" : "no_fix", room: room, title: "Fix my weakest room", cause: matches ? diagnosis.primary : null, fix: fix,
              line: room.name + " has gaming grade " + room.grade + " (" + room.stability_score + " out of 100).",
              recommendation: fix ? fix.text : noFix,
@@ -303,7 +303,7 @@
     function applyChange(change, label, nextContext) {
       var ops = changeOps(S, app.store.project, floorId(), change, app.config);
       q.pending = q.card && !q.dirty ? { label: label, card: q.card, next: nextContext || null } : q.pending;
-      q.compare = null; q.outcome = null;
+      q.compare = null; q.outcome = null; outcomeStatus.textContent = "";
       app.store.exec({ label: label, ops: ops });
       showGhost(null);
       app.say(label + ". Undo with Ctrl+Z.");
@@ -325,7 +325,7 @@
 
     // ---------------------------------------------------------------- Quick start card
     var card = $("quick");
-    var tplSel = $("quickTemplate"), tplNote = $("quickTemplateNote"), goBtn = $("quickAnalyse"), status = $("quickStatus"), progress = $("quickProgress"), result = $("quickResult");
+    var tplSel = $("quickTemplate"), tplNote = $("quickTemplateNote"), goBtn = $("quickAnalyse"), status = $("quickStatus"), outcomeStatus = $("quickOutcomeStatus"), progress = $("quickProgress"), result = $("quickResult");
     var templates = [];
     tplSel.appendChild(el("option", { value: "", text: "Keep my current plan" }));
     function loadTemplates() {
@@ -352,7 +352,7 @@
 
     function runAnalysis() {
       var token = ++q.token, t0 = now(), fid = floorId(), opts = insightOpts(), project = currentProject();
-      q.ready = false; q.dirty = false; result.removeAttribute("data-ready");
+      q.ready = false; q.dirty = false; result.removeAttribute("data-ready"); outcomeStatus.textContent = "";
       setStatus("Analysing your WiFi...", true, 0.1);
       function alive() { return token === q.token; }
       later(function () {
@@ -389,6 +389,7 @@
             result.setAttribute("data-ready", "true"); result.setAttribute("data-ms", String(q.ms));
             setStatus("Done in " + q.ms + " ms. Model estimate, not a measurement.", false);
             renderResult();
+            if (q.outcome) { outcomeStatus.textContent = q.outcome.line; }
           });
         });
       });
@@ -448,18 +449,17 @@
       wrap.appendChild(el("h3", { text: m.title }));
       wrap.appendChild(el("p", { class: "q-line", text: m.line }));
       if (m.status === "outcome") {
-        wrap.setAttribute("role", "status");
         wrap.appendChild(el("p", { class: "muted hint", text: ESTIMATE + ". The detailed room results below use the new plan. Undo with Ctrl+Z." }));
         return wrap;
       }
       if (m.cause) { wrap.appendChild(el("p", { class: "muted", text: "Main cause: " + m.cause.text + "." })); }
-      wrap.appendChild(el("p", { class: "q-recommendation", text: (m.canApply ? "Top measured recommendation: " : "") + m.recommendation }));
+      wrap.appendChild(el("p", { class: "q-recommendation", text: (m.canApply ? "Top model-tested recommendation: " : "") + m.recommendation }));
       if (m.effect) { wrap.appendChild(el("p", { class: "muted", text: m.effect + " Model estimate." })); }
       if (m.canApply) {
         wrap.appendChild(el("div", { class: "tool-row" }, [button("Apply and check again", function () {
           try { applyChange(m.fix.change, "Fix " + m.room.name + ": " + m.fix.text, m.context); }
           catch (e) { app.say("Cannot apply: " + e.message); }
-        }, { id: "quickFixWeakest", "aria-label": "Apply and check again: top measured fix for " + m.room.name + ". You can undo it.", disabled: q.dirty ? "" : undefined })]));
+        }, { id: "quickFixWeakest", "aria-label": "Apply and check again: top model-tested fix for " + m.room.name + ". You can undo it.", disabled: q.dirty ? "" : undefined })]));
       }
       return wrap;
     }
@@ -773,7 +773,7 @@
       q.token++; root.clearTimeout(q.timer);
       q.card = q.gamer = q.res = q.placement = q.answer = q.weakestAnswer = q.next = q.outcome = null;
       q.ready = false; q.dirty = false; q.analysedOnce = false; q.pending = null; q.compare = null;
-      result.textContent = ""; result.removeAttribute("data-ready"); setStatus(message || "", false);
+      result.textContent = ""; result.removeAttribute("data-ready"); outcomeStatus.textContent = ""; setStatus(message || "", false);
     }
 
     // ---------------------------------------------------------------- the plan changed

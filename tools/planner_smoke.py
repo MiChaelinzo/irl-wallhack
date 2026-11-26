@@ -750,7 +750,7 @@ QUICK_TIME_LIMIT_S = 20.0   # template to result; measured times are well below 
 
 def run_quick_features(page, problems, args):
     """Quick start: template -> Analyse -> grade, weakest-room action, rooms, diagnosis and best spot; ask a question;
-    apply the measured fix and best spot; open every Wi-Fi architect tab; signal waves toggle; mobile width has no horizontal scroll."""
+    apply the model-tested fix and best spot; open every Wi-Fi architect tab; signal waves toggle; mobile width has no horizontal scroll."""
     page.on("dialog", lambda d: d.accept())
     page.wait_for_function("() => window.PlannerApp.quick && window.PlannerApp.quick.templatesReady", timeout=15000)
     page.select_option("#quickTemplate", "two_bedroom_condo")
@@ -771,7 +771,9 @@ def run_quick_features(page, problems, args):
     line = page.inner_text("#quickBestLine")
     if "points coverage" not in line and "stronger average signal" not in line and "already at the best spot" not in line:
         problems.append("best spot line unexpected: %r" % line)
-    # apply the top measured weakest-room fix, check the actual outcome and undo it
+    # apply the top model-tested weakest-room fix, check the visible outcome and persistent announcement, then undo it
+    if page.inner_text("#quickOutcomeStatus"):
+        problems.append("post-fix announcement is not empty before Apply")
     if not page.locator("#quickFixWeakest:not([disabled])").count():
         problems.append("Quick start has no enabled weakest-room action")
     else:
@@ -780,6 +782,12 @@ def run_quick_features(page, problems, args):
         page.wait_for_selector("#quickWeakestOutcome", timeout=30000)
         page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
         outcome = page.inner_text("#quickWeakestOutcome")
+        page.wait_for_function("() => document.getElementById('quickOutcomeStatus').textContent.length > 0", timeout=5000)
+        announced = page.inner_text("#quickOutcomeStatus")
+        if page.get_attribute("#quickWeakestOutcome", "role"):
+            problems.append("visible weakest-room outcome should not be a live region")
+        if announced not in outcome:
+            problems.append("post-fix announcement is not the concise visible outcome: %r" % announced)
         if "gaming grade" not in outcome.lower():
             problems.append("weakest-room outcome has no before/after gaming grade: %r" % outcome)
         if "was reduced from about" not in outcome or "but it was not eliminated" not in outcome:
