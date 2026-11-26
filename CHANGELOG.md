@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Performance, CI and PDF check
+- perf: the optimizer keeps a grid cache per planner context, builds the wall-perturbed environments once, and shares candidate AP grids between calls on an unchanged floor (`rf-optimizer.js`); `placementReport` no longer spreads typed arrays (`rf-insight.js`). Outputs are identical (parity, golden fixture and full suite pass; `tests/test_planner_quick.py` covers cache identity and invalidation). Hotel floor, repeated call: `diagnose` 202 to 44 ms, `meshTopologies` 374 to 64 ms, `timeMachine` 200 to 40 ms, `placementReport` 349 to 184 ms. First call after a geometry change is barely faster (mesh 374 to 200 ms, others about the same). MISSED against 100 ms: stress floor `analyze` 512 ms and `whatIf` 1.3 s, hotel `placementReport`, all first calls. Details and profile in `docs/perf-rf.md`.
+- ci: a `browser` job installs Playwright Chromium and runs `tools/planner_smoke.py` and `tools/a11y_check.py` with read-only permissions. UNVERIFIED on GitHub; both tools passed locally.
+- fix: in `wifi_assessment.pdf` the footer wrapped off the page edge and the mesh table cut "Whole-home mesh (up to 2 nodes)"; the footer now wraps and the column is wider. Rendered with PyMuPDF and viewed; other viewers UNVERIFIED.
+
 ### Quick start: before and after
 - feat: applying a fix (move router, add router or mesh node, change channel) on Quick start re-analyses the plan and shows a Before and after card: both letter grades with scores, the point change in plain words, gaming, streaming and video call ratings, coverage and dead zones. Channel change fixes now have an Apply button. `beforeAfterModel` in `planner-quick.js` is tested in `tests/test_planner_quick.py`; `tools/planner_smoke.py` checks the card after Apply and `tools/screenshot.py` writes `docs/screenshot-planner-quick-fix.png`. Model estimate. PARTIALLY VERIFIED (scripted headless run, screenshot viewed, a11y 0 serious or critical).
 

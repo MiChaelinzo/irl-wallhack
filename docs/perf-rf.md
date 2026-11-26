@@ -335,3 +335,31 @@ The rAF interval is bounded by the 60 Hz display clock, so 16.7 ms means "no dro
 - Misses: stress floor `whatIf` 1.38 s and `analyze` 0.52 s; hotel floor `diagnose`, `placementReport`, `meshTopologies` 0.34 to 0.39 s. Not optimised in this round (no profile pointed to a cheap safe fix, and the engine is the Python reference parity target).
 - Default basic mode on the small presets does not evaluate 10,000 paths per update; it does in multipath mode and on large floors.
 - Nothing here measures a GPU, a Pi 4 or a phone.
+
+## Optimiser grid cache (measured in FEAT-003, 2026-11-26)
+
+Same machine as above (Xeon 8488C, node v22.23.4, one thread, not a Raspberry Pi 4). Commands: `node tools/perf_architect.js --repeat 5` for the "after, repeated call" column; the "first call" column uses a fresh configuration object per run (no cache hit), measured with a throwaway script that is not in the repository. "Before" is the same tool run on the unmodified code in the same session.
+
+### Profile first
+
+`node --cpu-prof` on the 13 room hotel preset (0.5 m cells, 2016 cells) showed the time in `basicDbm` (37 to 60 % self), `fillCandidates` (the wall index walk, 17 to 28 %) and `wallLoss` (3 to 27 %). Inclusive, 66 to 84 % of `diagnose`, `placementReport` and `meshTopologies` was `computeApGrid` called from the optimizer (`gridFor`, `apGridOf`). The engine itself was not the problem: those functions recompute the same grids many times. In `evaluatePlacement` every candidate recomputes the grids of all existing APs under the nominal and four wall-perturbed environments (`wallEnvs` also built new environment objects on every call). `meshTopologies`, `diagnose` and the Time Machine call `suggestPlacements` repeatedly on the same floor, and each call rebuilt the grid of every lattice candidate, although a candidate grid does not depend on the other APs. `placementReport` also spread each Float32Array into a plain array (`[].concat.apply`) per candidate.
+
+### Change
+
+`rf-optimizer.js`: a grid cache per planner context (keyed by environment object and AP settings), the wall-perturbed environments built once per context, and candidate grids shared between contexts (keyed by configuration object, the floor geometry without APs, rooms, sensors and furniture, the environment materials, cell size, mode and band; one slot, replaced when the geometry changes). `rf-insight.js`: the array spread removed. Values are unchanged: `tests/test_rf_parity.py`, the legacy golden fixture and the full suite pass (857 passed, 3 skipped), and `tests/test_planner_quick.py` checks that a reused cache gives byte-identical mesh results and that a wall change invalidates it. The engine hot path (`basicDbm`, `wallLoss`) was not touched.
+
+### Hotel floor, 0.5 m cells (median ms)
+
+| Function | Before | First call, after (cache cold) | Repeated call on an unchanged floor, after | Target 100 ms |
+|---|---|---|---|---|
+| `diagnose` | 202 | 188 | 44 | first call MISSED, repeat MET |
+| `placementReport` | 349 | 307 | 184 | MISSED both |
+| `meshTopologies` | 374 | 200 | 64 | first call MISSED, repeat MET |
+| `timeMachine`, 3 versions | 200 | 201 | 40 | first call MISSED, repeat MET |
+| `analyze` after an AP move | 9.3 | 8.1 | n/a | MET |
+
+Hotel `diagnose`, `placementReport` and `meshTopologies` were 336, 363 and 390 ms and `timeMachine` 204 ms in the FEAT-006 run above; the "before" column is a new run in this session, slightly faster machine state. The stress floor (4 AP, 1000 walls, 0.5 m) is unchanged: `analyze` 512 ms and `whatIf` 1341 ms (before 518 and 1369). There each cell needs a fresh wall walk (58 to 60 % of the time is `basicDbm`) and nothing repeats, so the cache does not help. Targets that remain MISSED: stress floor `analyze` and `whatIf`, hotel `placementReport` in every case, and every first call after a geometry change. The repeated-call figures apply to the second and later presses of the same tab, not to a first press.
+
+### Wi-Fi assessment PDF rendered with PyMuPDF (VERIFIED in one renderer only)
+
+`pdftoppm` is not installed in this sandbox, so the exporter was run in node (large home preset, `buildAssessment`) and the 4 page file rendered with PyMuPDF 1.28 (installed in the venv only, not a project dependency), then read as images. Found and fixed: the page footer line ran past the right edge ("estima" was cut off) and the mesh table label "Whole-home mesh (up to 2 nodes)" was cut at 30 characters. After the fix the footer wraps to two lines and the label is complete. Every page carries the footer text. The embedded heat map JPEG was not part of this run (no image was supplied), so image placement is UNVERIFIED in a viewer. Acrobat, Preview and browser viewers are UNVERIFIED.

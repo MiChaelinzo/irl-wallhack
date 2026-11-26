@@ -14,7 +14,7 @@ State on this branch: 600 pytest tests pass (`.venv/bin/python -m pytest -q`, ab
 | Process smoke | real uvicorn, WebSocket | `tests/test_smoke.py` | VERIFIED |
 | Build | static demo is deterministic | `tests/test_demo_build.py` | VERIFIED |
 | Doc sync | generated docs match config, schema holds | `tests/test_rf_config_schema.py`, `tests/test_platform_docs.py` | VERIFIED |
-| Browser UI | scripted headless Chromium | `tools/planner_smoke.py`, `tools/screenshot.py` | PARTIALLY VERIFIED, not in CI |
+| Browser UI | scripted headless Chromium | `tools/planner_smoke.py`, `tools/screenshot.py` | PARTIALLY VERIFIED, `planner_smoke.py` is in the CI `browser` job (UNVERIFIED on GitHub) |
 | Hardware | Pi 4 CSI, sensors, real phones | none | UNVERIFIED |
 
 ## Parity
