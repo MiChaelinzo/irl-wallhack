@@ -26,6 +26,98 @@
       "additionalProperties": {"type": "string", "minLength": 1}
     },
     "floor_loss_db": {"$ref": "#/$defs/perBandNumber"},
+    "wall_thickness": {
+      "type": "object",
+      "required": ["label", "source", "min_cm", "max_cm", "max_factor", "default_reference_cm", "reference_cm"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "min_cm": {"type": "number", "exclusiveMinimum": 0},
+        "max_cm": {"type": "number", "exclusiveMinimum": 0},
+        "max_factor": {"type": "number", "minimum": 1},
+        "default_reference_cm": {"type": "number", "exclusiveMinimum": 0},
+        "reference_cm": {"type": "object", "additionalProperties": {"type": "number", "exclusiveMinimum": 0}}
+      }
+    },
+    "objects": {
+      "type": "object",
+      "required": ["label", "source", "kinds"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "kinds": {"type": "object", "minProperties": 1, "additionalProperties": {
+          "type": "object", "required": ["label", "material", "thickness_cm", "w_m", "d_m"],
+          "properties": {"label": {"type": "string"}, "material": {"type": "string"}, "thickness_cm": {"type": "number", "exclusiveMinimum": 0},
+                         "w_m": {"type": "number", "exclusiveMinimum": 0}, "d_m": {"type": "number", "exclusiveMinimum": 0}}}}
+      }
+    },
+    "signal_waves": {
+      "type": "object",
+      "required": ["label", "source", "rays_by_quality", "max_rings", "ring_spacing_m", "speed_m_per_s", "max_radius_m", "sample_step_m", "fade_loss_db", "distance_fade_m", "frame_budget_ms"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "rays_by_quality": {"type": "object", "required": ["low", "medium", "high"], "additionalProperties": {"type": "integer", "minimum": 4}},
+        "max_rings": {"type": "integer", "minimum": 1},
+        "ring_spacing_m": {"type": "number", "exclusiveMinimum": 0},
+        "speed_m_per_s": {"type": "number", "exclusiveMinimum": 0},
+        "max_radius_m": {"type": "number", "exclusiveMinimum": 0},
+        "sample_step_m": {"type": "number", "exclusiveMinimum": 0},
+        "fade_loss_db": {"type": "number", "exclusiveMinimum": 0},
+        "distance_fade_m": {"type": "number", "exclusiveMinimum": 0},
+        "frame_budget_ms": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "insight": {
+      "type": "object",
+      "required": ["label", "source", "gaming", "streaming", "video", "rating_words", "score_card", "mesh", "time_machine", "assistant"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "gaming": {
+          "type": "object",
+          "required": ["isp_base_ms", "round_trip_factor", "range_low_percentile", "range_high_percentile", "min_range_ms", "airtime_jitter_ms", "loss_risk",
+                       "ping_full_ms", "ping_zero_ms", "jitter_full_ms", "jitter_zero_ms", "loss_full_pct", "loss_zero_pct", "per_full_pct", "per_zero_pct",
+                       "margin_full_db", "margin_zero_db", "weights", "grades"],
+          "properties": {
+            "isp_base_ms": {"type": "number", "minimum": 0}, "round_trip_factor": {"type": "number", "exclusiveMinimum": 0},
+            "range_low_percentile": {"type": "number", "minimum": 0, "maximum": 100}, "range_high_percentile": {"type": "number", "minimum": 0, "maximum": 100},
+            "min_range_ms": {"type": "number", "minimum": 0}, "airtime_jitter_ms": {"type": "number", "minimum": 0},
+            "loss_risk": {"type": "object", "required": ["low_max_loss_pct", "medium_max_loss_pct", "low_max_per_pct", "medium_max_per_pct"],
+                          "additionalProperties": {"type": "number", "minimum": 0}},
+            "ping_full_ms": {"type": "number"}, "ping_zero_ms": {"type": "number"}, "jitter_full_ms": {"type": "number"}, "jitter_zero_ms": {"type": "number"},
+            "loss_full_pct": {"type": "number"}, "loss_zero_pct": {"type": "number"}, "per_full_pct": {"type": "number"}, "per_zero_pct": {"type": "number"},
+            "margin_full_db": {"type": "number"}, "margin_zero_db": {"type": "number"},
+            "weights": {"type": "object", "required": ["ping", "jitter", "loss", "margin"], "additionalProperties": {"type": "number", "minimum": 0}},
+            "grades": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["grade", "min_score"], "properties": {"grade": {"type": "string", "minLength": 1}, "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}}
+          }
+        },
+        "streaming": {"type": "object", "required": ["stream_mbps", "target_streams", "throughput_percentile"],
+                      "properties": {"stream_mbps": {"type": "number", "exclusiveMinimum": 0}, "target_streams": {"type": "integer", "minimum": 1}, "throughput_percentile": {"type": "number", "minimum": 0, "maximum": 100}}},
+        "video": {"type": "object", "required": ["min_mbps", "ping_full_ms", "ping_zero_ms", "loss_full_pct", "loss_zero_pct"],
+                  "additionalProperties": {"type": "number"}},
+        "rating_words": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["word", "min_score"],
+                         "properties": {"word": {"type": "string", "minLength": 1}, "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}},
+        "score_card": {"type": "object", "required": ["weights", "dead_zone_count_zero", "sinr_full_db", "sinr_zero_db", "grades"],
+                       "properties": {"weights": {"type": "object", "required": ["coverage", "dead_zones", "sinr", "activities"], "additionalProperties": {"type": "number", "minimum": 0}},
+                                      "dead_zone_count_zero": {"type": "integer", "minimum": 1}, "sinr_full_db": {"type": "number"}, "sinr_zero_db": {"type": "number"}, "grades": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["grade", "min_score"], "properties": {"grade": {"type": "string", "minLength": 1}, "min_score": {"type": "number", "minimum": 0, "maximum": 100}}}}}},
+        "mesh": {"type": "object", "required": ["max_nodes", "rooms_per_node", "hop_latency_ms", "max_hops"],
+                 "properties": {"max_nodes": {"type": "integer", "minimum": 1}, "rooms_per_node": {"type": "integer", "minimum": 1}, "hop_latency_ms": {"type": "number", "minimum": 0}, "max_hops": {"type": "integer", "minimum": 1}}},
+        "time_machine": {"type": "object", "required": ["min_items", "max_items", "presets"],
+                         "properties": {"min_items": {"type": "integer", "minimum": 2}, "max_items": {"type": "integer", "minimum": 2},
+                                        "presets": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "label", "profile_id", "mesh_profile_id"],
+                                          "properties": {"id": {"type": "string", "minLength": 1}, "label": {"type": "string", "minLength": 1}, "profile_id": {"type": "string", "minLength": 1}}}}}},
+        "assistant": {"type": "object", "required": ["intents", "worst_cell_intents", "devices", "stopwords", "move_steps_m", "max_fixes", "mesh_candidates",
+                                                     "busy_cause_min_pct", "min_cause_db", "interference_min_db", "label_zone_m"],
+                      "properties": {"intents": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}},
+                                     "worst_cell_intents": {"type": "array", "items": {"type": "string"}}, "devices": {"type": "array", "items": {"type": "string"}},
+                                     "stopwords": {"type": "array", "items": {"type": "string"}},
+                                     "move_steps_m": {"type": "array", "minItems": 1, "items": {"type": "number", "exclusiveMinimum": 0}}, "max_fixes": {"type": "integer", "minimum": 1},
+                                     "mesh_candidates": {"type": "integer", "minimum": 1}, "busy_cause_min_pct": {"type": "number", "minimum": 0},
+                                     "min_cause_db": {"type": "number", "minimum": 0}, "interference_min_db": {"type": "number", "minimum": 0}, "label_zone_m": {"type": "number", "exclusiveMinimum": 0}}}
+      }
+    },
     "floor_elevation": {
       "type": "object",
       "required": ["label", "source", "reference_height_m", "elevation_m_range"],

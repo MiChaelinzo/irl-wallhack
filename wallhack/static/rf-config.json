@@ -1383,6 +1383,78 @@
   "open_end_reduction": 0.5,
   "max_points": 32
  },
+ "wall_thickness": {
+  "label": "MODEL ESTIMATE: wall loss scales linearly with thickness, a planning approximation, not a measurement",
+  "source": "The sourced attenuation_db of a material is the loss of a wall of that material at its reference thickness (reference_cm: a typical built thickness, a planning assumption). A wall with thickness_cm t loses attenuation_db x min(t / reference_cm, max_factor). Loss grows roughly linearly with the length of the path through a homogeneous material (ITU-R P.2040 models a slab by its attenuation per unit thickness), so the rule is linear; max_factor caps it because the straight-path model does not hold for very thick masses. A wall without thickness_cm loses exactly attenuation_db. Custom materials use default_reference_cm. Openings (doors, windows) keep their own loss and ignore thickness.",
+  "min_cm": 0.5,
+  "max_cm": 100,
+  "max_factor": 4,
+  "default_reference_cm": 10,
+  "reference_cm": {
+   "glass": 1,
+   "drywall": 10,
+   "wood": 5,
+   "brick": 10,
+   "concrete": 15,
+   "metal": 1,
+   "reinforced_concrete": 20,
+   "stone": 20,
+   "plaster": 10,
+   "insulation": 10,
+   "office_partition": 8,
+   "industrial_wall": 20,
+   "steel": 1,
+   "aluminium": 1,
+   "tiles": 2,
+   "insulated_wall": 20,
+   "metal_door": 4,
+   "fire_door": 4,
+   "flooring": 5,
+   "roofing": 15
+  }
+ },
+ "objects": {
+  "label": "MODEL ESTIMATE: furniture and metal objects are drawn as four wall segments, so a path through one crosses two edges",
+  "source": "An object is a rectangle of wall segments (kind interior, tagged with an object id) that reuses the wall loss pipeline, so no second loss path exists. Each edge carries the loss of its material at thickness_cm. A straight path through the rectangle crosses two edges, so the loss through an object is twice the edge loss (a path that starts or ends inside the rectangle, such as an AP or client on a sofa, crosses one edge, so the loss is overstated for those cases). The default thickness_cm per kind is a planning assumption for the edge thickness, not the real depth of the furniture. Objects only attenuate paths that cross them in the 2D model and do not change the 3D heights.",
+  "min_drag_m": 0.3,
+  "kinds": {
+   "sofa": {
+    "label": "Sofa",
+    "material": "wood",
+    "thickness_cm": 5,
+    "w_m": 2.0,
+    "d_m": 0.9
+   },
+   "fridge": {
+    "label": "Fridge",
+    "material": "metal",
+    "thickness_cm": 1,
+    "w_m": 0.7,
+    "d_m": 0.7
+   },
+   "cabinet": {
+    "label": "Cabinet",
+    "material": "wood",
+    "thickness_cm": 4,
+    "w_m": 1.0,
+    "d_m": 0.5
+   },
+   "mirror": {
+    "label": "Mirror",
+    "material": "glass",
+    "thickness_cm": 1,
+    "w_m": 1.0,
+    "d_m": 0.1
+   },
+   "bookshelf": {
+    "label": "Bookshelf",
+    "material": "wood",
+    "thickness_cm": 5,
+    "w_m": 1.0,
+    "d_m": 0.35
+   }
+  }
+ },
  "spectrum": {
   "label": "ESTIMATE: channel congestion from the access points and sources of the project, a planning aid, not a scan of the air",
   "source": "Congestion of a channel is the sum over every AP and source in the project of coupling x duty cycle, where coupling is the share of the source power that lands in the candidate channel (interference.rejection_table for WiFi, spectral overlap for non-WiFi sources). It ignores distance, so it counts every source as if heard. APs use interference.activity_factor as duty cycle. Levels are thresholds on the congestion value, planning assumptions. On 2.4 GHz only the non-overlapping channels in preferred_channels are suggested.",
@@ -1831,7 +1903,7 @@
  },
  "client_devices": {
   "label": "MODEL ESTIMATE: typical sustained demand of common Smart Home client classes, not measurements",
-  "source": "Demand is a typical sustained figure: 1080p IP camera 2 to 6 Mbps, 4K streaming TV about 25 Mbps (streaming services recommend 15 to 25 Mbps), phone video call and browsing about 5 Mbps, console game download and stream mix about 15 Mbps, IoT sensor under 1 Mbps. Bands are the typical radio support of the class, many cameras and IoT devices are 2.4 GHz only.",
+  "source": "Demand is a typical sustained figure: 1080p IP camera 2 to 6 Mbps, 4K streaming TV about 25 Mbps (streaming services recommend 15 to 25 Mbps), phone video call and browsing about 5 Mbps, console game download and stream mix about 15 Mbps, IoT sensor under 1 Mbps, video doorbell about 3 Mbps (a 1080p stream like the IP camera, upload only), smart speaker music streaming about 0.4 Mbps (320 kbps high quality audio), thermostat under 0.1 Mbps (small status messages), robot vacuum about 1 Mbps (map and app video, planning assumption). Bands are the typical radio support of the class, many cameras, doorbells, thermostats, vacuums and IoT devices are 2.4 GHz only.",
   "devices": {
    "camera": {
     "label": "IP camera",
@@ -1869,6 +1941,35 @@
    "iot": {
     "label": "IoT device",
     "demand_mbps": 0.5,
+    "bands": [
+     "2.4"
+    ]
+   },
+   "doorbell": {
+    "label": "Video doorbell",
+    "demand_mbps": 3.0,
+    "bands": [
+     "2.4"
+    ]
+   },
+   "speaker": {
+    "label": "Smart speaker",
+    "demand_mbps": 0.4,
+    "bands": [
+     "2.4",
+     "5"
+    ]
+   },
+   "thermostat": {
+    "label": "Smart thermostat",
+    "demand_mbps": 0.1,
+    "bands": [
+     "2.4"
+    ]
+   },
+   "robot_vacuum": {
+    "label": "Robot vacuum",
+    "demand_mbps": 1.0,
     "bands": [
      "2.4"
     ]
@@ -1925,5 +2026,257 @@
    "walls": ["drywall", "brick", "reinforced_concrete"],
    "clients": 8
   }
-}
+},
+ "insight": {
+  "label": "ESTIMATE: room analysis, gaming ping, grades and assistant diagnoses are scoring layers over the propagation model, not measurements",
+  "source": "Every number shown comes from the engine grids (RSSI, SINR, throughput, packet error, loss after retries, latency, airtime from linkReliability) averaged over the cells whose centre lies in a room. The values here only decide how those numbers are mapped to words and grades; they are planning assumptions, not standards. There is no standard formula from RSSI to ping, so ping is always a range: isp_base_ms (user adjustable, a typical fixed broadband round trip to a regional game server, roughly 10 to 30 ms) plus round_trip_factor times the engine Wi-Fi latency between the range_low_percentile and range_high_percentile of the room cells (the Wi-Fi hop is crossed twice in a round trip). Jitter proxy = round_trip_factor x the same percentile spread of the latency plus airtime_jitter_ms x the airtime share. Packet loss risk is Low, Medium or High from the worse of the loss after retries and the first attempt packet error (10 percent is the IEEE 802.11 receiver minimum sensitivity definition). Gaming stability = 100 x the weighted mean of four components (ping, jitter, loss, signal margin), each falling linearly from 1 at its full value to 0 at its zero value, times the share of room cells that are served (the engine has a best AP and a finite latency for the cell). The ping, jitter and loss bounds follow common interactive voice and video guidance (ITU-T G.114 one way delay under 150 ms, jitter under 30 ms, loss under 1 percent) tightened for games. Streaming needs about 25 Mbps per 4K stream (streaming services recommend 15 to 25 Mbps), judged at the throughput_percentile of the room cells so the weak corners count. Video calls need about 4 Mbps for an HD call plus low latency and loss; the weakest component sets the score. Grades and rating words use the minimum scores listed. The mesh model keeps the engine coverage and applies the existing planner_modes.mesh.hop_throughput_factor per wireless hop to throughput plus hop_latency_ms of extra latency per hop, an assumption for a shared band backhaul. The assistant is a deterministic keyword parser, not a language model.",
+  "gaming": {
+   "isp_base_ms": 15.0,
+   "round_trip_factor": 2.0,
+   "range_low_percentile": 25,
+   "range_high_percentile": 75,
+   "min_range_ms": 2.0,
+   "airtime_jitter_ms": 5.0,
+   "loss_risk": {
+    "low_max_loss_pct": 0.1,
+    "medium_max_loss_pct": 1.0,
+    "low_max_per_pct": 10.0,
+    "medium_max_per_pct": 30.0
+   },
+   "ping_full_ms": 20.0,
+   "ping_zero_ms": 150.0,
+   "jitter_full_ms": 2.0,
+   "jitter_zero_ms": 30.0,
+   "loss_full_pct": 0.0,
+   "loss_zero_pct": 2.0,
+   "per_full_pct": 2.0,
+   "per_zero_pct": 30.0,
+   "margin_full_db": 20.0,
+   "margin_zero_db": 0.0,
+   "weights": {
+    "ping": 0.35,
+    "jitter": 0.2,
+    "loss": 0.25,
+    "margin": 0.2
+   },
+   "grades": [
+    {
+     "grade": "A+",
+     "min_score": 95.0
+    },
+    {
+     "grade": "A",
+     "min_score": 90.0
+    },
+    {
+     "grade": "B",
+     "min_score": 80.0
+    },
+    {
+     "grade": "C",
+     "min_score": 70.0
+    },
+    {
+     "grade": "D",
+     "min_score": 60.0
+    },
+    {
+     "grade": "F",
+     "min_score": 0.0
+    }
+   ]
+  },
+  "streaming": {
+   "stream_mbps": 25.0,
+   "target_streams": 2,
+   "throughput_percentile": 25
+  },
+  "video": {
+   "min_mbps": 4.0,
+   "ping_full_ms": 50.0,
+   "ping_zero_ms": 300.0,
+   "loss_full_pct": 0.0,
+   "loss_zero_pct": 3.0
+  },
+  "rating_words": [
+   {
+    "word": "Excellent",
+    "min_score": 85.0
+   },
+   {
+    "word": "Good",
+    "min_score": 70.0
+   },
+   {
+    "word": "Fair",
+    "min_score": 50.0
+   },
+   {
+    "word": "Poor",
+    "min_score": 0.0
+   }
+  ],
+  "score_card": {
+   "weights": {
+    "coverage": 0.35,
+    "dead_zones": 0.2,
+    "sinr": 0.15,
+    "activities": 0.3
+   },
+   "dead_zone_count_zero": 4,
+   "sinr_full_db": 25.0,
+   "sinr_zero_db": 5.0,
+   "grades": [
+    {
+     "grade": "A",
+     "min_score": 90.0
+    },
+    {
+     "grade": "B",
+     "min_score": 80.0
+    },
+    {
+     "grade": "C",
+     "min_score": 70.0
+    },
+    {
+     "grade": "D",
+     "min_score": 60.0
+    },
+    {
+     "grade": "F",
+     "min_score": 0.0
+    }
+   ]
+  },
+  "mesh": {
+   "max_nodes": 4,
+   "rooms_per_node": 3,
+   "hop_latency_ms": 3.0,
+   "max_hops": 16
+  },
+  "time_machine": {
+   "min_items": 2,
+   "max_items": 4,
+   "presets": [
+    {
+     "id": "isp_router",
+     "label": "ISP router",
+     "profile_id": "consumer",
+     "mesh_profile_id": null
+    },
+    {
+     "id": "isp_router_mesh",
+     "label": "ISP router + mesh",
+     "profile_id": "consumer",
+     "mesh_profile_id": "mesh"
+    },
+    {
+     "id": "high_end_router",
+     "label": "High-end router",
+     "profile_id": "enterprise",
+     "mesh_profile_id": null
+    }
+   ]
+  },
+  "assistant": {
+   "intents": {
+    "slow": [
+     "slow",
+     "speed",
+     "sluggish",
+     "crawl",
+     "bad wifi",
+     "poor wifi"
+    ],
+    "drops": [
+     "drop",
+     "disconnect",
+     "unstable",
+     "cuts out",
+     "keeps losing",
+     "reconnect"
+    ],
+    "lag": [
+     "lag",
+     "ping",
+     "latency",
+     "delay",
+     "stutter"
+    ],
+    "buffering": [
+     "buffer",
+     "video",
+     "stream",
+     "netflix",
+     "zoom",
+     "call"
+    ],
+    "dead": [
+     "dead",
+     "no signal",
+     "no wifi",
+     "no service",
+     "weak",
+     "cant connect",
+     "cannot connect"
+    ]
+   },
+   "worst_cell_intents": [
+    "dead",
+    "drops"
+   ],
+   "devices": [
+    "phone",
+    "laptop",
+    "tv",
+    "console",
+    "xbox",
+    "playstation",
+    "ps5",
+    "switch",
+    "tablet",
+    "camera",
+    "speaker",
+    "pc",
+    "computer"
+   ],
+   "stopwords": [
+    "room",
+    "the",
+    "and",
+    "of",
+    "a",
+    "my",
+    "in",
+    "at",
+    "on",
+    "is",
+    "area"
+   ],
+   "move_steps_m": [
+    2.0,
+    4.0
+   ],
+   "max_fixes": 3,
+   "mesh_candidates": 3,
+   "busy_cause_min_pct": 10.0,
+   "min_cause_db": 0.5,
+   "interference_min_db": 1.0,
+   "label_zone_m": 3.0
+  }
+ },
+ "signal_waves": {
+  "label": "ILLUSTRATION: animated rings drawn from each access point, dimmed after every wall using the engine wall loss. A picture of how walls absorb signal, not a measured wavefront",
+  "source": "Each ring is sampled along rays from the access point. A ray accumulates the loss of the walls and openings it crosses with the engine wallLoss (the same value the heat map uses at that radius) and the ring brightness falls linearly to zero at fade_loss_db of accumulated loss. fade_loss_db 30 dB is a drawing choice: a ray that has lost 30 dB is shown as almost invisible. Speed, ring spacing and ray counts are presentation settings chosen for a readable animation on a Raspberry Pi 4, not physical values (radio waves move at the speed of light). The ray count follows the page quality setting.",
+  "rays_by_quality": {"low": 24, "medium": 48, "high": 96},
+  "max_rings": 4,
+  "ring_spacing_m": 3.0,
+  "speed_m_per_s": 4.0,
+  "max_radius_m": 24.0,
+  "sample_step_m": 0.5,
+  "fade_loss_db": 30.0,
+  "distance_fade_m": 24.0,
+  "frame_budget_ms": 8.0
+ }
 }

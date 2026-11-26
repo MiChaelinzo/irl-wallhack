@@ -3,9 +3,9 @@
 **See how WiFi moves through your home, on your own machine.** Wallhack is a local, offline dashboard with two halves:
 
 - **Sensing dashboard** (`/`): watches how your WiFi signal changes and estimates **presence, motion, activity, breathing rate, an experimental heart rate and a coarse zone**, with optional air-quality sensors. Without WiFi hardware it runs a clearly labelled simulator.
-- **RF planner** (`/planner`): draw a floor plan, drop access points and get a **model-based signal heat map** (a MODEL ESTIMATE, not a measurement), analytics, placement advice and PDF, PNG, CSV and JSON reports.
+- **RF planner and WiFi architect** (`/planner`): draw a floor plan with wall materials and thicknesses, drop access points and get a **model-based signal heat map** (a MODEL ESTIMATE, not a measurement), a letter grade, per-room gaming ratings, the best router spot, mesh and before/after comparisons, and PDF, PNG, CSV and JSON reports. Everything stays in your browser.
 
-![RF planner: floor plan with a signal heat map, quality bands and contours (model estimate)](docs/screenshot-planner.png)
+![WiFi architect Quick start: pick a plan, press Analyse my WiFi, get a grade, per-room gaming ratings and the main cause (model estimate)](docs/screenshot-planner-quick.png)
 
 ## Try it in a minute
 Needs Python 3.9+. No WiFi hardware or account is needed; after `make install` it runs offline.
@@ -19,7 +19,7 @@ Then open `/planner` for the RF planner, `/mobile` for the phone view and `/judg
 | Page | What you get | Honesty label on screen |
 |---|---|---|
 | `/` dashboard | presence, vitals, zones, 3D signal view, timeline, insights, router game | SIMULATED (simulator), EXPERIMENTAL (heart rate) |
-| `/planner` | floor-plan editor, heat map layers, analytics, smart planner, 3D view, lessons, exports | MODEL ESTIMATE, not a measurement |
+| `/planner` | Quick start (grade, rooms, best router spot), floor-plan editor, heat map layers, analytics, Score card, Assistant, Mesh, Time Machine, smart planner, 3D view, lessons, exports | MODEL ESTIMATE, not a measurement |
 | `/mobile` | phone companion with occupancy, vitals and alerts | SIMULATED when simulated |
 | `/judge` | every capability with Built / Experimental / Future / Unsupported and its verification label | taken from the README table |
 
@@ -37,6 +37,7 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 - **Simulator**: every simulated value (vitals and environment) is marked SIMULATED. The simulated heartbeat is exaggerated so the demo shows it. With a real source and no sensors configured, environment tiles show "no sensor" and nothing is invented.
 - **Mobile companion and judge mode**: `/mobile` (occupancy, vitals, sensors, alerts; pair a phone by scanning the QR on the dashboard after starting with `--lan`) and `/judge` (every capability with its Built / Experimental / Future / Unsupported status). Glass UI and particle effects follow the quality selector and reduced-motion setting.
 - **RF planner**: `/planner` is a floor-plan editor with a model-based signal heat map (MODEL ESTIMATE, not a measurement): draw walls, place access points, import a floor-plan image and calibrate its scale, undo/redo, contours, dead zones, quality bands and hover readouts, plus an analytics dashboard, scenario comparison, a smart planner (AP placement, power and channel advice with confidence), PNG, CSV, JSON and PDF export, and mesh, capacity, IoT and enterprise planning modes. Details in `docs/rf-planner.md`, measured speed in `docs/perf-rf.md`.
+- **Wi-Fi architect Quick start**: on `/planner` pick a template, press Analyse my WiFi and get a grade, per-room gaming ratings, the main cause and the best router spot (Show or Apply, undoable), plus an Ask box, Mesh and Time Machine tabs and optional Signal waves. All model estimates.
 - **Comfort settings**: light and dark themes, a high-contrast mode (planner Contrast button or the system `prefers-contrast` setting), reduced motion and Low/Medium/High quality for slow devices.
 
 | | |
@@ -44,6 +45,19 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 | ![Planner SINR layer with the colour-blind safe viridis palette](docs/screenshot-planner-layers.png) | ![Planner analytics: coverage, dead zones and capacity estimates](docs/screenshot-planner-analytics.png) |
 | ![Planner, light theme](docs/screenshot-planner-light.png) | ![Judge mode: each capability with its status and verification label](docs/screenshot-judge.png) |
 | ![Planner on a phone](docs/screenshot-planner-mobile.png) | ![Dashboard on a phone](docs/screenshot-mobile.png) |
+
+### WiFi architect in five steps (no RF knowledge needed)
+1. Open `/planner`. The Quick start card is at the top.
+2. Step 1: pick a starting plan (a studio, a two bedroom condo, a small office, a three story house and ten more) or keep the plan on screen.
+3. Step 2: press **Analyse my WiFi**. The result takes well under a second on the presets (0.1 to 0.5 s measured in headless Chromium, see [docs/perf-rf.md](docs/perf-rf.md)).
+4. Read the big letter grade, the three chips (Gaming, Streaming, Video calls) and the room table. Ping is always a range and packet loss risk is Low, Medium or High: there is no standard formula from signal strength to ping, so these are MODEL ESTIMATES.
+5. Press **Show** on the best router spot to preview it, **Apply** to move the router (Ctrl+Z undoes it), or type "Why is my bedroom WiFi slow?" in the Ask box. The tabs **Mesh** and **Time Machine** compare a single router, mesh nodes and what-if upgrades, and **Score card** downloads `wifi_assessment.pdf`.
+
+| | |
+|---|---|
+| ![Rooms and gaming tab with per-room ping range, loss risk and grade](docs/screenshot-planner-rooms.png) | ![Score card with the grade breakdown and the PDF button](docs/screenshot-planner-scorecard.png) |
+| ![Assistant answering why a bedroom is slow](docs/screenshot-planner-assistant.png) | ![Mesh topologies side by side](docs/screenshot-planner-mesh.png) |
+| ![Time Machine comparing three versions with a wipe](docs/screenshot-planner-timemachine.png) | ![Aurora palette with signal waves](docs/screenshot-planner-aurora.png) |
 
 More screenshots (spectrum, engineering dashboard, scenario comparison, 3D view, timeline, beams, lessons, advice, report) are in [`docs/`](docs/). They are produced by `tools/screenshot.py` and `tools/planner_smoke.py` in headless Chromium.
 
@@ -157,13 +171,13 @@ Off by default (`llm_provider` empty). Set it with `--config`/`config.json` or `
 | RF intelligence scores | Complete | Model constants are textbook values, UNVERIFIED against real buildings. |
 | RF lab (non-WiFi interferers, PER/latency/airtime estimates, stairwell voids, explain, spectrum, decay, roaming map) | Complete | VERIFIED by automated Python tests and Python/JS parity (`tests/test_rf_lab.py`). Every number is a MODEL ESTIMATE with assumed constants (no standard SINR to PER formula exists); UNVERIFIED against real radios, microwave ovens or buildings. Interferers and floor openings are editable in the planner (PARTIALLY VERIFIED, see the lab UI row in the table below). |
 | Scenario presets, educational mode, plan explanation, richer PDF report | Complete | VERIFIED by automated tests (`tests/test_scenarios.py`, `test_planner_learn.py`, `test_explain.py`) and headless Chromium (`tools/planner_smoke.py`, live and `--demo`). The explain endpoint is VERIFIED against a mocked provider only, UNVERIFIED against real LLM services. Lesson content is not reviewed by a teacher, and PDFs are UNVERIFIED in a real viewer. |
-| V2 timeline with handoffs, what-if diff, ranked recommendations, Design my network, ten scenario presets | Complete | VERIFIED by automated tests (`tests/test_rf_timeline.py` Python and JS identical output, `tests/test_rf_recommend.py` determinism and measured deltas) and headless Chromium (`tools/planner_smoke.py`, live and `--demo`). Hysteresis, thresholds and score weights are planning assumptions. LLM wording of a plan is mock tested only, UNVERIFIED with a real model. |
+| V2 timeline with handoffs, what-if diff, ranked recommendations, Design my network, fourteen scenario presets | Complete | VERIFIED by automated tests (`tests/test_rf_timeline.py` Python and JS identical output, `tests/test_rf_recommend.py` determinism and measured deltas) and headless Chromium (`tools/planner_smoke.py`, live and `--demo`). Hysteresis, thresholds and score weights are planning assumptions. LLM wording of a plan is mock tested only, UNVERIFIED with a real model. |
 | Accessibility, diagnostics, throttled performance | Complete | VERIFIED: axe-core (`tools/a11y_check.py`, headless Chromium) reports 0 violations on the planner and dashboard, live and demo, in dark, light and high contrast; request ids, JSON logs, `/api/diagnostics` and the JSON error handler by `tests/test_api.py`; throttled numbers in `docs/perf-rf.md`. UNVERIFIED: screen readers, real phones and low-end devices (the 4x and 6x CPU throttle is an approximation and does not reach the Web Worker). The 3D view, timeline and beams tabs are also axe-checked (live, 0 serious or critical); axe is not in CI. |
 | V2 reports and measurements (PDF network health, device recommendations, before and after; CSV SINR rows; V2 timings; screenshots of the new tabs) | Complete | VERIFIED by `tests/test_planner_panels.py` (CSV and PDF structure under node) and by measurement (`node tools/perf_rf_v2.js`, `tools/perf_3d.py`, numbers in `docs/perf-rf.md`, headless Chromium with software GL, not a Pi 4). PARTIALLY VERIFIED: the PDF sections were checked structurally, not in a real viewer. The 2 to 3 s main-thread AP move at 4x throttle was profiled and is not fixed. The room creation tool is not built. |
 | Judge mode | Complete | Statuses are checked against this README by a test. |
 
 ## Using the RF lab
-Open `/planner` (or the hosted demo). Pick a preset from the Project card or draw walls (W), place APs (A), doors (D), windows (O), floor openings (S) and interference sources (X). Set an AP's Wi-Fi standard to unlock SINR, latency and packet-loss layers. Choose a map layer and palette from the layer bar, open Spectrum and Dashboard tabs for channel congestion and statistics, toggle Learn for lessons, use Smart planner for advice and Export for PDF, PNG, CSV and JSON. All values are MODEL ESTIMATES. Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md). What is complete, partial and deferred: [docs/platform/24-rf-lab-status.md](docs/platform/24-rf-lab-status.md).
+Open `/planner` (or the hosted demo). Pick a preset from the Project card or draw walls (W), place APs (A), doors (D), windows (O), floor openings (S), furniture and metal objects (B) and interference sources (X). Walls take an optional thickness in cm. Set an AP's Wi-Fi standard to unlock SINR, latency and packet-loss layers. Choose a map layer and palette from the layer bar, open Spectrum and Dashboard tabs for channel congestion and statistics, toggle Learn for lessons, use Smart planner for advice and Export for PDF, PNG, CSV and JSON. All values are MODEL ESTIMATES. Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md). What is complete, partial and deferred: [docs/platform/24-rf-lab-status.md](docs/platform/24-rf-lab-status.md).
 
 ## Platform documentation
 The audit and design set is in [docs/platform/README.md](docs/platform/README.md): repository audit with evidence-based scores, technical debt, architecture, security review, Wi-Fi physics and inaccuracy report, material database, rendering measurements, the frontend stack decision ([ADR](docs/platform/adr-frontend-stack.md), no rewrite done), roadmap, a ranked top 100 list with Done / Partial / Not started status, a top 10 demo script and a hackathon pitch with caveats.
@@ -223,6 +237,13 @@ Use it only in your own space, and only on people who know about it. The dashboa
 | RF planner UI (draw, undo, drag, import, calibrate, analytics, scenarios, smart planner, exports, modes), live and static demo | PARTIALLY VERIFIED (scripted run in headless Chromium on SwiftShader, `tools/planner_smoke.py`; no real GPU, no touch device) |
 | RF planner lab UI: AP WiFi standard, width, streams and MLO controls, 11 map layers plus a combined layer, side-by-side compare, colour-blind palettes (viridis, cividis), roaming, strongest-AP and blend overlays, spectrum canvas, engineering dashboard, door, window, stairwell and interference-source editing, floor up and down | PARTIALLY VERIFIED (driven in headless Chromium by `tools/planner_smoke.py`, live, `--demo`, `--canvas2d` and `--no-worker`, zero console errors; pure parts tested in node; AP panel controls clicked through the page; no real GPU, no touch, no screen reader, colour-blind rendering judged from the palette definitions, not simulated) |
 | RF planner on a real GPU, touch and pinch, Raspberry Pi 4 speed | UNVERIFIED |
+| WiFi architect insight layer (`rf-insight.js`: rooms, Gamer Mode, Score card, Assistant parser, placement report, mesh topologies, Time Machine), wall thickness and objects, `wifi_assessment.pdf` structure | VERIFIED (node driven tests `tests/test_rf_insight.py`, `tests/test_planner_quick.py`, `tests/test_rf_parity.py`, export tests) as code behaviour; the numbers are MODEL ESTIMATES |
+| WiFi architect UI (Quick start, tabs, find best spot, signal waves) in headless Chromium, live, `--demo` and canvas fallback, a11y 0 serious or critical | PARTIALLY VERIFIED (scripted run on software GL, `tools/planner_smoke.py`, `tools/a11y_check.py`, screenshots viewed; no real GPU, phone or screen reader) |
+| WiFi architect speed: presets re-simulate after an AP move in 3 to 8 ms, insight functions 1 to 400 ms, signal waves 0.1 ms draw per frame | VERIFIED on the benchmark machine (`node tools/perf_architect.js`, `tools/perf_3d.py`, `docs/perf-rf.md`). Misses: stress floor what-if about 1.4 s and `placementReport` or `diagnose` on the 13 room hotel preset about 0.35 s |
+| Ping ranges, packet loss risk, gaming grades, streaming and video call ratings against real games, calls and routers | UNVERIFIED (no standard RSSI to ping formula; thresholds are planning assumptions, never compared with measured traffic) |
+| Optional "Explain in plain words" (LLM rephrase of the assistant numbers) with a real model | UNVERIFIED (mock server only; hidden in the static demo) |
+| Mesh backhaul penalty (throughput factor and per-hop delay) and wall thickness scaling against real mesh kits and walls | UNVERIFIED (documented assumptions) |
+| WiFi architect speed on integrated graphics, a Raspberry Pi 4 or a phone | UNVERIFIED (software GL in headless Chromium only) |
 | RF planner PDF and PNG exports opened in a real viewer | UNVERIFIED (structure and signature checked by script only) |
 | LLM providers (ollama, llama.cpp, OpenAI, Azure) request and response handling | UNVERIFIED (mocked local HTTP servers only; never called a real model or cloud service) |
 | LAN pairing: default stays loopback, unauthenticated remote HTTP and WebSocket refused, cookie and bearer accepted, loopback client with a foreign Host header refused (DNS rebinding), `/api/pair` refused with an Origin header | VERIFIED (automated tests with a simulated remote client; not tried from a real phone) |

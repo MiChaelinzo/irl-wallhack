@@ -41,6 +41,11 @@ class Floor:
         self.f["rooms"].append({"id": rid, "name": name, "x": x, "y": y, "w": w, "d": d})
         return self
 
+    def void(self, vid, kind, x, y, w, d):
+        """A stairwell, atrium or shaft: the slab is open there, so floor loss drops for paths that start or end inside it."""
+        self.f.setdefault("voids", []).append({"id": vid, "kind": kind, "x": x, "y": y, "w": w, "d": d})
+        return self
+
     def ap(self, aid, x, y, tx=20.0, **extra):
         """An AP with a WiFi standard, so SINR and throughput estimates exist for every preset."""
         self.f["aps"].append(dict({"id": aid, "x": x, "y": y, "tx_dbm": tx, "standard": "wifi6"}, **extra))
@@ -190,10 +195,64 @@ def apartment_neighbours():
                     [f], neighbours, "Shared concrete walls shield the signal but neighbours still raise the noise on channel 6. Run the SINR channel plan and compare.")
 
 
+def studio_apartment():
+    f = Floor("studio", "Studio", 0, 6.0, 5.0, "brick", "drywall", 2.5)
+    f.wall(4.0, 0, 4.0, 2.5, door=1.0).wall(4.0, 2.5, 6.0, 2.5).window(0, 1.5, 1.4).window(2, 1.5, 1.4)
+    f.room("main", "Main room", 0, 0, 4, 5).room("bath", "Bathroom", 4, 0, 2, 2.5).room("kitchenette", "Kitchenette", 4, 2.5, 2, 2.5)
+    f.ap("router", 0.8, 4.2, 17.0)
+    return scenario("studio_apartment", "Studio apartment", "A 30 m2 studio with one open room, a small bathroom and a kitchenette. The router sits by the sofa.",
+                    [f], [{"id": "microwave", "kind": "microwave", "floor": "studio", "x": 5.2, "y": 3.5}],
+                    "A small open space is easy to cover. The bathroom is the weak spot, so test the router position.")
+
+
+def two_bedroom_condo():
+    f = Floor("condo", "Condo", 0, 10.0, 8.0, "concrete", "drywall", 2.5)
+    f.wall(5.0, 0, 5.0, 3.5, door=1.0).wall(5.0, 3.5, 5.0, 5.5, door=0.6).wall(5.0, 5.5, 5.0, 8.0, door=1.0)
+    f.wall(5.0, 3.5, 10.0, 3.5).wall(5.0, 5.5, 10.0, 5.5).window(0, 1.5, 1.8).window(0, 7.0, 1.4).window(2, 2.0, 1.8)
+    f.room("living", "Living and kitchen", 0, 0, 5, 8).room("bed1", "Bedroom 1", 5, 0, 5, 3.5)
+    f.room("bath", "Bathroom", 5, 3.5, 5, 2).room("bed2", "Bedroom 2", 5, 5.5, 5, 2.5)
+    f.ap("router", 2.0, 4.0, 18.0)
+    neighbour = {"id": "unit-4b", "kind": "neighbour_wifi", "floor": "condo", "x": 9.8, "y": 4.5, "band": "2.4", "channel": 6}
+    return scenario("two_bedroom_condo", "Two bedroom condo", "A concrete shell condo with a living area on the left and two bedrooms and a bathroom on the right.",
+                    [f], [neighbour], "The concrete shell shields neighbours, but the drywall partitions still cost the bedrooms signal. Compare a central router with a mesh node.")
+
+
+def three_story_house():
+    floors = []
+    names = [("ground", "Ground floor", 0), ("first", "First floor", 1), ("second", "Second floor", 2)]
+    for fid, name, level in names:
+        f = Floor(fid, name, level, 12.0, 9.0, "brick", "drywall", 2.6)
+        f.void(fid + "-stairs", "stairwell", 5.0, 3.0, 2.0, 3.0)
+        floors.append(f)
+    g, a, b = floors
+    g.wall(8.0, 0, 8.0, 9.0, door=4.0).wall(0, 6.0, 8.0, 6.0, door=2.0).window(0, 3.0).window(2, 7.0)
+    g.room("living", "Living room", 0, 0, 8, 6).room("dining", "Dining", 0, 6, 8, 3).room("kitchen", "Kitchen", 8, 0, 4, 9)
+    g.ap("router", 2.0, 4.0, 20.0)
+    a.wall(4.0, 0, 4.0, 9.0, door=2.0).wall(8.0, 0, 8.0, 9.0, door=6.0)
+    a.room("bed1", "Bedroom 1", 0, 0, 4, 9).room("landing", "Landing", 4, 0, 4, 9).room("bath", "Bathroom", 8, 0, 4, 9)
+    b.wall(6.0, 0, 6.0, 9.0, door=2.0)
+    b.room("bed2", "Bedroom 2", 0, 0, 6, 9).room("study", "Study", 6, 0, 6, 9)
+    return scenario("three_story_house", "Three story house", "Three floors joined by a stairwell, with one router on the ground floor. Each floor up costs signal, except near the stairs.",
+                    floors, None, "A stairwell opening lowers the floor loss near it. Try a mesh node on the first floor landing.")
+
+
+def small_office():
+    f = Floor("smalloffice", "Small office", 0, 15.0, 10.0, "glass", "office_partition", 2.7)
+    f.wall(9.0, 0, 9.0, 4.0, door=1.5).wall(9.0, 4.0, 9.0, 7.0, door=1.0).wall(9.0, 7.0, 9.0, 10.0, "metal_door", door=1.0)
+    f.wall(9.0, 4.0, 15.0, 4.0).wall(9.0, 7.0, 15.0, 7.0).window(0, 3.0, 2.0).window(2, 3.0, 2.0)
+    f.room("open", "Open plan", 0, 0, 9, 10).room("meeting", "Meeting room", 9, 0, 6, 4)
+    f.room("manager", "Manager office", 9, 4, 6, 3).room("server", "Server closet", 9, 7, 6, 3)
+    f.ap("ap-main", 4.5, 5.0, 18.0, band="5")
+    neighbour = {"id": "next-door", "kind": "neighbour_wifi", "floor": "smalloffice", "x": 0.3, "y": 9.7, "band": "5", "channel": 36}
+    return scenario("small_office", "Small office", "A ten person office: open plan on the left, a meeting room, a manager office and a server closet behind a metal door on the right.",
+                    [f], [neighbour], "A metal door makes the server closet a dead end for the AP. The meeting room is the test of a video call.")
+
+
 def build() -> dict:
     return {"schema_version": 1, "label": LABEL,
             "scenarios": [small_apartment(), large_home(), office_floor(), school_building(), warehouse(), hotel_floor(), coffee_shop(),
-                          hospital_ward(), smart_home(), apartment_neighbours()]}
+                          hospital_ward(), smart_home(), apartment_neighbours(),
+                          studio_apartment(), two_bedroom_condo(), three_story_house(), small_office()]}
 
 
 def render() -> str:

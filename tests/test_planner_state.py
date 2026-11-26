@@ -517,3 +517,38 @@ def test_view_settings_validate_url_and_storage():
     assert r["a"] == {"layer": "sinr", "palette": "viridis", "compare": "snr", "combine": ["snr", "loss"], "overlays": ["roaming", "blend"]}
     assert r["bad"]["layer"] == "rssi" and r["bad"]["palette"] == "classic" and r["bad"]["overlays"] == [] and r["bad"]["combine"] == ["rssi", "snr"]
     assert r["merged"]["palette"] == "cividis" and r["merged"]["layer"] == "sinr" and r["back"] == r["a"]
+
+
+def test_wall_thickness_and_object_tag_validate_round_trip_and_old_projects_load_unchanged():
+    r = run_js("""
+      const base = JSON.stringify(mk());
+      const p = JSON.parse(base); p.floors[0].walls[0].thickness_cm = 12.5; p.floors[0].walls[0].object = 'obj-1';
+      const ok = S.validateProject(p);
+      const tries = [0, 0.1, 101, '5', null].map(v => { const q = JSON.parse(base); q.floors[0].walls[0].thickness_cm = v; try { S.validateProject(q); return 'accepted'; } catch (e) { return e.message; } });
+      const store = S.createStore(mk()), f = store.floorId, id = store.project.floors[0].walls[0].id;
+      store.exec({label: 't', ops: [S.setOp('wall', store.project, f, id, {thickness_cm: 20})]});
+      const set = store.project.floors[0].walls[0].thickness_cm;
+      store.exec({label: 'reset', ops: [S.setOp('wall', store.project, f, id, {thickness_cm: undefined})]});
+      out({same: JSON.stringify(S.validateProject(JSON.parse(base))) === base, t: ok.floors[0].walls[0].thickness_cm, o: ok.floors[0].walls[0].object, tries, set,
+           cleared: 'thickness_cm' in store.project.floors[0].walls[0]});
+    """)
+    assert r["same"] and r["t"] == 12.5 and r["o"] == "obj-1" and r["set"] == 20 and r["cleared"] is False
+    assert all("thickness_cm" in t for t in r["tries"]), r["tries"]
+
+
+def test_object_rectangle_of_wall_segments_attenuates_a_crossing_path_and_undoes_as_one_step():
+    r = run_js("""
+      const E = require(process.argv[1] + '/rf-engine.js'), cfg = JSON.parse(require('fs').readFileSync(process.argv[1] + '/rf-config.json', 'utf8'));
+      const store = S.createStore(mk()), f = store.floorId, fl = store.project.floors[0], spec = cfg.objects.kinds.fridge;
+      const before = JSON.stringify(store.project), env = E.makeEnv(cfg), y = 5.5;
+      const base = E.wallLoss(env, E.prepareFloor(env, store.project.floors[0], '2.4'), 0, y + 0.35, 10, y + 0.35, null, null);
+      const x = 3, w = spec.w_m, d = spec.d_m;
+      const edges = [[x, y, x + w, y], [x + w, y, x + w, y + d], [x + w, y + d, x, y + d], [x, y + d, x, y]];
+      const ops = edges.map((e, k) => { const op = S.addOp('wall', store.project, f, {id: 'obj-w' + k, x1: e[0], y1: e[1], x2: e[2], y2: e[3], kind: 'interior', material: spec.material, thickness_cm: spec.thickness_cm, object: 'obj-1'}); op.index = fl.walls.length + k; return op; });
+      store.exec({label: 'object', ops});
+      const prep = E.prepareFloor(env, store.project.floors[0], '2.4');
+      const through = E.wallLoss(env, prep, 0, y + d / 2, 10, y + d / 2, null, null) - base, around = E.wallLoss(env, prep, 0, y - 2, 10, y - 2, null, null) - E.wallLoss(env, E.prepareFloor(env, JSON.parse(before).floors[0], '2.4'), 0, y - 2, 10, y - 2, null, null);
+      store.undo();
+      out({n: edges.length, through, around, undone: JSON.stringify(store.project) === before, metal: cfg.materials.metal.attenuation_db['2.4'], factor: spec.thickness_cm / cfg.wall_thickness.reference_cm.metal});
+    """)
+    assert r["n"] == 4 and r["undone"] and r["around"] == 0 and r["through"] == pytest.approx(2 * r["metal"] * r["factor"])

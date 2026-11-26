@@ -1,0 +1,47 @@
+# 26 WiFi architect round (Round 5)
+
+Branch `feat/wifi-architect`. This document records what the round asked for, what each priority feature became in the code, and how well each is verified. Labels: **VERIFIED** (automated tests or a recorded run), **PARTIALLY VERIFIED** (scripted browser run, inspection or structure check only), **UNVERIFIED** (not executed or not testable here). All RF numbers are MODEL ESTIMATES.
+
+## Round objective (condensed)
+
+The original "ROUND 5 OBJECTIVE" list was handed to the planner as a chat brief and is not stored in the repository. The condensed objective recorded in `.agents/tasks/task-wifi-architect/task.json` is this, and the table below is written against it:
+
+> Transform the WiFi wall penetration planner into a WiFi architect: thickness-aware materials and objects, new templates, per-room Gamer Mode, a Score Card with `wifi_assessment.pdf`, a Predictive WiFi Assistant, a placement report, mesh topologies, a Time Machine, a guided quick start, a glass UI with signal waves, and performance measurement.
+
+The ten priority features, in the order the brief listed them, are: real material attenuation engine, AI router placement, 3D coverage view, mesh simulation, interference modelling, smart home planner, score card, predictive assistant, building templates, scenario comparison.
+
+Status words: **already existed** (built before the round), **extended** (a base existed, the round added to it), **new**, **partial** (a useful part exists, the gap is named), **deferred** (not built).
+
+## The 10 priority features
+
+| # | Feature | Status | What exists (files) | Gap | Verification |
+|---|---|---|---|---|---|
+| 1 | Real material attenuation engine | Extended | 14 materials with per-band dB, ranges and sources (`wallhack/static/rf-config.json`, `docs/platform/material-database.md`); new optional `thickness_cm` scaling `attenuation_db x min(thickness / reference, 4)` in `wallhack/rfmodel.py` and `wallhack/static/rf-engine.js`; Object tool (sofa, fridge, cabinet, mirror, bookshelf as four wall segments) in `wallhack/static/planner-editor.js` | Reference thicknesses and the linear rule are planning assumptions, not measurements. Objects ignore height and diffraction around them | VERIFIED for code and Python/JS parity (`tests/test_rf_parity.py`, `tests/test_rfmodel.py`). UNVERIFIED against real walls |
+| 2 | AI router placement | Extended | Greedy optimizer and what-if (`wallhack/static/rf-optimizer.js`); new `placementReport` and the "Find best spot for this router" button with Show and Apply (`wallhack/static/rf-insight.js`, `wallhack/static/planner-quick.js`) | Not machine learning: a deterministic search of a candidate lattice. Ranking is by covered cells, dead cells, mean RSSI. 0.36 s on the 13 room hotel preset (above the 100 ms goal) | VERIFIED (`tests/test_rf_insight.py`, smoke run). Real routers UNVERIFIED |
+| 3 | 3D coverage view | Already existed (small extension) | Floor stack, slices and volume in `wallhack/static/planner-3d.js` (WebGL with canvas fallback, ADR in `adr-3d-view.md`); new in this round: Signal waves overlay on the plan (`planner-quick.js`) | Interpolated between per-floor 2D maps, not 3D propagation. No new 3D renderer work | Maths VERIFIED (`tests/test_planner_3d.py`). Rendering PARTIALLY VERIFIED (software GL only) |
+| 4 | Mesh simulation | Extended | `mesh_parent` and backhaul in `wallhack/static/planner-modes.js`; new `meshTopologies` comparing single router, dual mesh and whole-home mesh with a backhaul penalty (`rf-insight.js`, Mesh tab) | Backhaul is an assumption (throughput factor and per-hop delay in `rf-config.json`), not a radio model. Wired backhaul and tri-band dedicated backhaul are not modelled | VERIFIED for code. Penalty values UNVERIFIED against real mesh kits |
+| 5 | Interference modelling | Already existed (small extension) | SINR with co-channel and adjacent-channel coupling, external sources (microwave, Bluetooth, neighbour WiFi) in `rf-engine.js` and `rf-config.json`; the Assistant now ranks interference as a cause (SNR minus SINR) | Camera and smart-device sources were not added (no sourced duty cycle or power). No new interference physics | VERIFIED for code, UNVERIFIED against measured spectrum |
+| 6 | Smart home planner | Extended | Client capacity model in `planner-modes.js`; new device kinds doorbell, speaker, thermostat, robot vacuum (`client_devices`); per-room "Smart Home check" in the Rooms and gaming tab | Demand figures are typical planning values. No device control (Smart Home automation stays NOT BUILT) | VERIFIED for code (`tests/test_planner_quick.py`). Real devices UNVERIFIED |
+| 7 | Score card | New | `scoreCard` (grade A to F from coverage, dead zones, SINR and activity scores, weights shown on screen), Score card tab, `wifi_assessment.pdf` and per-room CSV (`rf-insight.js`, `planner-export.js`) | Weights and grade thresholds are planning preferences. The PDF was checked by structure only | VERIFIED for code and PDF structure. Opening in real PDF viewers UNVERIFIED |
+| 8 | Predictive assistant | New | `parseQuestion` and `diagnose` in `rf-insight.js`: a deterministic keyword parser (not a language model) that names the room, ranks causes in dB and tests each fix with a second engine run; Assistant tab and Quick start Ask box; optional "Explain in plain words" through `POST /api/planner/explain` (live server only) | It answers questions about one room in a fixed set of intents. It does not predict from history. The LLM rephrase is hidden in the static demo | Parser and diagnosis VERIFIED. LLM rephrase UNVERIFIED (mock server only) |
+| 9 | Building templates | Extended | 14 presets (ten before the round, plus studio apartment, two bedroom condo, three story house with stairwell voids, small office), all with named rooms (`tools/make_scenarios.py`, `wallhack/static/scenarios.json`); Quick start template picker | Illustrative layouts, not real buildings | VERIFIED (`tests/test_scenarios.py`) |
+| 10 | Scenario comparison | Extended | Two-scenario compare (`planner-panels.js`, unchanged); new Time Machine comparing 2 to 4 versions (current plan, saved scenarios, what-if upgrades) with ranking, deltas and a wipe view (`timeMachine`, `planner-quick.js`) | The wipe and thumbnails are drawn by `planner-quick.js`, not shared with the old compare viewer | VERIFIED for code, PARTIALLY VERIFIED for the UI (scripted run) |
+
+## Extras
+
+| Item | Status | What exists | Gap | Verification |
+|---|---|---|---|---|
+| Per-room Gamer Mode (ping range, jitter, packet loss risk, stability grade) | New | `gamerMode` and `roomStats` in `rf-insight.js`, Rooms and gaming tab | No standard formula from RSSI to ping: ping is a range, `isp_base_ms + 2 x Wi-Fi latency`. Not compared with real game traffic | Code VERIFIED. Ping and grades against real games UNVERIFIED |
+| Guided Quick start | New | `planner-quick.js`, card at the top of `/planner`; 0.1 to 0.5 s from template to result in headless Chromium | Runs on the main thread in short slices (not in the Web Worker) | PARTIALLY VERIFIED (`tools/planner_smoke.py`, `tools/a11y_check.py`) |
+| Glass UI and aurora palette | New | `style.css` glass cards with solid fallbacks (reduced transparency, high contrast, Low quality); `aurora` palette in `planner-heat.js`; letter grades with text, not colour alone | Header opacity raised in this feature so content no longer shows through | PARTIALLY VERIFIED (screenshots viewed, axe 0 serious or critical) |
+| Signal waves | New | `signal_waves` block in `rf-config.json`, overlay in `planner-quick.js`; rays from the quality level, dimmed after each wall with the engine `wallLoss`, off for reduced motion | An illustration, not a measurement | VERIFIED for geometry (`tests/test_planner_quick.py`). 0.1 ms draw per frame in headless Chromium; integrated GPUs UNVERIFIED |
+| Performance measurement | New | `tools/perf_architect.js`, wave frame times in `tools/perf_3d.py`, section in `docs/perf-rf.md` | Misses stated: stress floor what-if 1.4 s; hotel floor diagnose, placement and mesh 0.34 to 0.39 s; the 10,000 rays goal is met only in multipath mode or on large floors | VERIFIED on the benchmark machine only (Xeon, node 22, software GL) |
+| Camera and smart-device interference sources | Deferred | none | No sourced duty cycle or transmit power | n/a |
+| Room creation tool, floor plan extraction from an image, measured-survey calibration, true 3D ray tracing | Deferred | none (see `21-top-100-improvements.md`) | Not part of the round | n/a |
+| LLM explanation with a real model | Partial | Button, endpoint and payload builder exist (`rf-insight.js` `assistantPayload`, `wallhack/app.py`) | Never run against a real model | UNVERIFIED |
+
+## Open items
+
+- CI already runs `node --check` over every `wallhack/static/*.js` (so `rf-insight.js` and `planner-quick.js` are covered) and the whole pytest suite. The browser checks (`tools/planner_smoke.py` in three modes, `tools/a11y_check.py`) are NOT in CI: they need Playwright and a Chromium download, and they were not run on a GitHub runner, so adding them there is untested. They were run locally in this sandbox.
+- Speed misses listed in `docs/perf-rf.md` (stress floor what-if, hotel floor insight functions) are not fixed.
+- Real-device checks (integrated GPU, Raspberry Pi 4, phone, screen reader, real routers, real LLM) remain UNVERIFIED.

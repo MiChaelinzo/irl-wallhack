@@ -50,6 +50,7 @@ def wait_idle(page):
 
 
 def screen_of(page, x, y):
+    page.evaluate("() => document.getElementById('cEdit').scrollIntoView({block: 'center', behavior: 'instant'})")   # the Quick start card sits above the stage
     return page.evaluate("([x, y]) => { const v = window.PlannerApp.editor.view, r = document.getElementById('cEdit').getBoundingClientRect(); return [r.left + v.ox + x * v.scale, r.top + v.oy + y * v.scale]; }", [x, y])
 
 
@@ -142,6 +143,7 @@ def run(page, base, problems, args):
     run_twin_lab_features(page, problems, args)
     run_view3d_features(page, problems, args)
     run_learn_features(page, problems, args)
+    run_quick_features(page, problems, args)
     if not args.no_screenshot:
         page.screenshot(path=str(Path(tempfile.gettempdir()) / "wallhack-smoke-planner.png"))   # docs/screenshot-planner.png is owned by screenshot.py
 
@@ -305,7 +307,7 @@ LAB = {"name": "Lab plan", "floors": [
     {"id": "u", "name": "Upper", "level": 1, "width_m": 30, "depth_m": 20, "walls": [], "aps": [{"id": "ap3", "x": 10, "y": 10, "tx_dbm": 17}]}]}
 
 HEAT_LAYERS = ["rssi", "snr", "sinr", "quality", "bandwidth", "latency", "loss", "wall_loss", "interference", "utilisation", "capacity", "combined"]
-PALETTES = ["classic", "cvd", "viridis", "cividis"]
+PALETTES = ["classic", "aurora", "cvd", "viridis", "cividis"]
 
 
 def ap_select(page, ap_id, label):
@@ -480,6 +482,32 @@ def run_lab_features(page, problems, args):
     if voids() != "stairwell:4x4":
         problems.append("floor opening tool did not add a 4 x 4 m stairwell: %r" % voids())
     page.click("[data-tool=select]")
+    # object tool: a fridge is four wall segments that undo, delete and change thickness as one group
+    n_walls = lambda: app_eval(page, "return a.store.project.floors[0].walls.length")  # noqa: E731
+    w0 = n_walls()
+    page.select_option("#objectKind", "fridge")
+    click_world(page, 22.0, 14.0)
+    wait_idle(page)
+    if n_walls() != w0 + 4 or app_eval(page, "return a.store.project.floors[0].walls.filter(w => w.object).length") != 4:
+        problems.append("object tool did not add four tagged wall segments: %r" % n_walls())
+    page.keyboard.press("Control+z")
+    if n_walls() != w0:
+        problems.append("one undo did not remove the whole object")
+    page.keyboard.press("Control+Shift+z")
+    page.click("[data-tool=select]")
+    click_world(page, 21.65, 14.0)   # the left edge of the fridge selects the whole object
+    if app_eval(page, "return a.store.selection.walls.length") != 4:
+        problems.append("clicking one edge did not select the whole object: %r" % app_eval(page, "return a.store.selection.walls.length"))
+    page.locator("#wallThickness").fill("2"); page.locator("#wallThickness").dispatch_event("change")
+    if app_eval(page, "return a.store.project.floors[0].walls.filter(w => w.object && w.thickness_cm === 2).length") != 4:
+        problems.append("thickness input did not apply to the whole object")
+    page.focus("#cEdit"); page.keyboard.press("Delete")
+    if n_walls() != w0:
+        problems.append("deleting one edge did not delete the whole object")
+    page.select_option("#paletteSel", "aurora"); wait_idle(page)
+    if app_eval(page, "return a.paletteId") != "aurora":
+        problems.append("aurora palette was not applied")
+    page.select_option("#paletteSel", "classic")
     tab(page, "environment")
     page.click("#envAddVoid")
     if len((app_eval(page, "return a.store.project.floors[0].voids") or [])) != 2:
@@ -650,8 +678,8 @@ def run_learn_features(page, problems, args):
     docs = docs_dir(args)
     page.set_viewport_size({"width": 1400, "height": 1100})
     ids = page.evaluate("() => Array.from(document.querySelectorAll('#presetSel option')).map(o => o.value).filter(Boolean)")
-    if len(ids) != 10:
-        problems.append("preset picker lists %d scenarios instead of 10" % len(ids))
+    if len(ids) != 14:
+        problems.append("preset picker lists %d scenarios instead of 14" % len(ids))
     for pid in ids:
         page.select_option("#presetSel", pid); page.click("#presetLoad")
         page.wait_for_function("(n) => window.PlannerApp.store.project.name === n", arg=page.evaluate("(id) => window.PlannerApp.learn.presets.find(p => p.id === id).project.name", pid), timeout=5000)
@@ -717,6 +745,118 @@ def run_learn_features(page, problems, args):
     print("learn feature checks done")
 
 
+QUICK_TIME_LIMIT_S = 20.0   # template to result; measured times are well below (see the printed figure), this only catches a hang
+
+
+def run_quick_features(page, problems, args):
+    """Quick start: template -> Analyse -> grade, rooms, diagnosis and best spot; ask a question; apply the best spot;
+    open every Wi-Fi architect tab; signal waves toggle; mobile width has no horizontal scroll."""
+    page.on("dialog", lambda d: d.accept())
+    page.wait_for_function("() => window.PlannerApp.quick && window.PlannerApp.quick.templatesReady", timeout=15000)
+    page.select_option("#quickTemplate", "small_apartment")
+    start = time.time()
+    page.click("#quickAnalyse")
+    page.wait_for_selector("#quickResult[data-ready=true]", timeout=int(QUICK_TIME_LIMIT_S * 1000))
+    elapsed = time.time() - start
+    in_page = page.evaluate("() => Number(document.getElementById('quickResult').dataset.ms)")
+    print("quick start: template to result %.2f s (in page %d ms)" % (elapsed, in_page))
+    if elapsed > QUICK_TIME_LIMIT_S:
+        problems.append("quick start took %.1f s" % elapsed)
+    text = page.inner_text("#quickResult")
+    for word in ("Overall", "Coverage", "Dead zones", "Gaming", "Streaming", "Video calls", "Your rooms, for gaming", "Best router spot", "Bedroom", "Packet loss risk"):
+        if word.lower() not in text.lower() and word.lower() not in page.inner_html("#quickResult").lower():
+            problems.append("quick result lacks %r" % word)
+    if not page.locator("#quickResult .q-grade[aria-label^='Overall grade']").count():
+        problems.append("quick result has no grade with a text equivalent")
+    line = page.inner_text("#quickBestLine")
+    if "points coverage" not in line and "already at the best spot" not in line:
+        problems.append("best spot line unexpected: %r" % line)
+    # ask
+    page.fill("#quickAsk", "Why is my bedroom WiFi slow?")
+    page.click("#quickAskForm button[type=submit]")
+    page.wait_for_function("() => /WiFi in Bedroom/.test(document.getElementById('quickAnswer').innerText)", timeout=15000)
+    if "Main cause" not in page.inner_text("#quickAnswer"):
+        problems.append("the answer names no main cause")
+    if not page.locator("#quickChips .q-chip").count():
+        problems.append("no suggested question chips")
+    # show and apply the best spot (undoable)
+    page.click("#quickShow")
+    if page.evaluate("() => !window.PlannerApp.panels.state.ghost"):
+        problems.append("Show did not draw the ghost marker")
+    if page.locator("#quickApply:not([disabled])").count():
+        before = page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))")
+        page.click("#quickApply")
+        after = page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))")
+        if before == after:
+            problems.append("Apply did not move the router")
+        page.evaluate("() => window.PlannerApp.store.undo()")
+        if page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))") != before:
+            problems.append("undo did not restore the router")
+    wait_idle(page)
+    # find best spot with the AP tool button
+    page.click("#findSpotBtn")
+    page.wait_for_selector("#findSpotLine", timeout=30000)
+    # tabs
+    tab(page, "rooms")
+    if "Smart Home check" not in page.inner_text("#panel-rooms") or not page.locator("#panel-rooms .room-card").count():
+        problems.append("Rooms and gaming tab is incomplete")
+    tab(page, "scorecard")
+    if "How the grade is built" not in page.inner_text("#panel-scorecard") + page.inner_html("#panel-scorecard"):
+        problems.append("Score card tab is incomplete")
+    tab(page, "assistant")
+    page.fill("#asstInput", "Why is my bedroom WiFi slow?"); page.click("#asstForm button[type=submit]")
+    page.wait_for_function("() => /WiFi in Bedroom/.test(document.getElementById('asstAnswer').innerText)", timeout=15000)
+    has_explain = page.locator("#asstExplain").count() > 0
+    if args.demo == has_explain:
+        problems.append("the explain button must be hidden in the demo and shown live")
+    tab(page, "mesh")
+    page.click("#meshRun"); page.wait_for_selector("#panel-mesh table", timeout=60000)
+    if "Whole-home mesh" not in page.inner_text("#panel-mesh"):
+        problems.append("mesh tab lacks the whole-home topology")
+    tab(page, "timemachine")
+    page.click("#tmRun"); page.wait_for_selector("#tmOut table", timeout=60000)
+    if page.locator("#tmOut .tm-canvas").count() < 3 or "Change against A" not in page.inner_text("#tmOut"):
+        problems.append("Time Machine did not compare three versions")
+    page.select_option("#tmSlot3", "preset:high_end_router"); page.click("#tmRun")
+    page.wait_for_function("() => document.querySelectorAll('#tmOut .tm-canvas').length === 4", timeout=60000)
+    tab(page, "scorecard")
+    with page.expect_download(timeout=30000) as dl:
+        page.click("#panel-scorecard [data-quick=pdf]")
+    if dl.value.suggested_filename != "wifi_assessment.pdf":
+        problems.append("assessment download is named %r" % dl.value.suggested_filename)
+    pdf = Path(dl.value.path()).read_bytes()
+    pages = pdf.count(b"/Type /Page ")
+    if not pdf.startswith(b"%PDF-1.4") or not pdf.rstrip().endswith(b"%%EOF") or pages < 4 or pdf.count(b"MODEL ESTIMATE, not a measurement. Values come") != pages:
+        problems.append("wifi_assessment.pdf is incomplete or a page lacks the estimate footer (%d pages)" % pages)
+    if b"Time Machine" not in pdf or b"Mesh topologies" not in pdf:
+        problems.append("wifi_assessment.pdf lacks the mesh or Time Machine page")
+    tab(page, "scenarios")   # the old two-scenario compare is still there
+    if not page.locator("#cmpRun, #cmpOut, #panel-scenarios button").count():
+        problems.append("scenarios tab lost its compare controls")
+    # signal waves
+    page.emulate_media(reduced_motion="no-preference")
+    page.check("#tgWaves"); page.wait_for_timeout(300)
+    if not page.evaluate("() => window.PlannerApp.quick.waves.on && window.PlannerApp.quick.waves.raf !== 0"):
+        problems.append("signal waves did not start animating")
+    page.uncheck("#tgWaves"); page.wait_for_timeout(100)
+    if page.evaluate("() => window.PlannerApp.quick.waves.raf !== 0"):
+        problems.append("signal waves kept animating after being switched off")
+    page.emulate_media(reduced_motion="reduce")
+    page.check("#tgWaves"); page.wait_for_timeout(200)
+    if page.evaluate("() => window.PlannerApp.quick.waves.raf !== 0"):
+        problems.append("signal waves animate although reduced motion is on")
+    page.uncheck("#tgWaves"); page.emulate_media(reduced_motion="no-preference")
+    # mobile width: no horizontal scroll, quick start usable
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(300)
+    if page.evaluate("() => document.documentElement.scrollWidth > window.innerWidth + 1"):
+        problems.append("horizontal scroll at 390 px width")
+    if not page.locator("#quickAnalyse").is_visible():
+        problems.append("Analyse button not visible at 390 px")
+    page.set_viewport_size(VIEWPORT)
+    print("quick start checks done")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--demo", action="store_true", help="serve the built demo in dist/ instead of the live app")
@@ -754,6 +894,10 @@ def main() -> int:
             page.on("response", lambda r: errors.append("HTTP %d %s" % (r.status, r.url)) if r.status >= 400 else None)
             try:
                 run(page, "http://127.0.0.1:%d/" % PORT, problems, args) if not query else run_query(page, query, problems, args)
+            except Exception:
+                for msg in errors:   # a failed step is easier to read next to the page errors that preceded it
+                    print("PAGE ERROR BEFORE FAILURE:", msg, file=sys.stderr)
+                raise
             finally:
                 browser.close()
         for msg in errors + problems:

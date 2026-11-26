@@ -42,6 +42,15 @@ Verification labels follow the README (VERIFIED, PARTIALLY VERIFIED, UNVERIFIED)
 | Screen readers, real GPU, touch, low-end devices | Only headless Chromium on SwiftShader was available. |
 | Real LLM providers and Vercel deployment | Mock servers and local builds only. |
 
+## Round 5 additions (wall architect)
+
+| Item | Status | What exists (files) | What is missing or unverified |
+|---|---|---|---|
+| Wall thickness, objects, four more presets, aurora palette | Complete | `thickness_cm` rule in `wallhack/rfmodel.py` and `wallhack/static/rf-engine.js`, `wall_thickness` and `objects` in `wallhack/static/rf-config.json`, Object tool in `wallhack/static/planner-editor.js`, presets in `tools/make_scenarios.py`, palette in `wallhack/static/planner-heat.js`, tests `tests/test_rf_parity.py`, `tests/test_rfmodel.py`, `tests/test_scenarios.py` | Reference thicknesses and the linear rule are planning assumptions, not measurements. Objects ignore height and diffraction. |
+| Quick start, architect tabs, find best spot, Smart Home check, signal waves | Complete (UI), layout PARTIALLY VERIFIED | `wallhack/static/planner-quick.js`, `planner.html`, `style.css`, `signal_waves` and `client_devices` in `wallhack/static/rf-config.json`, `tests/test_planner_quick.py`, `tools/planner_smoke.py`, `tools/a11y_check.py` | LLM rephrase UNVERIFIED (no LLM in the sandbox); camera and smart-device interference sources not added (no sourced values) |
+| Insight layer (rooms, Gamer Mode, Score card, Assistant, placement report, mesh topologies, Time Machine) and `wifi_assessment.pdf` | Complete (MODEL ESTIMATE) | `wallhack/static/rf-insight.js`, `wallhack/static/planner-export.js`, `insight` block in `wallhack/static/rf-config.json`, `tests/test_rf_insight.py`, `tests/test_planner_panels.py` | Ping, loss risk and grade thresholds are planning assumptions, UNVERIFIED against real traffic. PDF checked by structure only (no PDF viewer) |
+| Performance against the round goals | PARTIAL | `tools/perf_architect.js`, `tools/perf_3d.py`, section in `docs/perf-rf.md` | Misses stated there: stress floor what-if 1.4 s, hotel floor diagnose, placement and mesh 0.34 to 0.39 s, default basic mode below 10,000 rays on small presets. No GPU, Pi 4 or phone measurement |
+
 ## Reading guide
 
 The consolidated table of what was verified and how is the README "Verification status" section. The ranked backlog with status is [21-top-100-improvements.md](21-top-100-improvements.md), and what to do next is [20-roadmap.md](20-roadmap.md).

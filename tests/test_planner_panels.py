@@ -146,7 +146,7 @@ def test_exporter_registry_and_builtins():
       let err = null; try { X.register('bad', {label: 'x'}); } catch (e) { err = e.message; }
       X.register('custom', {label: 'Custom', run: () => ({name: 'a.txt', mime: 'text/plain', data: 'hi'})});
       out({ids, err, custom: X.get('custom').run({}).data, after: X.list().map(x => x.id)});""")
-    assert r["ids"] == ["png", "csv", "json", "pdf", "print"] and "needs a label" in r["err"] and r["custom"] == "hi" and r["after"][-1] == "custom"
+    assert r["ids"] == ["png", "csv", "json", "pdf", "assessment", "assessment_csv", "print"] and "needs a label" in r["err"] and r["custom"] == "hi" and r["after"][-1] == "custom"
 
 
 def test_recommendation_operations_are_distinct_and_undoable():

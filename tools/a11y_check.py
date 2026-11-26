@@ -26,6 +26,7 @@ PORT = 8766
 DEMO_PORT = 8767
 BLOCKING = ("serious", "critical")
 VIEWPORT = {"width": 1400, "height": 900}
+READY_TIMEOUT_MS = 8000   # the /mobile page waits for a websocket that may never connect; do not hang on it
 
 
 def fetch_axe(tmp: Path) -> Path:
@@ -50,14 +51,26 @@ def wait_for(url: str) -> None:
 
 
 def check_page(browser, url: str, axe_js: Path, ready: str, theme: str, contrast: bool, tab: str = ""):
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
     page = browser.new_page(viewport=VIEWPORT)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(url)
-    page.wait_for_function(ready, timeout=20000)
-    if tab:   # open a planner tab first so axe sees its panel
+    try:
+        page.wait_for_function(ready, timeout=READY_TIMEOUT_MS)
+    except PlaywrightTimeoutError:   # e.g. /mobile never gets a websocket: check the page as it is instead of hanging or aborting
+        print("  note: ready condition not met in %d s for %s, running axe on the page as loaded" % (READY_TIMEOUT_MS // 1000, url))
+    if tab in ("quick", "rooms", "scorecard", "assistant"):   # these need an analysis first so axe sees real content
+        page.click("#quickAnalyse")
+        page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
+    if tab and tab != "quick":   # open a planner tab first so axe sees its panel
         page.click("#tab-" + tab)
         page.wait_for_selector("#panel-%s:not([hidden])" % tab)
+        if tab == "mesh":
+            page.click("#meshRun"); page.wait_for_selector("#panel-mesh table", timeout=60000)
+        if tab == "timemachine":
+            page.click("#tmRun"); page.wait_for_selector("#tmOut table", timeout=60000)
         if tab == "view3d":
             page.wait_for_function("() => /^Ready/.test(document.getElementById('view3dMsg').textContent)", timeout=30000)
     if theme:
@@ -116,6 +129,12 @@ def main() -> int:
     targets += [("planner 3D view tab (live)", targets[0][1], planner_ready, "view3d"),
                 ("planner timeline tab (live)", targets[0][1], planner_ready, "twinlab"),
                 ("planner beams tab (live)", targets[0][1], planner_ready, "beams"),
+                ("planner Quick start result (live)", targets[0][1], planner_ready, "quick"),
+                ("planner Rooms and gaming tab (live)", targets[0][1], planner_ready, "rooms"),
+                ("planner Score card tab (live)", targets[0][1], planner_ready, "scorecard"),
+                ("planner Assistant tab (live)", targets[0][1], planner_ready, "assistant"),
+                ("planner Mesh tab (live)", targets[0][1], planner_ready, "mesh"),
+                ("planner Time Machine tab (live)", targets[0][1], planner_ready, "timemachine"),
                 ("judge (live)", "http://127.0.0.1:%d/judge" % PORT, "document.querySelectorAll('.judge-item').length > 0"),
                 ("mobile companion (live)", "http://127.0.0.1:%d/mobile" % PORT, "document.getElementById('mConn').textContent !== 'connecting'")]
     if (ROOT / "dist" / "planner.html").is_file():

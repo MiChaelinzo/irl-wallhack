@@ -341,6 +341,10 @@ def validate_twin(data: Any) -> dict:
                 if wall["material"] not in materials:
                     raise TwinError(f"{q}.material: must be one of {sorted(materials)}")
             _optional_text(w, "name", q, wall)
+            if "thickness_cm" in w:
+                wall["thickness_cm"] = _num(w["thickness_cm"], f"{q}.thickness_cm", rfmodel.WALL_THICKNESS["min_cm"], rfmodel.WALL_THICKNESS["max_cm"])
+            if "object" in w:
+                wall["object"] = _text(w, "object", q)
             if "thickness_m" in w:
                 wall["thickness_m"] = _num(w["thickness_m"], f"{q}.thickness_m", *THICKNESS_M_RANGE)
             walls[wall["id"]] = wall

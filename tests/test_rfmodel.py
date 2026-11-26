@@ -184,3 +184,62 @@ def test_twin_rejects_bad_new_fields(mutate, message):
     mutate(t)
     with pytest.raises(twin.TwinError, match=message.replace("[", r"\[").replace("]", r"\]")):
         twin.validate_twin(t)
+
+
+# ---------------------------------------------------------------- wall thickness
+def _loss(wall, band="2.4"):
+    return rfmodel.wall_loss_db(_floor([wall]), 0.0, 5.0, 10.0, 5.0, band)
+
+
+def test_wall_without_thickness_keeps_the_material_loss_and_golden_values():
+    plain = _wall(5, 0, 5, 10, "concrete")
+    assert _loss(plain) == rfmodel.CONFIG["materials"]["concrete"]["attenuation_db"]["2.4"]
+    assert rfmodel.thickness_factor(plain, "concrete") == 1.0
+
+
+def test_double_reference_thickness_doubles_the_loss_on_every_band():
+    ref = rfmodel.WALL_THICKNESS["reference_cm"]["concrete"]
+    thick = _wall(5, 0, 5, 10, "concrete") | {"thickness_cm": 2 * ref}
+    for band in BANDS:
+        assert _loss(thick, band) == pytest.approx(2 * rfmodel.CONFIG["materials"]["concrete"]["attenuation_db"][band])
+    half = _wall(5, 0, 5, 10, "concrete") | {"thickness_cm": ref / 2}
+    assert _loss(half) == pytest.approx(rfmodel.CONFIG["materials"]["concrete"]["attenuation_db"]["2.4"] / 2)
+
+
+def test_thickness_loss_is_capped_by_max_factor_and_default_reference_serves_custom_materials():
+    cap = rfmodel.WALL_THICKNESS["max_factor"]
+    huge = _wall(5, 0, 5, 10, "drywall") | {"thickness_cm": rfmodel.WALL_THICKNESS["max_cm"]}
+    assert _loss(huge) == pytest.approx(cap * rfmodel.CONFIG["materials"]["drywall"]["attenuation_db"]["2.4"])
+    assert rfmodel.thickness_factor({"thickness_cm": 20.0}, "my_custom") == 20.0 / rfmodel.WALL_THICKNESS["default_reference_cm"]
+
+
+def test_twin_validates_thickness_and_object_tag():
+    t = twin.sample_twin()
+    t["floors"][0]["walls"][0].update({"thickness_cm": 12.5, "object": "obj-1"})
+    out = twin.validate_twin(t)
+    assert out["floors"][0]["walls"][0]["thickness_cm"] == 12.5 and out["floors"][0]["walls"][0]["object"] == "obj-1"
+    for bad in (0.0, 1000.0, "5", True):
+        t["floors"][0]["walls"][0]["thickness_cm"] = bad
+        with pytest.raises(twin.TwinError, match="thickness_cm"):
+            twin.validate_twin(t)
+
+
+def test_explain_mentions_thickness_only_when_set():
+    f = _floor([_wall(5, 0, 5, 10, "concrete") | {"thickness_cm": 30}])
+    f["aps"] = [dict(AP, y=5.0)]
+    t = {"name": "t", "units": "m", "floors": [f]}
+    e = rfmodel.probe_at(t, "f", 10.0, 5.0, explain=True)["explain"]
+    assert e["walls"][0]["thickness_cm"] == 30 and "(Concrete, 30 cm)" in "\n".join(e["text"])
+    del f["walls"][0]["thickness_cm"]
+    e = rfmodel.probe_at(t, "f", 10.0, 5.0, explain=True)["explain"]
+    assert "thickness_cm" not in e["walls"][0] and "(Concrete):" in "\n".join(e["text"])
+
+
+def test_object_walls_use_the_same_wall_loss_path():
+    box = [_wall(4, 4, 6, 4, "wood", wid="a"), _wall(6, 4, 6, 6, "wood", wid="b"), _wall(6, 6, 4, 6, "wood", wid="c"), _wall(4, 6, 4, 4, "wood", wid="d")]
+    for w in box:
+        w["thickness_cm"] = 5
+        w["object"] = "obj-1"
+    wood = rfmodel.CONFIG["materials"]["wood"]["attenuation_db"]["2.4"]
+    assert rfmodel.wall_loss_db(_floor(box), 0.0, 5.0, 10.0, 5.0) == pytest.approx(2 * wood)
+    assert rfmodel.wall_loss_db(_floor(box), 0.0, 1.0, 10.0, 1.0) == 0.0

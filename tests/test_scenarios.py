@@ -12,7 +12,7 @@ from wallhack.app import STATIC
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 
 EXPECTED_IDS = ["small_apartment", "large_home", "office_floor", "school_building", "warehouse", "hotel_floor", "coffee_shop",
-                "hospital_ward", "smart_home", "apartment_neighbours"]
+                "hospital_ward", "smart_home", "apartment_neighbours", "studio_apartment", "two_bedroom_condo", "three_story_house", "small_office"]
 PRELUDE = """
 const S = require(process.argv[1] + '/planner-state.js'), E = require(process.argv[1] + '/rf-engine.js'), O = require(process.argv[1] + '/rf-optimizer.js');
 const config = JSON.parse(require('fs').readFileSync(0, 'utf8')), env = E.makeEnv(config);
@@ -38,6 +38,20 @@ def test_every_scenario_validates_in_js_and_python():
         twin.validate_twin(s["project"])
         assert s["description"] and s["learn"]
     assert run_js("out(lib.map(s => s.id))") == EXPECTED_IDS
+
+
+def test_there_are_fourteen_presets_and_every_floor_has_named_rooms():
+    data = json.loads((STATIC / "scenarios.json").read_text(encoding="utf-8"))
+    assert len(data["scenarios"]) == 14
+    for s in data["scenarios"]:
+        for f in s["project"]["floors"]:
+            assert f["rooms"] and all(r["name"].strip() for r in f["rooms"]), (s["id"], f["id"])
+
+
+def test_three_story_house_has_three_floors_with_stairwell_voids():
+    house = next(s for s in json.loads((STATIC / "scenarios.json").read_text(encoding="utf-8"))["scenarios"] if s["id"] == "three_story_house")
+    floors = house["project"]["floors"]
+    assert [f["level"] for f in floors] == [0, 1, 2] and all(f["voids"][0]["kind"] == "stairwell" for f in floors)
 
 
 def test_library_rejects_bad_input():

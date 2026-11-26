@@ -2441,6 +2441,922 @@
     "sample": true,
     "units": "m"
    }
+  },
+  {
+   "description": "A 30 m2 studio with one open room, a small bathroom and a kitchenette. The router sits by the sofa.",
+   "id": "studio_apartment",
+   "learn": "A small open space is easy to cover. The bathroom is the weak spot, so test the router position.",
+   "name": "Studio apartment",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 17.0,
+        "x": 0.8,
+        "y": 4.2
+       }
+      ],
+      "depth_m": 5.0,
+      "furniture": [],
+      "height_m": 2.5,
+      "id": "studio",
+      "level": 0,
+      "name": "Studio",
+      "openings": [
+       {
+        "id": "studio-i1-door",
+        "kind": "door",
+        "pos": 1.0,
+        "wall": "studio-i1",
+        "width": 0.9
+       },
+       {
+        "id": "studio-win1",
+        "kind": "window",
+        "pos": 1.5,
+        "wall": "studio-x0",
+        "width": 1.4
+       },
+       {
+        "id": "studio-win2",
+        "kind": "window",
+        "pos": 1.5,
+        "wall": "studio-x2",
+        "width": 1.4
+       }
+      ],
+      "rooms": [
+       {
+        "d": 5,
+        "id": "main",
+        "name": "Main room",
+        "w": 4,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 2.5,
+        "id": "bath",
+        "name": "Bathroom",
+        "w": 2,
+        "x": 4,
+        "y": 0
+       },
+       {
+        "d": 2.5,
+        "id": "kitchenette",
+        "name": "Kitchenette",
+        "w": 2,
+        "x": 4,
+        "y": 2.5
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "studio-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 6.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "studio-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 6.0,
+        "x2": 6.0,
+        "y1": 0,
+        "y2": 5.0
+       },
+       {
+        "id": "studio-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 6.0,
+        "x2": 0,
+        "y1": 5.0,
+        "y2": 5.0
+       },
+       {
+        "id": "studio-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 5.0,
+        "y2": 0
+       },
+       {
+        "id": "studio-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 4.0,
+        "x2": 4.0,
+        "y1": 0,
+        "y2": 2.5
+       },
+       {
+        "id": "studio-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 4.0,
+        "x2": 6.0,
+        "y1": 2.5,
+        "y2": 2.5
+       }
+      ],
+      "width_m": 6.0
+     }
+    ],
+    "interferers": [
+     {
+      "floor": "studio",
+      "id": "microwave",
+      "kind": "microwave",
+      "x": 5.2,
+      "y": 3.5
+     }
+    ],
+    "name": "Studio apartment",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "A concrete shell condo with a living area on the left and two bedrooms and a bathroom on the right.",
+   "id": "two_bedroom_condo",
+   "learn": "The concrete shell shields neighbours, but the drywall partitions still cost the bedrooms signal. Compare a central router with a mesh node.",
+   "name": "Two bedroom condo",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 2.0,
+        "y": 4.0
+       }
+      ],
+      "depth_m": 8.0,
+      "furniture": [],
+      "height_m": 2.5,
+      "id": "condo",
+      "level": 0,
+      "name": "Condo",
+      "openings": [
+       {
+        "id": "condo-i1-door",
+        "kind": "door",
+        "pos": 1.0,
+        "wall": "condo-i1",
+        "width": 0.9
+       },
+       {
+        "id": "condo-i2-door",
+        "kind": "door",
+        "pos": 0.6,
+        "wall": "condo-i2",
+        "width": 0.9
+       },
+       {
+        "id": "condo-i3-door",
+        "kind": "door",
+        "pos": 1.0,
+        "wall": "condo-i3",
+        "width": 0.9
+       },
+       {
+        "id": "condo-win3",
+        "kind": "window",
+        "pos": 1.5,
+        "wall": "condo-x0",
+        "width": 1.8
+       },
+       {
+        "id": "condo-win4",
+        "kind": "window",
+        "pos": 7.0,
+        "wall": "condo-x0",
+        "width": 1.4
+       },
+       {
+        "id": "condo-win5",
+        "kind": "window",
+        "pos": 2.0,
+        "wall": "condo-x2",
+        "width": 1.8
+       }
+      ],
+      "rooms": [
+       {
+        "d": 8,
+        "id": "living",
+        "name": "Living and kitchen",
+        "w": 5,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 3.5,
+        "id": "bed1",
+        "name": "Bedroom 1",
+        "w": 5,
+        "x": 5,
+        "y": 0
+       },
+       {
+        "d": 2,
+        "id": "bath",
+        "name": "Bathroom",
+        "w": 5,
+        "x": 5,
+        "y": 3.5
+       },
+       {
+        "d": 2.5,
+        "id": "bed2",
+        "name": "Bedroom 2",
+        "w": 5,
+        "x": 5,
+        "y": 5.5
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "condo-x0",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 0,
+        "x2": 10.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "condo-x1",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 10.0,
+        "x2": 10.0,
+        "y1": 0,
+        "y2": 8.0
+       },
+       {
+        "id": "condo-x2",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 10.0,
+        "x2": 0,
+        "y1": 8.0,
+        "y2": 8.0
+       },
+       {
+        "id": "condo-x3",
+        "kind": "exterior",
+        "material": "concrete",
+        "x1": 0,
+        "x2": 0,
+        "y1": 8.0,
+        "y2": 0
+       },
+       {
+        "id": "condo-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 5.0,
+        "y1": 0,
+        "y2": 3.5
+       },
+       {
+        "id": "condo-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 5.0,
+        "y1": 3.5,
+        "y2": 5.5
+       },
+       {
+        "id": "condo-i3",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 5.0,
+        "y1": 5.5,
+        "y2": 8.0
+       },
+       {
+        "id": "condo-i4",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 10.0,
+        "y1": 3.5,
+        "y2": 3.5
+       },
+       {
+        "id": "condo-i5",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 5.0,
+        "x2": 10.0,
+        "y1": 5.5,
+        "y2": 5.5
+       }
+      ],
+      "width_m": 10.0
+     }
+    ],
+    "interferers": [
+     {
+      "band": "2.4",
+      "channel": 6,
+      "floor": "condo",
+      "id": "unit-4b",
+      "kind": "neighbour_wifi",
+      "x": 9.8,
+      "y": 4.5
+     }
+    ],
+    "name": "Two bedroom condo",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "Three floors joined by a stairwell, with one router on the ground floor. Each floor up costs signal, except near the stairs.",
+   "id": "three_story_house",
+   "learn": "A stairwell opening lowers the floor loss near it. Try a mesh node on the first floor landing.",
+   "name": "Three story house",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "id": "router",
+        "standard": "wifi6",
+        "tx_dbm": 20.0,
+        "x": 2.0,
+        "y": 4.0
+       }
+      ],
+      "depth_m": 9.0,
+      "furniture": [],
+      "height_m": 2.6,
+      "id": "ground",
+      "level": 0,
+      "name": "Ground floor",
+      "openings": [
+       {
+        "id": "ground-i1-door",
+        "kind": "door",
+        "pos": 4.0,
+        "wall": "ground-i1",
+        "width": 0.9
+       },
+       {
+        "id": "ground-i2-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "ground-i2",
+        "width": 0.9
+       },
+       {
+        "id": "ground-win2",
+        "kind": "window",
+        "pos": 3.0,
+        "wall": "ground-x0",
+        "width": 1.6
+       },
+       {
+        "id": "ground-win3",
+        "kind": "window",
+        "pos": 7.0,
+        "wall": "ground-x2",
+        "width": 1.6
+       }
+      ],
+      "rooms": [
+       {
+        "d": 6,
+        "id": "living",
+        "name": "Living room",
+        "w": 8,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 3,
+        "id": "dining",
+        "name": "Dining",
+        "w": 8,
+        "x": 0,
+        "y": 6
+       },
+       {
+        "d": 9,
+        "id": "kitchen",
+        "name": "Kitchen",
+        "w": 4,
+        "x": 8,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "voids": [
+       {
+        "d": 3.0,
+        "id": "ground-stairs",
+        "kind": "stairwell",
+        "w": 2.0,
+        "x": 5.0,
+        "y": 3.0
+       }
+      ],
+      "walls": [
+       {
+        "id": "ground-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "ground-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "ground-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 9.0
+       },
+       {
+        "id": "ground-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 0
+       },
+       {
+        "id": "ground-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "ground-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 0,
+        "x2": 8.0,
+        "y1": 6.0,
+        "y2": 6.0
+       }
+      ],
+      "width_m": 12.0
+     },
+     {
+      "aps": [],
+      "depth_m": 9.0,
+      "furniture": [],
+      "height_m": 2.6,
+      "id": "first",
+      "level": 1,
+      "name": "First floor",
+      "openings": [
+       {
+        "id": "first-i1-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "first-i1",
+        "width": 0.9
+       },
+       {
+        "id": "first-i2-door",
+        "kind": "door",
+        "pos": 6.0,
+        "wall": "first-i2",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 9,
+        "id": "bed1",
+        "name": "Bedroom 1",
+        "w": 4,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 9,
+        "id": "landing",
+        "name": "Landing",
+        "w": 4,
+        "x": 4,
+        "y": 0
+       },
+       {
+        "d": 9,
+        "id": "bath",
+        "name": "Bathroom",
+        "w": 4,
+        "x": 8,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "voids": [
+       {
+        "d": 3.0,
+        "id": "first-stairs",
+        "kind": "stairwell",
+        "w": 2.0,
+        "x": 5.0,
+        "y": 3.0
+       }
+      ],
+      "walls": [
+       {
+        "id": "first-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "first-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "first-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 9.0
+       },
+       {
+        "id": "first-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 0
+       },
+       {
+        "id": "first-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 4.0,
+        "x2": 4.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "first-i2",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 8.0,
+        "x2": 8.0,
+        "y1": 0,
+        "y2": 9.0
+       }
+      ],
+      "width_m": 12.0
+     },
+     {
+      "aps": [],
+      "depth_m": 9.0,
+      "furniture": [],
+      "height_m": 2.6,
+      "id": "second",
+      "level": 2,
+      "name": "Second floor",
+      "openings": [
+       {
+        "id": "second-i1-door",
+        "kind": "door",
+        "pos": 2.0,
+        "wall": "second-i1",
+        "width": 0.9
+       }
+      ],
+      "rooms": [
+       {
+        "d": 9,
+        "id": "bed2",
+        "name": "Bedroom 2",
+        "w": 6,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 9,
+        "id": "study",
+        "name": "Study",
+        "w": 6,
+        "x": 6,
+        "y": 0
+       }
+      ],
+      "sensors": [],
+      "voids": [
+       {
+        "d": 3.0,
+        "id": "second-stairs",
+        "kind": "stairwell",
+        "w": 2.0,
+        "x": 5.0,
+        "y": 3.0
+       }
+      ],
+      "walls": [
+       {
+        "id": "second-x0",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "second-x1",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 12.0,
+        "y1": 0,
+        "y2": 9.0
+       },
+       {
+        "id": "second-x2",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 12.0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 9.0
+       },
+       {
+        "id": "second-x3",
+        "kind": "exterior",
+        "material": "brick",
+        "x1": 0,
+        "x2": 0,
+        "y1": 9.0,
+        "y2": 0
+       },
+       {
+        "id": "second-i1",
+        "kind": "interior",
+        "material": "drywall",
+        "x1": 6.0,
+        "x2": 6.0,
+        "y1": 0,
+        "y2": 9.0
+       }
+      ],
+      "width_m": 12.0
+     }
+    ],
+    "name": "Three story house",
+    "sample": true,
+    "units": "m"
+   }
+  },
+  {
+   "description": "A ten person office: open plan on the left, a meeting room, a manager office and a server closet behind a metal door on the right.",
+   "id": "small_office",
+   "learn": "A metal door makes the server closet a dead end for the AP. The meeting room is the test of a video call.",
+   "name": "Small office",
+   "project": {
+    "floors": [
+     {
+      "aps": [
+       {
+        "band": "5",
+        "id": "ap-main",
+        "standard": "wifi6",
+        "tx_dbm": 18.0,
+        "x": 4.5,
+        "y": 5.0
+       }
+      ],
+      "depth_m": 10.0,
+      "furniture": [],
+      "height_m": 2.7,
+      "id": "smalloffice",
+      "level": 0,
+      "name": "Small office",
+      "openings": [
+       {
+        "id": "smalloffice-i1-door",
+        "kind": "door",
+        "pos": 1.5,
+        "wall": "smalloffice-i1",
+        "width": 0.9
+       },
+       {
+        "id": "smalloffice-i2-door",
+        "kind": "door",
+        "pos": 1.0,
+        "wall": "smalloffice-i2",
+        "width": 0.9
+       },
+       {
+        "id": "smalloffice-i3-door",
+        "kind": "door",
+        "pos": 1.0,
+        "wall": "smalloffice-i3",
+        "width": 0.9
+       },
+       {
+        "id": "smalloffice-win3",
+        "kind": "window",
+        "pos": 3.0,
+        "wall": "smalloffice-x0",
+        "width": 2.0
+       },
+       {
+        "id": "smalloffice-win4",
+        "kind": "window",
+        "pos": 3.0,
+        "wall": "smalloffice-x2",
+        "width": 2.0
+       }
+      ],
+      "rooms": [
+       {
+        "d": 10,
+        "id": "open",
+        "name": "Open plan",
+        "w": 9,
+        "x": 0,
+        "y": 0
+       },
+       {
+        "d": 4,
+        "id": "meeting",
+        "name": "Meeting room",
+        "w": 6,
+        "x": 9,
+        "y": 0
+       },
+       {
+        "d": 3,
+        "id": "manager",
+        "name": "Manager office",
+        "w": 6,
+        "x": 9,
+        "y": 4
+       },
+       {
+        "d": 3,
+        "id": "server",
+        "name": "Server closet",
+        "w": 6,
+        "x": 9,
+        "y": 7
+       }
+      ],
+      "sensors": [],
+      "walls": [
+       {
+        "id": "smalloffice-x0",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 0,
+        "x2": 15.0,
+        "y1": 0,
+        "y2": 0
+       },
+       {
+        "id": "smalloffice-x1",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 15.0,
+        "x2": 15.0,
+        "y1": 0,
+        "y2": 10.0
+       },
+       {
+        "id": "smalloffice-x2",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 15.0,
+        "x2": 0,
+        "y1": 10.0,
+        "y2": 10.0
+       },
+       {
+        "id": "smalloffice-x3",
+        "kind": "exterior",
+        "material": "glass",
+        "x1": 0,
+        "x2": 0,
+        "y1": 10.0,
+        "y2": 0
+       },
+       {
+        "id": "smalloffice-i1",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 9.0,
+        "x2": 9.0,
+        "y1": 0,
+        "y2": 4.0
+       },
+       {
+        "id": "smalloffice-i2",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 9.0,
+        "x2": 9.0,
+        "y1": 4.0,
+        "y2": 7.0
+       },
+       {
+        "id": "smalloffice-i3",
+        "kind": "interior",
+        "material": "metal_door",
+        "x1": 9.0,
+        "x2": 9.0,
+        "y1": 7.0,
+        "y2": 10.0
+       },
+       {
+        "id": "smalloffice-i4",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 9.0,
+        "x2": 15.0,
+        "y1": 4.0,
+        "y2": 4.0
+       },
+       {
+        "id": "smalloffice-i5",
+        "kind": "interior",
+        "material": "office_partition",
+        "x1": 9.0,
+        "x2": 15.0,
+        "y1": 7.0,
+        "y2": 7.0
+       }
+      ],
+      "width_m": 15.0
+     }
+    ],
+    "interferers": [
+     {
+      "band": "5",
+      "channel": 36,
+      "floor": "smalloffice",
+      "id": "next-door",
+      "kind": "neighbour_wifi",
+      "x": 0.3,
+      "y": 9.7
+     }
+    ],
+    "name": "Small office",
+    "sample": true,
+    "units": "m"
+   }
   }
  ],
  "schema_version": 1

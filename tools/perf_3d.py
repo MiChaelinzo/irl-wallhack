@@ -29,6 +29,33 @@ JS = """async (frames) => {
   times.sort((x, y) => x - y); out.median_ms = times[Math.floor(times.length / 2)]; out.p95_ms = times[Math.floor(times.length * 0.95)];
   return out; }"""
 
+# Signal waves: requestAnimationFrame intervals with the waves on, per quality level (html[data-quality] from common.js), large_home preset.
+# The page cannot run faster than the 60 Hz display clock, so the interval median is about 16.7 ms when the draw cost is small; the draw
+# cost itself is the mean of the 20 draw times that planner-quick.js keeps for its own frame budget (read before they are cleared).
+WAVES_JS = """async (args) => {
+  const a = window.PlannerApp, lib = await (await fetch(a.assetUrl('scenarios.json'))).json();
+  a.loadProject(JSON.parse(JSON.stringify(lib.scenarios.find(s => s.id === 'large_home').project))); await a.whenIdle();
+  document.documentElement.dataset.quality = args.quality;
+  a.quick.setWaves(false);
+  await new Promise(r => setTimeout(r, 1500));   // the quality switch restarts CSS blur and the particle layer; let it settle
+  const sample = async () => {
+    const gaps = []; let last = performance.now();
+    for (let i = 0; i < args.frames; i++) { await new Promise(r => requestAnimationFrame(r)); const t = performance.now(); gaps.push(t - last); last = t; }
+    gaps.sort((x, y) => x - y); return gaps;
+  };
+  const off = await sample();
+  a.quick.setWaves(true);
+  const w = a.quick.waves, costs = [], gaps = []; let last = performance.now();
+  for (let i = 0; i < args.frames; i++) {
+    await new Promise(r => requestAnimationFrame(r));
+    const t = performance.now(); gaps.push(t - last); last = t;
+    if (w.cost.length) { costs.push(w.cost.reduce((x, y) => x + y, 0) / w.cost.length); }
+  }
+  a.quick.setWaves(false);
+  gaps.sort((x, y) => x - y); costs.sort((x, y) => x - y);
+  return {off_median_ms: off[Math.floor(off.length / 2)], frame_median_ms: gaps[Math.floor(gaps.length / 2)], frame_p95_ms: gaps[Math.floor(gaps.length * 0.95)],
+          draw_median_ms: costs.length ? costs[Math.floor(costs.length / 2)] : null, draw_max_ms: costs.length ? costs[costs.length - 1] : null}; }"""
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -56,11 +83,23 @@ def main() -> int:
                 page.wait_for_function("window.PlannerApp && window.PlannerApp.ready", timeout=15000)
                 r = page.evaluate(JS, args.frames)
                 rows.append((label, r)); page.close()
+            wave_rows = []
+            for quality in ("low", "medium", "high"):
+                page = browser.new_page(viewport={"width": 1400, "height": 900})
+                page.goto("http://127.0.0.1:%d/planner" % PORT)
+                page.wait_for_function("window.PlannerApp && window.PlannerApp.ready", timeout=15000)
+                wave_rows.append((quality, page.evaluate(WAVES_JS, {"quality": quality, "frames": args.frames * 2})))
+                page.close()
             browser.close()
         print("| Renderer | Tab open (ms) | Median frame (ms) | p95 frame (ms) | Quads | Lines |\n|---|---|---|---|---|---|")
         for label, r in rows:
             print("| %s | %.0f | %.1f | %.1f | %d | %d |" % (label, r["open_ms"], r["median_ms"], r["p95_ms"], r["quads"], r["lines"]))
         print(json.dumps({l: r for l, r in rows}))
+        print("\n| Signal waves, quality | rAF interval, waves off (ms) | rAF interval median, waves on (ms) | rAF interval p95 (ms) | Draw cost median (ms) | Draw cost max (ms) |\n|---|---|---|---|---|---|")
+        for quality, r in wave_rows:
+            draw = "%.2f" % r["draw_median_ms"] if r["draw_median_ms"] is not None else "n/a"
+            top = "%.2f" % r["draw_max_ms"] if r["draw_max_ms"] is not None else "n/a"
+            print("| %s | %.1f | %.1f | %.1f | %s | %s |" % (quality, r["off_median_ms"], r["frame_median_ms"], r["frame_p95_ms"], draw, top))
     finally:
         server.terminate()
     return 0

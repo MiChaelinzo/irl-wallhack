@@ -42,7 +42,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 24 | PDF coverage report written without a library | 4 | 4 | 4 | 5 | 5 | 3 | 78.3 | Done | `wallhack/static/planner-export.js` |
 | 25 | Opt-in LAN mode with pairing token | 4 | 3 | 5 | 4 | 4 | 3 | 78.3 | Done | `wallhack/pairing.py`, `tests/test_pairing.py` |
 | 26 | True 3D propagation (slabs, stairwells, ceiling heights) | 5 | 5 | 5 | 4 | 4 | 4 | 78.3 | Not started | none |
-| 27 | Wireless consultant chat grounded in engine numbers | 4 | 4 | 4 | 5 | 4 | 5 | 78.3 | Not started | none |
+| 27 | Wireless consultant chat grounded in engine numbers | 4 | 4 | 4 | 5 | 4 | 5 | 78.3 | Partial | `wallhack/static/rf-insight.js` (`diagnose` and `parseQuestion`: a rule-based Assistant for one room question with ranked causes and tested fixes; the optional LLM rephrase is UNVERIFIED and there is no free-form chat) |
 | 28 | Floor plan image import with scale calibration | 4 | 3 | 3 | 5 | 5 | 2 | 76.7 | Done | `wallhack/static/planner-editor.js`, `wallhack/static/planner.html` |
 | 29 | Explicit consent before cloud LLM calls | 3 | 2 | 4 | 5 | 4 | 3 | 76.7 | Done | `wallhack/llm.py`, `wallhack/app.py` |
 | 30 | Joint channel and power optimisation with SINR objective | 4 | 4 | 5 | 4 | 4 | 4 | 76.7 | Partial | `wallhack/static/rf-optimizer.js` (`planChannelsSinr` maximises mean SINR over channels; power is advised separately, no joint search) |
@@ -76,7 +76,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 58 | Screen-reader text alternative for the heat map (summary table) | 3 | 2 | 3 | 3 | 5 | 2 | 68.3 | Partial | `wallhack/static/planner.html` (canvas aria-label only, no data table) |
 | 59 | Multipath mode (incoherent sum) | 3 | 3 | 4 | 4 | 3 | 3 | 66.7 | Done | `wallhack/rfmodel.py`, `tests/test_rf_parity.py` |
 | 60 | Transmit power advice (over and under powered) | 3 | 3 | 4 | 3 | 4 | 3 | 66.7 | Done | `wallhack/static/rf-optimizer.js` |
-| 61 | Mesh planning with hop throughput | 3 | 3 | 4 | 4 | 3 | 3 | 66.7 | Done | `wallhack/static/planner-modes.js` |
+| 61 | Mesh planning with hop throughput | 3 | 3 | 4 | 4 | 3 | 3 | 66.7 | Done | `wallhack/static/planner-modes.js`, `wallhack/static/rf-insight.js` (meshTopologies: single, dual and whole-home side by side) |
 | 62 | IoT device coverage check | 3 | 3 | 3 | 4 | 4 | 3 | 66.7 | Done | `wallhack/static/planner-modes.js` |
 | 63 | Mobile companion page | 3 | 3 | 3 | 4 | 4 | 3 | 66.7 | Done | `wallhack/static/mobile.html`, `wallhack/static/mobile.js` |
 | 64 | Judge mode page whose statuses are tested against the README | 3 | 2 | 3 | 5 | 2 | 3 | 66.7 | Done | `wallhack/judge.py`, `tests/test_judge.py` |

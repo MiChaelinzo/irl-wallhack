@@ -388,9 +388,21 @@
       walls.forEach(function (w) { mats[w.material || ""] = true; });
       $("wallMaterial").value = Object.keys(mats).length === 1 ? Object.keys(mats)[0] : "";
       var shown = Object.keys(mats).length === 1 ? materialTable()[walls[0].material || (walls[0].kind === "exterior" ? app.config.kind_defaults.exterior : app.config.kind_defaults.interior)] : null;
+      var thick = walls.map(function (w) { return w.thickness_cm === undefined ? "" : String(w.thickness_cm); });
+      $("wallThickness").value = thick.every(function (t) { return t === thick[0]; }) ? thick[0] : "";
+      thicknessTip(walls);
       $("wallInfo").textContent = (n === 1 ? S.wallLength(walls[0]).toFixed(2) + " m long, " + Math.round(E.angleDeg(walls[0])) + " degrees" : n + " walls selected") + (shown ? ". " + shown.info : "");
     }
     app.editor.invalidate();
+  }
+
+  /** Tooltip of the thickness input: the resulting loss (dB) at the current band for the first selected wall. */
+  function thicknessTip(walls) {
+    var w = walls[0], input = $("wallThickness"), cfg = app.config.wall_thickness, cfg0 = app.config;
+    var name = w.material || (w.kind === "exterior" ? app.config.kind_defaults.exterior : app.config.kind_defaults.interior), mat = (app.store.project.materials || {})[name] || cfg0.materials[name], band = app.settings.band || "2.4";
+    var ref = Object.prototype.hasOwnProperty.call(cfg.reference_cm, name) ? cfg.reference_cm[name] : cfg.default_reference_cm;
+    var loss = mat.attenuation_db[band] * (w.thickness_cm === undefined ? 1 : RF.thicknessFactor(app.config, name, w.thickness_cm));
+    input.title = "Empty = the material default (" + ref + " cm). Loss scales linearly with thickness up to " + cfg.max_factor + " times. Now " + loss.toFixed(1) + " dB at " + band + " GHz (MODEL ESTIMATE)";
   }
 
   function fillMaterialSelect() {
@@ -600,6 +612,18 @@
       ed.fit();
     }
     $("floorW").addEventListener("change", floorSize); $("floorD").addEventListener("change", floorSize);
+    var thickIn = $("wallThickness"), thickCfg = app.config.wall_thickness;
+    thickIn.min = String(thickCfg.min_cm); thickIn.max = String(thickCfg.max_cm);
+    thickIn.addEventListener("change", function () {
+      var raw = thickIn.value.trim(), v = Number(raw);
+      if (raw === "") { ed.setSelectionThickness(undefined); }
+      else if (isFinite(v) && v >= thickCfg.min_cm && v <= thickCfg.max_cm) { ed.setSelectionThickness(v); }
+      else { say("Thickness must be " + thickCfg.min_cm + " to " + thickCfg.max_cm + " cm, or empty for the material default"); }
+      syncSelection();
+    });
+    var objKinds = $("objectKind");
+    Object.keys(app.config.objects.kinds).forEach(function (k) { objKinds.appendChild(option(k, app.config.objects.kinds[k].label + " (" + app.config.objects.kinds[k].material + ")")); });
+    objKinds.addEventListener("change", function () { ed.setObjectKind(objKinds.value); ed.setTool("object"); });
     $("wallMaterial").addEventListener("change", function () { if ($("wallMaterial").value) { ed.setSelectionMaterial($("wallMaterial").value); } });
     // help dialog and theme
     function help(show) {
@@ -696,6 +720,7 @@
     if (window.PlannerPanels) { window.PlannerPanels.mount(app); }
     if (window.PlannerExport) { window.PlannerExport.mount(app); }
     if (window.PlannerModes) { window.PlannerModes.mount(app); }
+    if (window.PlannerQuick) { window.PlannerQuick.mount(app); }
     if (window.Planner3D) { window.Planner3D.mount(app); }
     if (window.PlannerLearn) { window.PlannerLearn.mount(app); }
     app.applyLayer();

@@ -37,6 +37,7 @@ Competitor statements in `19-competitive-analysis.md` come from general knowledg
 | 23 | [Hackathon pitch](23-hackathon-pitch.md) | Judge-facing narrative and caveats |
 | 24 | [RF lab status](24-rf-lab-status.md) | Complete, partial and deferred per mandate section |
 | 25 | [V2 audit](25-v2-audit.md) | The 20 V2 items and the WOW list against the code, plus defects fixed |
+| 26 | [WiFi architect round](26-wifi-architect-round.md) | The round objective and a status table for its 10 priority features and extras |
 | ADR | [Frontend stack ADR](adr-frontend-stack.md) | React, TypeScript, Three.js evaluation and decision |
 | ADR | [Planner 3D view ADR](adr-3d-view.md) | In-house WebGL and canvas projection against vendored three.js, with measurements |
 

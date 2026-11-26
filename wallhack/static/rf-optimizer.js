@@ -145,6 +145,11 @@
     return pts;
   }
 
+  /** The candidate lattice of suggestPlacements as a list of {x, y} (same points, same order), for callers that search it themselves. */
+  function candidatePositions(project, floorId, opts) {
+    return candidateLattice(makeContext(project, floorId, opts || {})).map(function (p) { return { x: p[0], y: p[1] }; });
+  }
+
   /**
    * Greedy maximum-coverage placement over the candidate lattice using cached per-candidate grids.
    * Picks the candidate with the most newly covered cells (ties: larger clipped dB gain, then
@@ -715,7 +720,7 @@
       }) };
   }
 
-  var api = { detectIssues: detectIssues, suggestPlacements: suggestPlacements, evaluatePlacement: evaluatePlacement,
+  var api = { detectIssues: detectIssues, candidatePositions: candidatePositions, suggestPlacements: suggestPlacements, evaluatePlacement: evaluatePlacement,
               recommendApCount: recommendApCount, detectPowerIssues: detectPowerIssues, planChannels: planChannels,
               planChannelsSinr: planChannelsSinr, suggestMeshNodes: suggestMeshNodes, suggestDeadZoneFixes: suggestDeadZoneFixes,
               metricsOf: metricsOf, diffAnalytics: diffAnalytics, applyChange: applyChange, whatIf: whatIf, recommend: recommend,

@@ -74,7 +74,52 @@ def render(config: dict) -> str:
         "which then models a thin partition, not a slab.",
         "",
     ]
+    lines += thickness_section(config)
     return "\n".join(lines)
+
+
+QUICK_RULES_OF_THUMB_DB = {"drywall": 3, "wood": 4, "glass": 5, "brick": 9, "concrete": 18, "metal": 30}
+
+
+def thickness_section(config: dict) -> list:
+    """Wall thickness rule, its reference thicknesses and the comparison with common quick-estimate figures."""
+    wt, bands = config["wall_thickness"], list(config["bands"])
+    lines = [
+        "## Wall thickness",
+        "",
+        wt["label"] + ".",
+        "",
+        f"Rule: `loss = attenuation_db x min(thickness_cm / reference_cm, {wt['max_factor']:g})`. A wall without `thickness_cm` loses exactly "
+        f"`attenuation_db`. Allowed thickness is {wt['min_cm']:g} to {wt['max_cm']:g} cm. Custom materials use a reference of "
+        f"{wt['default_reference_cm']:g} cm. Source note: {wt['source']}",
+        "",
+        "| Material | Reference thickness (cm) |",
+        "|---|---|",
+    ]
+    for mid, m in config["materials"].items():
+        lines.append(f"| {m['label']} (`{mid}`) | {_fmt(wt['reference_cm'].get(mid, wt['default_reference_cm']))} |")
+    lines += [
+        "",
+        "## Comparison with common quick-estimate figures",
+        "",
+        "Many quick guides quote one round number per material (drywall 3 dB, wood 4, glass 5, brick 9, concrete 18, metal 30). "
+        "The sourced database values are kept as they are. The table shows how the two compare, so a user who knows the quick figure can see "
+        "which band and thickness it corresponds to. MODEL ESTIMATE: both columns are planning values, not measurements.",
+        "",
+        "| Material | Quick figure (dB) | " + " | ".join(f"Database {b} GHz (dB)" for b in bands) + " |",
+        "|---|---|" + "---|" * len(bands),
+    ]
+    for mid, quick in QUICK_RULES_OF_THUMB_DB.items():
+        m = config["materials"][mid]
+        lines.append(f"| {m['label']} (`{mid}`) | {quick} | " + " | ".join(_fmt(m["attenuation_db"][b]) for b in bands) + " |")
+    lines += [
+        "",
+        "At 2.4 GHz the database is above the quick figure for drywall and wood, equal for brick, and below it for glass, concrete and metal. "
+        "A quick figure names neither a band nor a thickness. Set `thickness_cm` rather than editing a database value: concrete at twice its "
+        "reference thickness doubles the loss.",
+        "",
+    ]
+    return lines
 
 
 def main() -> None:

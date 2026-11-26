@@ -14,6 +14,7 @@
   "include": [
     "wallhack/static/rf-engine.js",
     "wallhack/static/rf-optimizer.js",
+    "wallhack/static/rf-insight.js",
     "wallhack/static/planner-state.js"
   ]
 }
