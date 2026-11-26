@@ -120,7 +120,8 @@
     var width = PAGE_W - 2 * MARGIN, k = { y: 0, width: width };
     function footer() {
       pdf.line(MARGIN, PAGE_H - 44, PAGE_W - MARGIN, PAGE_H - 44, 0.4);
-      pdf.text(MARGIN, PAGE_H - 30, 8, ESTIMATE_LINE + ". Values come from a propagation model with typical material losses. Throughput, capacity and utilisation are estimates. Verify with a site survey.");
+      wrapText(ESTIMATE_LINE + ". Values come from a propagation model with typical material losses. Throughput, capacity and utilisation are estimates. Verify with a site survey.", 8, width)
+        .forEach(function (l, i) { pdf.text(MARGIN, PAGE_H - 34 + i * 10, 8, l); });
     }
     k.newPage = function () { pdf.addPage(); footer(); k.y = MARGIN + 10; };
     k.ensure = function (h) { if (k.y + h > PAGE_H - 60) { k.newPage(); } };
@@ -248,7 +249,7 @@
         k.heading("Mesh topologies (" + ESTIMATE_LINE + ")");
         k.tableOut([["Topology", "Coverage", "Dead zones", "Delay", "Speed", "Grade"]].concat(data.mesh.topologies.map(function (t) {
           return [t.label, t.coverage_pct + " %", t.dead_zones, t.mean_latency_ms === null ? "n/a" : t.mean_latency_ms + " ms", t.mean_throughput_mbps === null ? "n/a" : t.mean_throughput_mbps + " Mbps", t.grade + " (" + t.score + ")"];
-        })), [0, 140, 200, 270, 340, 430]);
+        })), [0, 170, 225, 285, 345, 440]);
       }
       if (data.timeMachine) {
         k.heading("Time Machine: versions of this plan (" + ESTIMATE_LINE + ")");
