@@ -171,3 +171,15 @@ def test_before_after_model_reports_grade_and_score_change():
     assert r["up"]["gradeText"].endswith("grade A (%d)" % round(r["up"]["after"]["score"])) and [x["name"] for x in r["up"]["rows"]] == ["Gaming", "Streaming", "Video calls"]
     assert r["down"]["direction"] == "down" and "went down 3 points" in r["down"]["verdict"] and "Undo" in r["down"]["verdict"]
     assert r["same"]["direction"] == "same" and not any(x["changed"] for x in r["same"]["rows"])
+
+
+def test_candidate_grid_cache_keeps_results_identical_and_follows_wall_changes():
+    r = run_js("""
+      const p = scenario('large_home'), fid = 'ground', fresh = () => Object.assign({}, opts, {env: E.makeEnv(config)});
+      const a = I.meshTopologies(p, fid, fresh()), shared = fresh(), b = I.meshTopologies(p, fid, shared), c = I.meshTopologies(p, fid, shared);
+      const walled = JSON.parse(JSON.stringify(p)); walled.floors[0].walls.forEach(w => { w.material = 'concrete'; });
+      const d = I.placementReport(walled, fid, shared), e = I.placementReport(walled, fid, fresh());
+      out({same: JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c), walls: JSON.stringify(d) === JSON.stringify(e)});
+    """)
+    assert r["same"], "a reused environment changed the mesh result"
+    assert r["walls"], "a wall change did not invalidate the cached candidate grids"
