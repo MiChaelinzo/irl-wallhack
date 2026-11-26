@@ -173,13 +173,43 @@ def test_before_after_model_reports_grade_and_score_change():
     assert r["same"]["direction"] == "same" and not any(x["changed"] for x in r["same"]["rows"])
 
 
-def test_candidate_grid_cache_keeps_results_identical_and_follows_wall_changes():
+def test_candidate_grid_cache_keeps_results_identical_on_reuse():
     r = run_js("""
       const p = scenario('large_home'), fid = 'ground', fresh = () => Object.assign({}, opts, {env: E.makeEnv(config)});
       const a = I.meshTopologies(p, fid, fresh()), shared = fresh(), b = I.meshTopologies(p, fid, shared), c = I.meshTopologies(p, fid, shared);
-      const walled = JSON.parse(JSON.stringify(p)); walled.floors[0].walls.forEach(w => { w.material = 'concrete'; });
-      const d = I.placementReport(walled, fid, shared), e = I.placementReport(walled, fid, fresh());
-      out({same: JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c), walls: JSON.stringify(d) === JSON.stringify(e)});
+      out({same: JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c)});
     """)
     assert r["same"], "a reused environment changed the mesh result"
-    assert r["walls"], "a wall change did not invalidate the cached candidate grids"
+
+
+# Each case changes one input of the shared candidate grid key. The cache slot is keyed by the config object, so the warm
+# call and the changed call share one config (the slot a stale key would reuse). The reference call uses a deep copy of the
+# config, which has its own empty slot and therefore cannot be stale. Removing that dimension from geometryKey must fail it.
+INVALIDATION_CASES = {
+    "walls": "project.floors[0].walls.forEach(w => { w.material = 'concrete'; });",
+    "materials": "const heavy = (m) => Object.assign({}, m, {attenuation_db: {'2.4': 40, '5': 40, '6': 40}}); o.env = E.makeEnv(o.config, {brick: heavy(o.config.materials.brick), drywall: heavy(o.config.materials.drywall)});",
+    "cell_size": "o.cellM = 1.0;",
+    "mode": "o.mode = 'multipath';",
+    "band": "o.band = '2.4';",
+}
+
+
+@pytest.mark.parametrize("dimension", sorted(INVALIDATION_CASES))
+def test_candidate_grid_cache_is_invalidated_by_every_key_dimension(dimension):
+    r = run_js("""
+      const O = require(process.argv[1] + '/rf-optimizer.js'), fid = 'ground', base = scenario('large_home'), clone = (c) => JSON.parse(JSON.stringify(c));
+      const run = (project, o) => O.suggestPlacements(project, fid, Object.assign({count: 5}, o));
+      const make = (cfg) => ({config: cfg, env: E.makeEnv(cfg), cellM: 0.5, mode: 'basic', band: '5'});
+      const change = (project, o) => { %s };
+      const warm = make(config), project = clone(base), o = make(config);
+      run(base, warm);                       // fills the slot of `config` with the unchanged inputs
+      change(project, o);
+      const cached = run(project, o);        // same config object: would reuse the slot if the key missed it
+      const cfg2 = clone(config), project2 = clone(base), o2 = make(cfg2);
+      change(project2, o2);
+      const reference = run(project2, o2);   // own empty slot
+      const unchanged = run(base, make(clone(config)));
+      out({match: JSON.stringify(cached) === JSON.stringify(reference), differs: JSON.stringify(reference) !== JSON.stringify(unchanged)});
+    """ % INVALIDATION_CASES[dimension])
+    assert r["differs"], "the %s change does not alter the suggested placements, so the test cannot detect a stale cache" % dimension
+    assert r["match"], "a %s change did not invalidate the cached candidate grids" % dimension

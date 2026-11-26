@@ -33,6 +33,9 @@
    * and the candidate itself, not on the other access points, so repeated planner calls on the same floor (diagnose, mesh
    * topologies, placement report) reuse them. One entry per configuration object, keyed also by the environment materials, replaced when the floor geometry changes, so
    * it holds at most one lattice of grids.
+   * The slot is found by the identity of the configuration object, so the configuration must not be mutated in place: the key
+   * covers the floor, the materials, the cell size, the mode and the band, but not the other configuration fields the engine reads.
+   * Alternating between floors replaces the slot each time, so a session that switches floors recomputes the lattice grids.
    */
   var sharedCandidateGrids = new WeakMap();
 
