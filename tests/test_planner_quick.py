@@ -57,9 +57,11 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
       const moved = JSON.stringify(store.project.floors[0].aps);
       store.undo();
       const mesh = Q.changeOps(S, p, 'main', {kind: 'add_mesh_node', x: 3, y: 3, parent_ap_id: 'router'}, config)[0];
+      const ch = Q.changeOps(S, p, 'main', {kind: 'set_channels', assignments: [{ap_id: 'router', channel: 1}]}, config);
+      let badCh = null; try { Q.changeOps(S, p, 'main', {kind: 'set_channels', assignments: [{ap_id: 'gone', channel: 1}]}, config); } catch (e) { badCh = e.message; }
       let bad = null; try { Q.changeOps(S, p, 'main', {kind: 'move_ap', ap_id: 'gone', x: 1, y: 1}, config); } catch (e) { bad = e.message; }
       out({m, rep: {room: rep.room, pts: rep.coverage_increase_pts, dz: rep.dead_zones_removed}, none: none.line, noneApply: none.canApply, add: add.line,
-           addKind: add.change.kind, changed: before !== moved, restored: before === JSON.stringify(store.project.floors[0].aps), mesh: mesh.item, bad});
+           addKind: add.change.kind, changed: before !== moved, restored: before === JSON.stringify(store.project.floors[0].aps), mesh: mesh.item, bad, chOps: ch.length, badCh, chStore: (() => { const st = S.createStore(JSON.parse(JSON.stringify(p))); st.exec({label: 'ch', ops: ch}); return st.project.floors[0].aps[0].channel; })()});
     """)
     assert r["m"]["line"].startswith(r["rep"]["room"]) and "points coverage" in r["m"]["line"] and "dead zone" in r["m"]["line"]
     assert ("+" + str(r["rep"]["pts"]) in r["m"]["line"]) or r["rep"]["pts"] <= 0
@@ -69,6 +71,7 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
     assert r["changed"] and r["restored"]
     assert r["mesh"]["id"] == "mesh1" and r["mesh"]["mesh_parent"] == "router" and r["mesh"]["tx_dbm"] == rfmodel.CONFIG["planner"]["default_tx_dbm"]
     assert "no longer exists" in r["bad"]
+    assert r["chOps"] == 1 and r["chStore"] == 1 and "gone no longer exists" in r["badCh"]
 
 
 def test_answer_mesh_time_machine_and_smart_home_models():
@@ -83,7 +86,7 @@ def test_answer_mesh_time_machine_and_smart_home_models():
       out({a, amb, rows, tm: Q.timeMachineRows(tmr), cols: mesh.topologies.length, sh, clients: (hf.clients || []).length, g: g.rooms.map(r => r.name)});
     """)
     assert r["a"]["status"] == "diagnosed" and r["a"]["title"] == "WiFi in Bedroom" and r["a"]["causes"]
-    assert all(f["change"]["kind"] in ("move_ap", "add_mesh_node") for f in r["a"]["fixes"])
+    assert all(f["change"]["kind"] in ("move_ap", "add_mesh_node", "set_channels") for f in r["a"]["fixes"])
     assert r["amb"]["status"] != "diagnosed" and r["amb"]["rooms"]
     assert len(r["rows"]) == 10 and all(len(row) == 1 + r["cols"] for row in r["rows"])
     assert r["tm"][0][6] == "baseline" and len(r["tm"]) == 3 and r["tm"][1][1].startswith("B: ")

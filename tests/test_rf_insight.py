@@ -237,20 +237,49 @@ def test_placement_report_without_router_and_without_lattice_returns_no_position
       out({rep, err, lattice: O.candidatePositions(p, 'f', opts).length});
     """)
     assert r["err"] is None, r["err"]
-    if r["lattice"] == 0:
-        assert r["rep"]["position"] is None and r["rep"]["moved"] is False and "No position found" in r["rep"]["text"]
+    assert r["lattice"] == 0, "fixture must have an empty candidate lattice or the no-position branch is not reached"
+    assert r["rep"]["position"] is None and r["rep"]["moved"] is False and r["rep"]["had_router"] is False
+    assert r["rep"]["lattice_positions"] == 0 and "No position found" in r["rep"]["text"]
+
+
+def test_floor_filter_rejects_room_fixes_that_lower_floor_coverage_and_the_message_says_so():
+    # hotel_floor Room 101: both tested changes help the room but lower whole-floor coverage. Without the filter they would be recommended.
+    d = run_js("out(I.diagnose(scenario('hotel_floor'), 'hotel', 'Why is my Room 101 WiFi slow?', opts))")
+    assert d["rejected_for_floor"] == 2 and d["fixes"] == []
+    assert any("help this room, but each one lowers coverage on the rest of the floor" in line for line in d["text"])
+    assert not any("None of the tested changes" in line for line in d["text"])
 
 
 def test_assistant_never_recommends_a_fix_that_lowers_whole_floor_coverage():
     r = run_js("""
-      const out_ = [];
-      for (const id of ['small_apartment', 'large_home']) {
+      const kept = [], rejected = [];
+      for (const id of ['small_apartment', 'large_home', 'hotel_floor', 'hospital_ward', 'school_building']) {
         const p = scenario(id), f = p.floors[0];
-        for (const room of f.rooms) { out_.push(...I.diagnose(p, f.id, 'Why is my ' + room.name + ' WiFi slow?', opts).fixes.map(x => x.floor.coverage_delta_pts)); }
+        for (const room of f.rooms) {
+          const d = I.diagnose(p, f.id, 'Why is my ' + room.name + ' WiFi slow?', opts);
+          kept.push(...d.fixes.map(x => x.floor.coverage_delta_pts)); rejected.push(d.rejected_for_floor);
+        }
       }
-      out(out_);
+      out({kept, rejected});
     """)
-    assert all(d >= 0 for d in r)
+    assert r["kept"] and all(d >= 0 for d in r["kept"])
+    assert sum(r["rejected"]) > 0, "the floor filter must reject at least one candidate in this sample"
+
+
+def test_condo_bedroom_interference_gets_a_change_channel_fix_in_plain_language():
+    d = run_js("out(I.diagnose(scenario('two_bedroom_condo'), 'condo', 'Why is my Bedroom 2 WiFi slow?', opts))")
+    assert d["primary"]["kind"] == "interference" and d["primary"]["sources"] == ["unit-4b"]
+    assert "separate from wall loss" in d["primary"]["text"] and not d["primary"]["text"].startswith("Interference (")
+    fix = next(f for f in d["fixes"] if f["kind"] == "set_channels")
+    assert fix["change"]["assignments"] == [{"ap_id": "router", "channel": 1}]
+    assert fix["text"].startswith("Change WiFi channel: router from channel 6 to channel 1")
+    assert fix["room"]["ping_after_ms"][1] < fix["room"]["ping_before_ms"][0] and fix["floor"]["coverage_delta_pts"] >= 0
+    assert any(line.startswith("Fix") and "Change WiFi channel" in line and "(model estimate)" in line for line in d["text"])
+
+
+def test_no_channel_fix_when_interference_is_not_the_cause():
+    d = run_js("out(I.diagnose(twoRooms('concrete', 20), 'f', 'Why is my bedroom WiFi slow?', opts))")
+    assert d["primary"]["kind"] == "wall" and all(f["kind"] != "set_channels" for f in d["fixes"])
 
 
 def test_thickness_factor_clamps_to_the_validated_minimum_in_both_languages():

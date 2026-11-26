@@ -137,7 +137,7 @@
   }
 
   /**
-   * Store operations for a change object (move_ap, add_mesh_node, add_ap) as the optimiser and insight code describe them.
+   * Store operations for a change object (move_ap, set_channels, add_mesh_node, add_ap) as the optimiser and insight code describe them.
    * `S` is PlannerState. Throws when the access point no longer exists. Defaults for power and band come from rf-config planner.*.
    */
   function changeOps(S, project, floorId, change, config) {
@@ -146,6 +146,13 @@
       var owner = project.floors.filter(function (f) { return f.aps.some(function (a) { return a.id === change.ap_id; }); })[0];
       if (!owner) { throw new Error("access point " + change.ap_id + " no longer exists"); }
       return [S.setOp("ap", project, owner.id, change.ap_id, { x: change.x, y: change.y })];
+    }
+    if (change.kind === "set_channels") {
+      return change.assignments.map(function (a) {
+        var home = project.floors.filter(function (f) { return f.aps.some(function (x) { return x.id === a.ap_id; }); })[0];
+        if (!home) { throw new Error("access point " + a.ap_id + " no longer exists"); }
+        return S.setOp("ap", project, home.id, a.ap_id, { channel: a.channel });
+      });
     }
     if (change.kind === "add_mesh_node" || change.kind === "add_ap") {
       var all = [];

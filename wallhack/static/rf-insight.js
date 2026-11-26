@@ -363,7 +363,7 @@
     if (c.kind === "wall") { return c.material_label + (c.through === "wall" ? " wall" : " (" + c.through + ")") + ": " + num(c.db) + " dB"; }
     if (c.kind === "floor") { return "Floor or ceiling (" + c.floors + " crossed): " + num(c.db) + " dB"; }
     if (c.kind === "distance") { return "Distance (" + num(c.distance_m) + " m): " + num(c.db) + " dB"; }
-    if (c.kind === "interference") { return "Interference (" + c.sources.join(", ") + "): " + num(c.db) + " dB"; }
+    if (c.kind === "interference") { return "Neighbouring WiFi or radio noise from " + c.sources.join(", ") + " (signal quality lost, separate from wall loss): " + num(c.db) + " dB"; }
     return "Busy channel: " + num(c.pct) + "% of the time";
   }
 
@@ -411,6 +411,19 @@
       return { id: "mesh:" + i, change: { kind: "add_mesh_node", floor: res.floorId, x: n.x, y: n.y, parent_ap_id: n.parent_ap_id },
                text: "Add a mesh node " + (near ? "near " + near + " " : "") + "at (" + n.x + " m, " + n.y + " m)" };
     });
+  }
+
+  /** One set_channels candidate from the SINR channel plan (rf-optimizer planChannelsSinr), only when the plan really changes a channel. */
+  function channelCandidates(res, probe, causes) {
+    var interference = causes.filter(function (c) { return c.kind === "interference"; })[0];
+    if (!interference) { return []; }
+    var plan = O.planChannelsSinr(res.project, res.floorId, { env: res.env, config: res.config, cellM: res.cellM, mode: res.mode, band: res.band });
+    var moves = plan.assignments.filter(function (a) { return a.changed; });
+    if (!moves.length) { return []; }
+    return [{ id: "channel:" + moves.map(function (a) { return a.ap_id + "=" + a.to_channel; }).join(","),
+              change: { kind: "set_channels", assignments: moves.map(function (a) { return { ap_id: a.ap_id, channel: a.to_channel }; }) },
+              text: "Change WiFi channel: " + moves.map(function (a) { return a.ap_id + " from channel " + a.from_channel + " to channel " + a.to_channel; }).join(", ") +
+                    " to move away from " + interference.sources.join(", ") }];
   }
 
   function roomView(res, rect) {
@@ -483,8 +496,12 @@
     var cands = [];
     var apHit = res.project.floors.reduce(function (acc, f) { return acc || f.aps.filter(function (a) { return a.id === probe.ap_id; })[0] || null; }, null);
     if (apHit) { cands = cands.concat(moveCandidates(res, apHit, st.center, ac)); }
-    cands = cands.concat(meshCandidates(res, ac));
-    var tried = cands.map(function (c) { return measureFix(res, view, c, rect); }).filter(function (f) { return f.room.score_after > f.room.score_before || f.room.coverage_delta_pts > 0; }).filter(function (f) { return f.floor.coverage_delta_pts >= 0; });
+    cands = cands.concat(meshCandidates(res, ac), channelCandidates(res, probe, out.causes));
+    var seenText = {};
+    cands = cands.filter(function (c) { if (seenText[c.text]) { return false; } seenText[c.text] = true; return true; });
+    var helps = cands.map(function (c) { return measureFix(res, view, c, rect); }).filter(function (f) { return f.room.score_after > f.room.score_before || f.room.coverage_delta_pts > 0; });
+    var tried = helps.filter(function (f) { return f.floor.coverage_delta_pts >= 0; });
+    out.rejected_for_floor = helps.length - tried.length;
     tried.sort(function (a, b) {
       return ((b.room.score_after - b.room.score_before) - (a.room.score_after - a.room.score_before)) || (b.room.coverage_delta_pts - a.room.coverage_delta_pts) ||
              (b.floor.coverage_delta_pts - a.floor.coverage_delta_pts) || (a.id < b.id ? -1 : 1);
@@ -495,7 +512,9 @@
       f.line = fixLine(f, place.name);
       return f;
     });
-    if (!out.fixes.length) { text.push("None of the tested changes (moving " + (apHit ? apHit.id : "the router") + ", adding a mesh node) improves this room in the model."); }
+    if (!out.fixes.length && out.rejected_for_floor) {
+      text.push(out.rejected_for_floor + " tested change" + (out.rejected_for_floor === 1 ? " helps" : "s help") + " this room, but each one lowers coverage on the rest of the floor, so none is recommended (model estimate).");
+    } else if (!out.fixes.length) { text.push("None of the tested changes (moving " + (apHit ? apHit.id : "the router") + ", adding a mesh node" + (cands.some(function (c) { return c.change.kind === "set_channels"; }) ? ", changing channel" : "") + ") improves this room in the model."); }
     out.fixes.forEach(function (f) { text.push("Fix " + f.rank + ": " + f.line + " Confidence " + f.what_if.confidence + " (model sensitivity)."); });
     out.text = text;
     return out;

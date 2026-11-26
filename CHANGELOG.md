@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### WiFi architect polish
+- fix: `diagnose` now tests a "Change WiFi channel" fix (the SINR channel plan, `set_channels`) when interference is the main cause, so the two bedroom condo with `unit-4b` on channel 6 gets a measured channel change; Quick start can apply it. Interference cause text says it is signal quality lost to noise, separate from wall loss.
+- fix: when fixes help the room but lower whole-floor coverage, the result says so (`rejected_for_floor`) instead of claiming nothing helps. Tests now hit the no-position branch and the floor filter for certain (model estimate, UNVERIFIED in a browser).
+
 ### WiFi architect: review fixes
 - fix: assistant fixes that lower whole-floor coverage are no longer recommended; `placementReport` returns a "No position found" result (position null) instead of throwing when the floor has no AP and no candidate position; `thicknessFactor` (Python and JS) clamps thickness to `wall_thickness.min_cm`.
 - fix: the Gamer Mode `source` text says "served" cells like the code; the hop cap moved to `insight.mesh.max_hops`; the object `source` notes that a path starting or ending inside an object crosses one edge (loss overstated); grade chips in the room table have `role="img"` (screen reader behaviour UNVERIFIED).
