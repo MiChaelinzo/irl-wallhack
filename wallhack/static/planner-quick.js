@@ -27,7 +27,7 @@
       gradeLabel: "Overall grade " + card.grade + ", " + card.score + " out of 100",
       headline: card.text,
       stats: [{ label: "Coverage", value: pct(card.coverage_pct) }, { label: "Dead zones", value: String(card.dead_zones) }],
-      chips: [{ key: "gaming", label: "Gaming", word: r.gaming.word, grade: r.gaming.grade, text: "Gaming: " + r.gaming.word + " (grade " + r.gaming.grade + ")" },
+      chips: [{ key: "gaming", label: "Gaming", word: "Grade " + r.gaming.grade, grade: r.gaming.grade, text: "Gaming grade " + r.gaming.grade + " (" + r.gaming.score + " out of 100)" },
               { key: "streaming", label: "Streaming", word: r.streaming.word, grade: null, text: "Streaming: " + r.streaming.word },
               { key: "video", label: "Video calls", word: r.video.word, grade: null, text: "Video calls: " + r.video.word }]
     };
@@ -39,11 +39,14 @@
     var verdict = delta > 0 ? "Better: your score went up " + delta + " point" + (delta === 1 ? "" : "s") + "."
       : delta < 0 ? "Worse: your score went down " + (-delta) + " point" + (delta === -1 ? "" : "s") + ". Undo with Ctrl+Z."
       : "No change in the score. The fix may help in ways the score does not show, or undo with Ctrl+Z.";
-    function row(key, name) { return { name: name, before: b[key].word, after: a[key].word, changed: b[key].word !== a[key].word }; }
+    function row(key, name, value) {
+      var beforeValue = value ? value(b[key]) : b[key].word, afterValue = value ? value(a[key]) : a[key].word;
+      return { name: name, before: beforeValue, after: afterValue, changed: beforeValue !== afterValue };
+    }
     return { label: label, delta: delta, verdict: verdict, direction: delta > 0 ? "up" : delta < 0 ? "down" : "same",
              before: { grade: before.grade, gradeClass: gradeClass(before.grade), score: before.score }, after: { grade: after.grade, gradeClass: gradeClass(after.grade), score: after.score },
              gradeText: "Grade " + before.grade + " (" + Math.round(before.score) + ") to grade " + after.grade + " (" + Math.round(after.score) + ")",
-             rows: [row("gaming", "Gaming"), row("streaming", "Streaming"), row("video", "Video calls")],
+             rows: [row("gaming", "Gaming grade", function (r) { return r.grade; }), row("streaming", "Streaming"), row("video", "Video calls")],
              coverage: { before: before.coverage_pct, after: after.coverage_pct }, dead: { before: before.dead_zones, after: after.dead_zones } };
   }
 
@@ -64,6 +67,59 @@
     return worst;
   }
 
+  function sameCause(before, after) {
+    if (!before || !after || before.kind !== after.kind) { return false; }
+    if (before.kind === "interference") {
+      return before.sources.length === after.sources.length && before.sources.every(function (s) { return after.sources.indexOf(s) >= 0; });
+    }
+    if (before.kind === "wall") { return before.id === after.id; }
+    if (before.kind === "busy") { return before.ap_id === after.ap_id; }
+    return true;
+  }
+
+  /** Homeowner action for the weakest room, or the actual result after applying it and analysing again. */
+  function nextActionModel(gamer, diagnosis, gradeForScore, previous) {
+    var room = previous ? gamer.rooms.filter(function (r) { return r.id === previous.room.id; })[0] : worstRoom(gamer);
+    if (!room) { return { status: "unavailable", title: "Fix my weakest room", line: "No room result is available." }; }
+    if (previous) {
+      var afterCauses = diagnosis && diagnosis.status === "diagnosed" ? diagnosis.causes.concat(diagnosis.other_causes || []) : [];
+      var remaining = afterCauses.filter(function (c) { return sameCause(previous.cause, c); })[0] || null;
+      var sharedInterference = [];
+      if (previous.cause && previous.cause.kind === "interference") {
+        afterCauses.filter(function (c) { return c.kind === "interference"; }).forEach(function (c) {
+          previous.cause.sources.forEach(function (s) { if (c.sources.indexOf(s) >= 0 && sharedInterference.indexOf(s) < 0) { sharedInterference.push(s); } });
+        });
+      }
+      var main = !!(remaining && diagnosis.primary && sameCause(previous.cause, diagnosis.primary));
+      var causeLine;
+      if (previous.cause && previous.cause.kind === "interference") {
+        var names = previous.cause.sources.join(", ");
+        causeLine = remaining ? "Interference from " + names + (remaining.db < previous.cause.db ? " was reduced from about " + previous.cause.db + " dB to " + remaining.db + " dB" : " is still about " + remaining.db + " dB") + ", but it was not eliminated" + (main ? " and remains the main cause." : ".")
+          : sharedInterference.length ? "Interference from " + sharedInterference.join(", ") + " remains, but the source list changed, so the aggregate dB values are not directly comparable."
+          : "Interference from " + names + " is no longer listed as a cause.";
+      } else {
+        causeLine = remaining ? "The original cause remains" + (main ? " the main cause." : ", but it is no longer the main cause.") : "The original cause is no longer listed.";
+      }
+      return { status: "outcome", room: room, title: "Checked again: " + room.name,
+               gradeBefore: previous.room.grade, gradeAfter: room.grade,
+               gradeText: "Gaming grade " + previous.room.grade + " (" + previous.room.score + ") to " + room.grade + " (" + room.stability_score + ")",
+               line: room.name + " gaming grade " + previous.room.grade + " to " + room.grade + ". " + causeLine,
+               causeLine: causeLine, causeRemains: !!remaining || sharedInterference.length > 0 };
+    }
+    var matches = diagnosis && diagnosis.status === "diagnosed" && diagnosis.room && diagnosis.room.id === room.id;
+    var fix = matches && diagnosis.fixes.length ? diagnosis.fixes[0] : null;
+    var expectedGrade = fix ? gradeForScore(fix.room.score_after) : null;
+    var roomCoverage = fix ? (fix.room.coverage_delta_pts === 0 ? "Room coverage stays " + fix.room.coverage_after_pct + "%" : "Room coverage " + signed(fix.room.coverage_delta_pts) + " points to " + fix.room.coverage_after_pct + "%") : null;
+    var floorCoverage = fix ? (fix.floor.coverage_delta_pts === 0 ? "whole-floor coverage stays " + fix.floor.coverage_after_pct + "%" : "whole-floor coverage " + signed(fix.floor.coverage_delta_pts) + " points to " + fix.floor.coverage_after_pct + "%") : null;
+    var noFix = matches && diagnosis.text && diagnosis.text.length ? diagnosis.text[diagnosis.text.length - 1] : "No measured recommendation is available for this room.";
+    return { status: fix ? "ready" : "no_fix", room: room, title: "Fix my weakest room", cause: matches ? diagnosis.primary : null, fix: fix,
+             line: room.name + " has gaming grade " + room.grade + " (" + room.stability_score + " out of 100).",
+             recommendation: fix ? fix.text : noFix,
+             effect: fix ? "Expected: gaming grade " + room.grade + " to " + expectedGrade + " (" + fix.room.score_before + " to " + fix.room.score_after + "). " + roomCoverage + "; " + floorCoverage + "." : null,
+             canApply: !!fix,
+             context: fix ? { room: { id: room.id, name: room.name, grade: room.grade, score: room.stability_score }, cause: diagnosis.primary } : null };
+  }
+
   function questionFor(roomName) { return "Why is my " + String(roomName).toLowerCase() + " WiFi slow?"; }
 
   /** Suggested question chips: one per named room of the floor (at most `max`). */
@@ -73,14 +129,19 @@
 
   /** "Living room, +34 points coverage, 3 dead zones removed" from a placementReport(), built from its numbers. */
   function bestSpotModel(report) {
+    if (!report.position) {
+      return { line: "No better router spot was found on this floor.", canApply: false, change: null, position: null, detail: report.text, latency: null, extra: null };
+    }
     var where = report.room || "(" + report.position.x + " m, " + report.position.y + " m)";
     var gain = signed(report.coverage_increase_pts) + " points coverage, " + report.dead_zones_removed + " dead zone" + (report.dead_zones_removed === 1 ? "" : "s") + " removed";
+    var strongerOnly = report.coverage_increase_pts === 0 && report.dead_zones_removed === 0 && report.mean_rssi_delta_db > 0;
     var change = null, canApply = false, line;
     if (!report.had_router) {
       line = "Add a router in " + where + ", " + gain; canApply = true;
       change = { kind: "add_ap", floor: report.floor, x: report.position.x, y: report.position.y };
     } else if (report.moved) {
-      line = where + ", " + gain; canApply = true;
+      line = strongerOnly ? where + ", stronger average signal (" + signed(report.mean_rssi_delta_db) + " dB); coverage and dead zones unchanged" : where + ", " + gain;
+      canApply = true;
       change = { kind: "move_ap", ap_id: report.ap_id, x: report.position.x, y: report.position.y };
     } else {
       line = "Your router is already at the best spot we found (" + where + ")";
@@ -239,17 +300,17 @@
       if (st) { st.ghost = point ? { x: point.x, y: point.y, label: label } : null; }
       app.editor.invalidate();
     }
-    function applyChange(change, label) {
+    function applyChange(change, label, nextContext) {
       var ops = changeOps(S, app.store.project, floorId(), change, app.config);
-      q.pending = q.card && !q.dirty ? { label: label, card: q.card } : q.pending;
-      q.compare = null;
+      q.pending = q.card && !q.dirty ? { label: label, card: q.card, next: nextContext || null } : q.pending;
+      q.compare = null; q.outcome = null;
       app.store.exec({ label: label, ops: ops });
       showGhost(null);
       app.say(label + ". Undo with Ctrl+Z.");
     }
     function gradeChip(grade) { return el("span", { class: "grade-chip " + gradeClass(grade), text: grade }); }
 
-    var q = { token: 0, res: null, card: null, gamer: null, placement: null, answer: null, floor: null, ready: false, ms: null, dirty: false, analysedOnce: false, timer: 0 };
+    var q = { token: 0, res: null, card: null, gamer: null, placement: null, answer: null, weakestAnswer: null, next: null, outcome: null, floor: null, ready: false, ms: null, dirty: false, analysedOnce: false, timer: 0 };
     app.quick = { state: q };
     /** Inputs of the Wi-Fi assessment PDF and CSV from the latest analysis of the current floor (mesh and Time Machine only when they were run on it). */
     app.quick.assessmentData = function () {
@@ -298,7 +359,7 @@
         if (!alive()) { return; }
         try {
           var res = I.analyze(project, fid, opts), o2 = Object.assign({}, opts, { result: res });
-          q.res = res; q.card = I.scoreCard(project, fid, o2); q.gamer = I.gamerMode(project, fid, o2); q.floor = fid; q.placement = null; q.answer = null;
+          q.res = res; q.card = I.scoreCard(project, fid, o2); q.gamer = I.gamerMode(project, fid, o2); q.floor = fid; q.placement = null; q.answer = null; q.weakestAnswer = null; q.next = null; q.outcome = null;
           renderResult(); renderTabs();
         } catch (e) { setStatus("The analysis failed: " + e.message, false); return; }
         setStatus("Looking for the best router spot...", true, 0.5);
@@ -309,10 +370,21 @@
           setStatus("Checking the weakest room...", true, 0.8);
           later(function () {
             if (!alive()) { return; }
-            var worst = worstRoom(q.gamer);
+            var worst = worstRoom(q.gamer), pending = q.pending, outcomeDiagnosis = null;
             if (worst) { ask(questionFor(worst.name), true); }
+            q.weakestAnswer = q.answer;
+            q.next = worst ? nextActionModel(q.gamer, q.weakestAnswer, function (score) { return I.gradeFor(app.config, "gaming", score); }) : null;
+            if (pending && pending.next) {
+              try {
+                outcomeDiagnosis = q.weakestAnswer && q.weakestAnswer.room && q.weakestAnswer.room.id === pending.next.room.id ? q.weakestAnswer
+                  : I.diagnose(project, fid, questionFor(pending.next.room.name), opts);
+                q.outcome = nextActionModel(q.gamer, outcomeDiagnosis, function (score) { return I.gradeFor(app.config, "gaming", score); }, pending.next);
+              } catch (e) {
+                q.outcome = { status: "outcome", title: "Could not check " + pending.next.room.name + " again", line: e.message };
+              }
+            } else { q.outcome = null; }
             q.ms = Math.round(now() - t0); q.ready = true; q.analysedOnce = true;
-            q.compare = q.pending && q.card ? beforeAfterModel(q.pending.card, q.card, q.pending.label) : null;
+            q.compare = pending && q.card ? beforeAfterModel(pending.card, q.card, pending.label) : null;
             q.pending = null;
             result.setAttribute("data-ready", "true"); result.setAttribute("data-ms", String(q.ms));
             setStatus("Done in " + q.ms + " ms. Model estimate, not a measurement.", false);
@@ -348,14 +420,16 @@
             .concat(m.chips.map(function (c) { return el("span", { class: "chip", text: c.text }); })))])]);
       if (q.compare) { box.appendChild(compareBlock(q.compare)); }
       box.appendChild(head);
+      if (q.outcome) { box.appendChild(nextActionBlock(q.outcome)); }
+      if (q.next) { box.appendChild(nextActionBlock(q.next)); }
       if (q.dirty) { box.appendChild(el("p", { class: "banner note", role: "note", text: "The plan changed after this result. It refreshes in a moment." })); }
       // rooms
       box.appendChild(el("h3", { text: "Your rooms, for gaming" }));
       box.appendChild(roomTable(q.gamer));
       // top diagnosis
-      if (q.answer) {
+      if (q.weakestAnswer) {
         box.appendChild(el("h3", { text: "What is hurting your WiFi most" }));
-        var d = el("div", { class: "q-diag" }); renderAnswer(d, q.answer); box.appendChild(d);
+        var d = el("div", { class: "q-diag" }); renderAnswer(d, q.weakestAnswer, false); box.appendChild(d);
       }
       // best spot
       box.appendChild(el("h3", { text: "Best router spot" }));
@@ -369,12 +443,33 @@
       result.appendChild(box);
     }
 
+    function nextActionBlock(m) {
+      var wrap = el("section", { class: "q-next q-next-" + m.status, id: m.status === "outcome" ? "quickWeakestOutcome" : "quickWeakestAction" });
+      wrap.appendChild(el("h3", { text: m.title }));
+      wrap.appendChild(el("p", { class: "q-line", text: m.line }));
+      if (m.status === "outcome") {
+        wrap.setAttribute("role", "status");
+        wrap.appendChild(el("p", { class: "muted hint", text: ESTIMATE + ". The detailed room results below use the new plan. Undo with Ctrl+Z." }));
+        return wrap;
+      }
+      if (m.cause) { wrap.appendChild(el("p", { class: "muted", text: "Main cause: " + m.cause.text + "." })); }
+      wrap.appendChild(el("p", { class: "q-recommendation", text: (m.canApply ? "Top measured recommendation: " : "") + m.recommendation }));
+      if (m.effect) { wrap.appendChild(el("p", { class: "muted", text: m.effect + " Model estimate." })); }
+      if (m.canApply) {
+        wrap.appendChild(el("div", { class: "tool-row" }, [button("Apply and check again", function () {
+          try { applyChange(m.fix.change, "Fix " + m.room.name + ": " + m.fix.text, m.context); }
+          catch (e) { app.say("Cannot apply: " + e.message); }
+        }, { id: "quickFixWeakest", "aria-label": "Apply and check again: top measured fix for " + m.room.name + ". You can undo it.", disabled: q.dirty ? "" : undefined })]));
+      }
+      return wrap;
+    }
+
     function compareBlock(c) {
       var wrap = el("section", { class: "q-compare q-compare-" + c.direction, id: "quickCompare", "aria-label": "Before and after the fix" });
       wrap.appendChild(el("h3", { text: "Before and after your fix" }));
       wrap.appendChild(el("p", { class: "muted", text: c.label }));
       function side(name, g) { return el("span", { class: "q-side", "aria-hidden": "true" }, [el("span", { class: "q-grade q-grade-sm " + g.gradeClass, text: g.grade }), el("span", { class: "muted", text: name + ": " + Math.round(g.score) + " of 100" })]); }
-      wrap.appendChild(el("div", { class: "q-compare-grades", role: "img", "aria-label": c.gradeText }, [side("Before", c.before), el("span", { class: "q-arrow", "aria-hidden": "true", text: "\u2192" }), side("After", c.after)]));
+      wrap.appendChild(el("div", { class: "q-compare-grades", role: "img", "aria-label": c.gradeText }, [side("Before", c.before), el("span", { class: "q-connector", "aria-hidden": "true", text: "to" }), side("After", c.after)]));
       wrap.appendChild(el("p", { class: "q-line", id: "quickCompareLine", text: c.verdict }));
       wrap.appendChild(el("ul", { class: "q-lines" }, c.rows.map(function (r) {
         return el("li", { text: r.name + ": " + (r.changed ? r.before + " to " + r.after : r.after + " (same)") });
@@ -395,7 +490,7 @@
       if (m.extra) { wrap.appendChild(el("p", { class: "muted", text: m.extra })); }
       var row = el("div", { class: "tool-row" });
       row.appendChild(button("Show", function () { showGhost(m.position, "best spot"); app.editor.centerOn(m.position.x, m.position.y); app.say("Showing the best router spot on the plan"); },
-        { id: "quickShow", "aria-label": "Show the best router spot on the plan" }));
+        m.position ? { id: "quickShow", "aria-label": "Show the best router spot on the plan" } : { id: "quickShow", disabled: "" }));
       row.appendChild(button("Apply", function () { try { applyChange(m.change, m.change.kind === "add_ap" ? "Add a router at the best spot" : "Move the router to the best spot"); } catch (e) { app.say("Cannot apply: " + e.message); } },
         m.canApply ? { id: "quickApply", "aria-label": "Apply the best router spot. You can undo it." } : { id: "quickApply", disabled: "" }));
       wrap.appendChild(row);
@@ -404,7 +499,7 @@
 
     // ---------------------------------------------------------------- questions (Quick start and Assistant tab share one answer)
     var hosts = [];   // {out, chips} blocks that show the latest answer
-    function renderAnswer(host, d) {
+    function renderAnswer(host, d, actions) {
       var a = answerModel(d);
       host.textContent = "";
       host.appendChild(el("h3", { text: a.title }));
@@ -414,14 +509,14 @@
       if (a.rooms.length) {
         host.appendChild(el("div", { class: "q-chips" }, a.rooms.map(function (n) { return button(n, function () { ask(questionFor(n)); }, { class: "q-chip" }); })));
       }
-      a.fixes.forEach(function (f) {
+      if (actions !== false) { a.fixes.forEach(function (f) {
         var row = el("div", { class: "tool-row" });
         if (f.point) { row.appendChild(button("Show fix " + f.rank, function () { showGhost(f.point, "fix " + f.rank); }, { "aria-label": "Show fix " + f.rank + " on the plan" })); }
         if (f.point || APPLICABLE.indexOf(f.change.kind) >= 0) {
           row.appendChild(button("Apply fix " + f.rank, function () { try { applyChange(f.change, "Fix " + f.rank + ": " + f.line); } catch (e) { app.say("Cannot apply: " + e.message); } }, { "aria-label": "Apply fix " + f.rank + ". You can undo it." }));
         }
         host.appendChild(row);
-      });
+      }); }
     }
 
     function ask(text, quiet) {
@@ -489,8 +584,8 @@
         ["Signal quality", "sinr", c.mean_sinr_db === null ? "no SINR (give an access point a WiFi standard)" : "mean SINR " + c.mean_sinr_db + " dB"], ["Gaming, streaming and calls", "activities", "area weighted ratings below"]];
       host.appendChild(table("How the grade is built (weights are planning preferences, not physics)", ["Part", "Weight", "Result", "What it means"],
         comp.map(function (x) { return [x[0], Math.round(100 * w[x[1]]) + "%", Math.round(100 * c.components[x[1]]) + " of 100", x[2]]; })));
-      host.appendChild(table("Ratings", ["Activity", "Rating", "Score"], [["Gaming", c.ratings.gaming.word + " (grade " + c.ratings.gaming.grade + ")", c.ratings.gaming.score], ["Streaming", c.ratings.streaming.word, c.ratings.streaming.score], ["Video calls", c.ratings.video.word, c.ratings.video.score]]));
-      host.appendChild(table("Rooms", ["Room", "Coverage", "Ping", "Gaming", "Streaming", "Video calls"],
+      host.appendChild(table("Ratings", ["Activity", "Rating", "Score"], [["Gaming grade", c.ratings.gaming.grade, c.ratings.gaming.score], ["Streaming", c.ratings.streaming.word, c.ratings.streaming.score], ["Video calls", c.ratings.video.word, c.ratings.video.score]]));
+      host.appendChild(table("Rooms", ["Room", "Coverage", "Ping", "Gaming grade", "Streaming", "Video calls"],
         c.rooms.map(function (r) { return [r.name, pct(r.coverage_pct), pingText(r.ping_ms), r.gaming_grade, r.streaming, r.video]; })));
       host.appendChild(exportButtons());
       host.appendChild(el("p", { class: "muted hint", text: c.label }));
@@ -674,13 +769,19 @@
       refreshChips();
       [["rooms", renderRooms], ["scorecard", renderScore]].forEach(function (p) { if (!$("panel-" + p[0]).hidden) { p[1](); } });
     }
+    function clearQuickAnalysis(message) {
+      q.token++; root.clearTimeout(q.timer);
+      q.card = q.gamer = q.res = q.placement = q.answer = q.weakestAnswer = q.next = q.outcome = null;
+      q.ready = false; q.dirty = false; q.analysedOnce = false; q.pending = null; q.compare = null;
+      result.textContent = ""; result.removeAttribute("data-ready"); setStatus(message || "", false);
+    }
 
     // ---------------------------------------------------------------- the plan changed
     app.store.subscribe(function (ev) {
       if (ev.source === "select" || ev.source === "meta") { return; }
       waves.cache = null;
-      if (ev.source === "floor") { refreshChips(); renderTabs(); return; }
-      if (ev.source === "load") { q.token++; q.card = q.gamer = q.res = q.placement = q.answer = null; q.ready = false; q.dirty = false; q.analysedOnce = false; q.pending = null; q.compare = null; mesh.result = null; tm.result = null; result.textContent = ""; setStatus("", false); refreshChips(); renderTabs(); return; }
+      if (ev.source === "floor") { clearQuickAnalysis("Press Analyse my WiFi to check this floor."); refreshChips(); renderTabs(); return; }
+      if (ev.source === "load") { clearQuickAnalysis(""); mesh.result = null; tm.result = null; refreshChips(); renderTabs(); return; }
       if (!q.analysedOnce) { refreshChips(); return; }
       q.dirty = true; q.ready = false; result.removeAttribute("data-ready"); renderResult();
       root.clearTimeout(q.timer); q.timer = root.setTimeout(function () { runAnalysis(); }, 700);
@@ -778,7 +879,7 @@
     app.quick.analyse = function () { analyseClicked(); };
   }
 
-  var api = { mount: mount, resultModel: resultModel, roomRows: roomRows, worstRoom: worstRoom, questionFor: questionFor, questionChips: questionChips, bestSpotModel: bestSpotModel, beforeAfterModel: beforeAfterModel,
+  var api = { mount: mount, resultModel: resultModel, roomRows: roomRows, worstRoom: worstRoom, nextActionModel: nextActionModel, questionFor: questionFor, questionChips: questionChips, bestSpotModel: bestSpotModel, beforeAfterModel: beforeAfterModel,
               answerModel: answerModel, topologyColumns: topologyColumns, meshRows: meshRows, timeMachineRows: timeMachineRows, smartHomeRows: smartHomeRows,
               changeOps: changeOps, waveRays: waveRays, rayLosses: rayLosses, ringAlpha: ringAlpha, ringRadii: ringRadii, gradeClass: gradeClass };
   if (isNode) { module.exports = api; }

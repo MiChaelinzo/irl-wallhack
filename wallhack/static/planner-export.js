@@ -220,7 +220,7 @@
     pdf.text(MARGIN + 190, k.y + 40, 10, "Coverage " + c.coverage_pct + " %, " + c.dead_zones + " dead zone" + (c.dead_zones === 1 ? "" : "s") + " (" + c.dead_zone_area_m2 + " m2)"); k.y += 56;
     k.para(c.text, 10);
     k.heading("Ratings");
-    k.tableOut([["Activity", "Rating", "Score"], ["Gaming", r.gaming.word + " (grade " + r.gaming.grade + ")", r.gaming.score], ["Streaming", r.streaming.word, r.streaming.score], ["Video calls", r.video.word, r.video.score]], [0, 150, 330]);
+    k.tableOut([["Activity", "Rating", "Score"], ["Gaming grade", r.gaming.grade, r.gaming.score], ["Streaming", r.streaming.word, r.streaming.score], ["Video calls", r.video.word, r.video.score]], [0, 150, 330]);
     if (data.image) {
       var h = Math.min(260, width * data.image.h / data.image.w), w = h * data.image.w / data.image.h;
       k.ensure(h + 30); k.heading("Heat map (" + ESTIMATE_LINE + ")");

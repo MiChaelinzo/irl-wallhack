@@ -126,7 +126,7 @@ def test_concrete_wall_is_the_primary_cause_with_material_and_db():
 def test_bedroom_question_on_a_preset_gives_causes_in_db_and_a_measured_fix():
     d = run_js("out(I.diagnose(scenario('small_apartment'), 'main', 'Why is my bedroom WiFi slow?', opts))")
     assert d["room"]["name"] == "Bedroom" and d["primary"]["db"] > 0 and d["secondary"]["db"] > 0
-    assert d["primary"]["text"].endswith(" dB") and d["primary"]["db"] >= d["secondary"]["db"]
+    assert " dB" in d["primary"]["text"] and d["primary"]["db"] >= d["secondary"]["db"]
     fix = d["fixes"][0]
     assert fix["room"]["ping_before_ms"] and fix["room"]["ping_after_ms"] and "(model estimate)" in fix["line"]
     assert fix["floor"]["coverage_after_pct"] >= fix["floor"]["coverage_before_pct"]
@@ -167,6 +167,8 @@ def test_placement_report_searches_the_lattice_and_reports_measured_differences(
     assert rep["positions_evaluated"] == r["lattice"] + 1 and rep["room"] == r["routerRoom"]
     assert rep["coverage_increase_pts"] == pytest.approx(rep["coverage_after_pct"] - rep["coverage_before_pct"], abs=0.11)
     assert rep["coverage_increase_pts"] >= 0 and rep["dead_zones_removed"] == rep["dead_zones_before"] - rep["dead_zones_after"]
+    assert rep["best_mean_rssi_dbm"] >= rep["current_mean_rssi_dbm"]
+    assert rep["mean_rssi_delta_db"] == pytest.approx(rep["best_mean_rssi_dbm"] - rep["current_mean_rssi_dbm"], abs=0.11)
     assert f"{rep['positions_evaluated']} positions evaluated" in rep["text"] and "percentage points" in rep["text"]
     assert r["none"]["positions_evaluated"] >= 1
 
@@ -269,12 +271,31 @@ def test_assistant_never_recommends_a_fix_that_lowers_whole_floor_coverage():
 def test_condo_bedroom_interference_gets_a_change_channel_fix_in_plain_language():
     d = run_js("out(I.diagnose(scenario('two_bedroom_condo'), 'condo', 'Why is my Bedroom 2 WiFi slow?', opts))")
     assert d["primary"]["kind"] == "interference" and d["primary"]["sources"] == ["unit-4b"]
-    assert "separate from wall loss" in d["primary"]["text"] and not d["primary"]["text"].startswith("Interference (")
+    assert d["primary"]["text"].startswith("Neighbouring WiFi or radio source unit-4b is costing about ")
+    assert "dB of usable signal quality; separate from wall loss" in d["primary"]["text"]
     fix = next(f for f in d["fixes"] if f["kind"] == "set_channels")
     assert fix["change"]["assignments"] == [{"ap_id": "router", "channel": 1}]
     assert fix["text"].startswith("Change WiFi channel: router from channel 6 to channel 1")
     assert fix["room"]["ping_after_ms"][1] < fix["room"]["ping_before_ms"][0] and fix["floor"]["coverage_delta_pts"] >= 0
     assert any(line.startswith("Fix") and "Change WiFi channel" in line and "(model estimate)" in line for line in d["text"])
+
+
+def test_condo_channel_fix_leaves_less_but_still_valid_bathroom_interference():
+    r = run_js("""
+      const p = scenario('two_bedroom_condo');
+      const before = I.diagnose(p, 'condo', 'Why is my Bathroom WiFi slow?', opts);
+      const changed = O.applyChange(p, {kind: 'set_channels', assignments: [{ap_id: 'router', channel: 1}]}, config);
+      const after = I.diagnose(changed, 'condo', 'Why is my Bathroom WiFi slow?', opts);
+      out({before, after, channel: changed.floors[0].aps.find(a => a.id === 'router').channel});
+    """)
+    before, after = r["before"], r["after"]
+    assert r["channel"] == 1
+    assert before["primary"]["kind"] == after["primary"]["kind"] == "interference"
+    assert before["primary"]["sources"] == after["primary"]["sources"] == ["unit-4b"]
+    assert after["primary"]["db"] < before["primary"]["db"]
+    assert after["primary"]["db"] == pytest.approx(38.9, abs=0.06)
+    assert after["gaming"]["grade"] == "F"
+    assert after["primary"] == after["causes"][0]
 
 
 def test_no_channel_fix_when_interference_is_not_the_cause():

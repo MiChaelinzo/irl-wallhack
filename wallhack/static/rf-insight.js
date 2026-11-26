@@ -261,7 +261,7 @@
                streaming: r.streaming.word, video: r.video.word };
     });
     card.text = "Grade " + card.grade + " (" + card.score + " out of 100): coverage " + card.coverage_pct + "%, " + card.dead_zones + " dead zone" + (card.dead_zones === 1 ? "" : "s") +
-      ". Gaming " + card.ratings.gaming.word + ", streaming " + card.ratings.streaming.word + ", video calls " + card.ratings.video.word + ". Model estimate.";
+      ". Gaming grade " + card.ratings.gaming.grade + ", streaming " + card.ratings.streaming.word + ", video calls " + card.ratings.video.word + ". Model estimate.";
     return card;
   }
 
@@ -363,7 +363,10 @@
     if (c.kind === "wall") { return c.material_label + (c.through === "wall" ? " wall" : " (" + c.through + ")") + ": " + num(c.db) + " dB"; }
     if (c.kind === "floor") { return "Floor or ceiling (" + c.floors + " crossed): " + num(c.db) + " dB"; }
     if (c.kind === "distance") { return "Distance (" + num(c.distance_m) + " m): " + num(c.db) + " dB"; }
-    if (c.kind === "interference") { return "Neighbouring WiFi or radio noise from " + c.sources.join(", ") + " (signal quality lost, separate from wall loss): " + num(c.db) + " dB"; }
+    if (c.kind === "interference") {
+      var source = c.sources.length === 1 ? "Neighbouring WiFi or radio source " : "Neighbouring WiFi or radio sources ";
+      return source + c.sources.join(", ") + (c.sources.length === 1 ? " is" : " are") + " costing about " + num(c.db) + " dB of usable signal quality; separate from wall loss";
+    }
     return "Busy channel: " + num(c.pct) + "% of the time";
   }
 
@@ -580,7 +583,10 @@
     var chosen = beats && top ? { x: round(top.p.x, 2), y: round(top.p.y, 2) } : { x: router.x, y: router.y };
     var out = { label: cfg.insight.label, floor: floorId, ap_id: template.id, had_router: !!router, positions_evaluated: lattice.length + (router ? 1 : 0),
                 lattice_positions: lattice.length, moved: !!(beats && top && router), position: chosen, room: placeName(floor, chosen.x, chosen.y),
-                current_position: router ? { x: router.x, y: router.y, room: placeName(floor, router.x, router.y) } : null };
+                current_position: router ? { x: router.x, y: router.y, room: placeName(floor, router.x, router.y) } : null,
+                current_mean_rssi_dbm: current ? round(current.mean, 3) : null,
+                best_mean_rssi_dbm: round((beats && top ? top.t : current).mean, 3) };
+    out.mean_rssi_delta_db = out.current_mean_rssi_dbm === null ? null : round(out.best_mean_rssi_dbm - out.current_mean_rssi_dbm, 3);
     var changed = cloneProject(res.project), target = E.findFloor(changed, floorId);
     if (router) { target.aps.filter(function (a) { return a.id === router.id; }).forEach(function (a) { a.x = chosen.x; a.y = chosen.y; }); }
     else { target.aps.push(Object.assign({}, template, { x: chosen.x, y: chosen.y })); }

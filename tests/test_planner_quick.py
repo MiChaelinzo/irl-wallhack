@@ -38,7 +38,9 @@ def test_result_room_and_question_text_come_from_the_computed_numbers():
     """)
     assert r["m"]["grade"] == r["card"]["grade"] and str(r["card"]["score"]) in r["m"]["gradeLabel"]
     assert r["m"]["gradeClass"] == "grade-" + r["card"]["grade"][0].lower()
-    assert [c["key"] for c in r["m"]["chips"]] == ["gaming", "streaming", "video"] and "Gaming:" in r["m"]["chips"][0]["text"]
+    assert [c["key"] for c in r["m"]["chips"]] == ["gaming", "streaming", "video"]
+    assert r["m"]["chips"][0]["text"].startswith("Gaming grade ")
+    assert "Gaming grade " in r["m"]["headline"] and "Gaming: Excellent" not in r["m"]["chips"][0]["text"]
     assert {x["name"] for x in r["rows"]} == {"Living room", "Kitchen", "Bedroom"}
     assert all("packet loss risk" in x["text"] and x["ping"] for x in r["rows"])
     assert "Why is my bedroom WiFi slow?" in [c["text"] for c in r["chips"]]
@@ -49,7 +51,10 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
     r = run_js("""
       const p = scenario('small_apartment'), rep = I.placementReport(p, 'main', opts), m = Q.bestSpotModel(rep);
       const none = Q.bestSpotModel(Object.assign({}, rep, {moved: false, had_router: true}));
+      const stronger = Q.bestSpotModel(Object.assign({}, rep, {moved: true, had_router: true, coverage_increase_pts: 0, dead_zones_removed: 0, mean_rssi_delta_db: 2.4}));
+      const unavailable = Q.bestSpotModel({position: null, text: 'No position found'});
       const add = Q.bestSpotModel(Object.assign({}, rep, {had_router: false}));
+      const schoolRep = I.placementReport(scenario('school_building'), 'school', opts), school = Q.bestSpotModel(schoolRep);
       const ops = Q.changeOps(S, p, 'main', m.change, config);
       const store = S.createStore(JSON.parse(JSON.stringify(p)));
       const before = JSON.stringify(store.project.floors[0].aps);
@@ -60,13 +65,19 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
       const ch = Q.changeOps(S, p, 'main', {kind: 'set_channels', assignments: [{ap_id: 'router', channel: 1}]}, config);
       let badCh = null; try { Q.changeOps(S, p, 'main', {kind: 'set_channels', assignments: [{ap_id: 'gone', channel: 1}]}, config); } catch (e) { badCh = e.message; }
       let bad = null; try { Q.changeOps(S, p, 'main', {kind: 'move_ap', ap_id: 'gone', x: 1, y: 1}, config); } catch (e) { bad = e.message; }
-      out({m, rep: {room: rep.room, pts: rep.coverage_increase_pts, dz: rep.dead_zones_removed}, none: none.line, noneApply: none.canApply, add: add.line,
+      out({m, rep: {room: rep.room, pts: rep.coverage_increase_pts, dz: rep.dead_zones_removed}, none: none.line, noneApply: none.canApply, stronger: stronger.line,
+           unavailable: {line: unavailable.line, canApply: unavailable.canApply}, school: {line: school.line, canApply: school.canApply, report: schoolRep}, add: add.line,
            addKind: add.change.kind, changed: before !== moved, restored: before === JSON.stringify(store.project.floors[0].aps), mesh: mesh.item, bad, chOps: ch.length, badCh, chStore: (() => { const st = S.createStore(JSON.parse(JSON.stringify(p))); st.exec({label: 'ch', ops: ch}); return st.project.floors[0].aps[0].channel; })()});
     """)
     assert r["m"]["line"].startswith(r["rep"]["room"]) and "points coverage" in r["m"]["line"] and "dead zone" in r["m"]["line"]
     assert ("+" + str(r["rep"]["pts"]) in r["m"]["line"]) or r["rep"]["pts"] <= 0
     assert r["m"]["canApply"] and r["m"]["change"]["kind"] == "move_ap"
     assert "already at the best spot" in r["none"] and r["noneApply"] is False
+    assert "stronger average signal (+2.4 dB)" in r["stronger"] and "coverage and dead zones unchanged" in r["stronger"]
+    assert r["unavailable"]["canApply"] is False and "No better router spot" in r["unavailable"]["line"]
+    assert r["school"]["report"]["coverage_increase_pts"] == 0 and r["school"]["report"]["dead_zones_removed"] == 0
+    assert r["school"]["report"]["mean_rssi_delta_db"] > 0 and r["school"]["canApply"] is True
+    assert "stronger average signal" in r["school"]["line"] and "0 points coverage" not in r["school"]["line"]
     assert r["add"].startswith("Add a router") and r["addKind"] == "add_ap"
     assert r["changed"] and r["restored"]
     assert r["mesh"]["id"] == "mesh1" and r["mesh"]["mesh_parent"] == "router" and r["mesh"]["tx_dbm"] == rfmodel.CONFIG["planner"]["default_tx_dbm"]
@@ -94,6 +105,41 @@ def test_answer_mesh_time_machine_and_smart_home_models():
     assert all(set(x) >= {"coverage", "bandwidth", "reliability"} for x in r["sh"])
     if r["clients"]:
         assert any("device" in x["bandwidth"] for x in r["sh"])
+
+
+def test_next_action_model_uses_the_measured_fix_and_reports_residual_cause():
+    r = run_js("""
+      const O = require(process.argv[1] + '/rf-optimizer.js');
+      const p = scenario('two_bedroom_condo'), fid = 'condo';
+      const gamer = I.gamerMode(p, fid, opts), weak = Q.worstRoom(gamer);
+      const diagnosis = I.diagnose(p, fid, Q.questionFor(weak.name), opts);
+      const action = Q.nextActionModel(gamer, diagnosis, score => I.gradeFor(config, 'gaming', score));
+      const changed = O.applyChange(p, action.fix.change, config);
+      const afterGamer = I.gamerMode(changed, fid, opts);
+      const afterDiagnosis = I.diagnose(changed, fid, Q.questionFor(action.room.name), opts);
+      const outcome = Q.nextActionModel(afterGamer, afterDiagnosis, score => I.gradeFor(config, 'gaming', score), action.context);
+      const noAp = JSON.parse(JSON.stringify(p)); noAp.floors[0].aps = [];
+      const noApGamer = I.gamerMode(noAp, fid, opts), noApWeak = Q.worstRoom(noApGamer);
+      const noApDiagnosis = I.diagnose(noAp, fid, Q.questionFor(noApWeak.name), opts);
+      const noFix = Q.nextActionModel(noApGamer, noApDiagnosis, score => I.gradeFor(config, 'gaming', score));
+      const fakeGamer = {rooms: [{id: 'r', name: 'Room', grade: 'B', stability_score: 82}]};
+      const wallOutcome = Q.nextActionModel(fakeGamer, {status: 'diagnosed', causes: [{kind: 'wall', id: 'w2'}], other_causes: [], primary: {kind: 'wall', id: 'w2'}},
+        score => 'B', {room: {id: 'r', name: 'Room', grade: 'B', score: 82}, cause: {kind: 'wall', id: 'w1'}});
+      const mixedInterference = Q.nextActionModel(fakeGamer, {status: 'diagnosed', causes: [{kind: 'interference', sources: ['A', 'C'], db: 10}], other_causes: [], primary: {kind: 'interference', sources: ['A', 'C'], db: 10}},
+        score => 'B', {room: {id: 'r', name: 'Room', grade: 'B', score: 82}, cause: {kind: 'interference', sources: ['A', 'B'], db: 20}});
+      out({action, outcome, noFix, wallOutcome, mixedInterference});
+    """)
+    action, outcome = r["action"], r["outcome"]
+    assert action["status"] == "ready" and action["room"]["name"] == "Bedroom 2"
+    assert action["fix"]["rank"] == 1 and action["fix"]["change"] == {"kind": "set_channels", "assignments": [{"ap_id": "router", "channel": 1}]}
+    assert "Expected: gaming grade" in action["effect"] and "whole-floor coverage" in action["effect"]
+    assert outcome["status"] == "outcome" and outcome["causeRemains"] is True
+    assert "was reduced from about" in outcome["causeLine"] and "but it was not eliminated" in outcome["causeLine"]
+    assert "gaming grade" in outcome["line"]
+    assert r["noFix"]["status"] == "no_fix" and "no access point reaches" in r["noFix"]["recommendation"]
+    assert r["wallOutcome"]["causeRemains"] is False and "no longer listed" in r["wallOutcome"]["causeLine"]
+    assert r["mixedInterference"]["causeRemains"] is True
+    assert "source list changed" in r["mixedInterference"]["causeLine"] and "not directly comparable" in r["mixedInterference"]["causeLine"]
 
 
 def test_wave_rings_fade_across_walls_and_are_deterministic():
@@ -154,6 +200,7 @@ def test_wifi_assessment_pdf_pages_footer_and_determinism():
     assert data.count(b"MODEL ESTIMATE, not a measurement. Values come from a propagation model") == pages
     assert bare.count(b"MODEL ESTIMATE, not a measurement. Values come from a propagation model") == 3
     assert ("Grade %s" % r["grade"]).encode() in data and b"/Filter /DCTDecode" in data and b"Mesh topologies" in data
+    assert b"Gaming grade" in data and b"Excellent (grade" not in data
     assert all(name.encode() in data for name in r["rooms"])
     assert r["csv"].startswith("Wallhack Wi-Fi assessment,")
     assert "Room,Coverage,Ping range,Jitter,Loss risk,Stability,Gaming grade" in r["csv"]
@@ -162,13 +209,15 @@ def test_wifi_assessment_pdf_pages_footer_and_determinism():
 def test_before_after_model_reports_grade_and_score_change():
     r = run_js("""
       const p = scenario('small_apartment'), before = I.scoreCard(p, 'main', opts);
-      const up = JSON.parse(JSON.stringify(before)); up.score = before.score + 7; up.grade = 'A';
+      before.ratings.gaming.word = 'Excellent'; before.ratings.gaming.grade = 'B';
+      const up = JSON.parse(JSON.stringify(before)); up.score = before.score + 7; up.grade = 'A'; up.ratings.gaming.grade = 'A';
       const down = JSON.parse(JSON.stringify(before)); down.score = before.score - 3;
       const same = Q.beforeAfterModel(before, before, 'x');
       out({up: Q.beforeAfterModel(before, up, 'Move router'), down: Q.beforeAfterModel(before, down, 'y'), same, g: before.grade});
     """)
     assert r["up"]["direction"] == "up" and "went up 7 points" in r["up"]["verdict"] and r["up"]["after"]["gradeClass"] == "grade-a"
-    assert r["up"]["gradeText"].endswith("grade A (%d)" % round(r["up"]["after"]["score"])) and [x["name"] for x in r["up"]["rows"]] == ["Gaming", "Streaming", "Video calls"]
+    assert r["up"]["gradeText"].endswith("grade A (%d)" % round(r["up"]["after"]["score"])) and [x["name"] for x in r["up"]["rows"]] == ["Gaming grade", "Streaming", "Video calls"]
+    assert r["up"]["rows"][0] == {"name": "Gaming grade", "before": "B", "after": "A", "changed": True}
     assert r["down"]["direction"] == "down" and "went down 3 points" in r["down"]["verdict"] and "Undo" in r["down"]["verdict"]
     assert r["same"]["direction"] == "same" and not any(x["changed"] for x in r["same"]["rows"])
 

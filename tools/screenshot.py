@@ -200,14 +200,14 @@ def capture_architect(browser, base, errors, problems, docs, demo=False):
     page.evaluate("() => window.scrollTo(0, 0)")
     page.wait_for_timeout(300)
     page.screenshot(path=str(docs / ("screenshot-planner-quick%s.png" % suffix)))
-    # apply the best router spot, capture the before/after grade card, then undo so the later views use the original plan
-    fix = page.locator("#quickResult button[aria-label^='Apply fix 1']")
+    # apply the weakest-room recommendation, capture the actual checked-again result, then undo so later views use the original plan
+    fix = page.locator("#quickFixWeakest:not([disabled])")
     if fix.count() or page.locator("#quickApply:not([disabled])").count():
         (fix if fix.count() else page.locator("#quickApply")).first.click()
         page.wait_for_selector("#quickCompare", timeout=30000)
         page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
         page.locator("#quickCompare").scroll_into_view_if_needed()
-        page.locator("#quickResult").screenshot(path=str(docs / ("screenshot-planner-quick-fix%s.png" % suffix)))
+        page.screenshot(path=str(docs / ("screenshot-planner-quick-fix%s.png" % suffix)))
         page.evaluate("() => window.PlannerApp.store.undo()")
         page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
         page.evaluate(PLANNER_IDLE_JS)
