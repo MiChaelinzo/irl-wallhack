@@ -10,6 +10,7 @@
   var QUALITIES = ["low", "medium", "high"];
 
   // ================================================================== pure view-model builders
+  var APPLICABLE = ["move_ap", "set_channels", "add_ap", "add_mesh_node"];
   function plural(n, one, many) { return n + " " + (n === 1 ? one : (many || one + "s")); }
   function signed(v) { return (v > 0 ? "+" : "") + v; }
   function gradeClass(grade) { return "grade-" + String(grade).charAt(0).toLowerCase(); }
@@ -30,6 +31,20 @@
               { key: "streaming", label: "Streaming", word: r.streaming.word, grade: null, text: "Streaming: " + r.streaming.word },
               { key: "video", label: "Video calls", word: r.video.word, grade: null, text: "Video calls: " + r.video.word }]
     };
+  }
+
+  /** Before and after of an applied fix from two scoreCard() results: grade, score, activity words and a plain sentence. */
+  function beforeAfterModel(before, after, label) {
+    var b = before.ratings, a = after.ratings, delta = Math.round(after.score) - Math.round(before.score);
+    var verdict = delta > 0 ? "Better: your score went up " + delta + " point" + (delta === 1 ? "" : "s") + "."
+      : delta < 0 ? "Worse: your score went down " + (-delta) + " point" + (delta === -1 ? "" : "s") + ". Undo with Ctrl+Z."
+      : "No change in the score. The fix may help in ways the score does not show, or undo with Ctrl+Z.";
+    function row(key, name) { return { name: name, before: b[key].word, after: a[key].word, changed: b[key].word !== a[key].word }; }
+    return { label: label, delta: delta, verdict: verdict, direction: delta > 0 ? "up" : delta < 0 ? "down" : "same",
+             before: { grade: before.grade, gradeClass: gradeClass(before.grade), score: before.score }, after: { grade: after.grade, gradeClass: gradeClass(after.grade), score: after.score },
+             gradeText: "Grade " + before.grade + " (" + Math.round(before.score) + ") to grade " + after.grade + " (" + Math.round(after.score) + ")",
+             rows: [row("gaming", "Gaming"), row("streaming", "Streaming"), row("video", "Video calls")],
+             coverage: { before: before.coverage_pct, after: after.coverage_pct }, dead: { before: before.dead_zones, after: after.dead_zones } };
   }
 
   /** One row per room from a gamerMode() result, with a text equivalent for screen readers. */
@@ -226,6 +241,8 @@
     }
     function applyChange(change, label) {
       var ops = changeOps(S, app.store.project, floorId(), change, app.config);
+      q.pending = q.card && !q.dirty ? { label: label, card: q.card } : q.pending;
+      q.compare = null;
       app.store.exec({ label: label, ops: ops });
       showGhost(null);
       app.say(label + ". Undo with Ctrl+Z.");
@@ -295,6 +312,8 @@
             var worst = worstRoom(q.gamer);
             if (worst) { ask(questionFor(worst.name), true); }
             q.ms = Math.round(now() - t0); q.ready = true; q.analysedOnce = true;
+            q.compare = q.pending && q.card ? beforeAfterModel(q.pending.card, q.card, q.pending.label) : null;
+            q.pending = null;
             result.setAttribute("data-ready", "true"); result.setAttribute("data-ms", String(q.ms));
             setStatus("Done in " + q.ms + " ms. Model estimate, not a measurement.", false);
             renderResult();
@@ -327,6 +346,7 @@
         el("div", { class: "q-head-text" }, [el("p", { class: "q-line", text: m.headline }),
           el("div", { class: "q-chips" }, m.stats.map(function (s) { return el("span", { class: "chip", text: s.label + ": " + s.value }); })
             .concat(m.chips.map(function (c) { return el("span", { class: "chip", text: c.text }); })))])]);
+      if (q.compare) { box.appendChild(compareBlock(q.compare)); }
       box.appendChild(head);
       if (q.dirty) { box.appendChild(el("p", { class: "banner note", role: "note", text: "The plan changed after this result. It refreshes in a moment." })); }
       // rooms
@@ -347,6 +367,20 @@
       box.appendChild(exportButtons());
       box.appendChild(el("p", { class: "muted hint", text: q.card.label }));
       result.appendChild(box);
+    }
+
+    function compareBlock(c) {
+      var wrap = el("section", { class: "q-compare q-compare-" + c.direction, id: "quickCompare", "aria-label": "Before and after the fix" });
+      wrap.appendChild(el("h3", { text: "Before and after your fix" }));
+      wrap.appendChild(el("p", { class: "muted", text: c.label }));
+      function side(name, g) { return el("span", { class: "q-side", "aria-hidden": "true" }, [el("span", { class: "q-grade q-grade-sm " + g.gradeClass, text: g.grade }), el("span", { class: "muted", text: name + ": " + Math.round(g.score) + " of 100" })]); }
+      wrap.appendChild(el("div", { class: "q-compare-grades", role: "img", "aria-label": c.gradeText }, [side("Before", c.before), el("span", { class: "q-arrow", "aria-hidden": "true", text: "\u2192" }), side("After", c.after)]));
+      wrap.appendChild(el("p", { class: "q-line", id: "quickCompareLine", text: c.verdict }));
+      wrap.appendChild(el("ul", { class: "q-lines" }, c.rows.map(function (r) {
+        return el("li", { text: r.name + ": " + (r.changed ? r.before + " to " + r.after : r.after + " (same)") });
+      }).concat([el("li", { text: "Coverage: " + pct(c.coverage.before) + " to " + pct(c.coverage.after) + ". Dead zones: " + c.dead.before + " to " + c.dead.after })])));
+      wrap.appendChild(el("p", { class: "muted hint", text: ESTIMATE + ". Undo with Ctrl+Z to compare again." }));
+      return wrap;
     }
 
     function roomTable(gamer, caption) {
@@ -382,9 +416,9 @@
       }
       a.fixes.forEach(function (f) {
         var row = el("div", { class: "tool-row" });
-        if (f.point) {
-          row.appendChild(button("Show fix " + f.rank, function () { showGhost(f.point, "fix " + f.rank); }, { "aria-label": "Show fix " + f.rank + " on the plan" }));
-          row.appendChild(button("Apply fix " + f.rank, function () { try { applyChange(f.change, "Apply fix " + f.rank); } catch (e) { app.say("Cannot apply: " + e.message); } }, { "aria-label": "Apply fix " + f.rank + ". You can undo it." }));
+        if (f.point) { row.appendChild(button("Show fix " + f.rank, function () { showGhost(f.point, "fix " + f.rank); }, { "aria-label": "Show fix " + f.rank + " on the plan" })); }
+        if (f.point || APPLICABLE.indexOf(f.change.kind) >= 0) {
+          row.appendChild(button("Apply fix " + f.rank, function () { try { applyChange(f.change, "Fix " + f.rank + ": " + f.line); } catch (e) { app.say("Cannot apply: " + e.message); } }, { "aria-label": "Apply fix " + f.rank + ". You can undo it." }));
         }
         host.appendChild(row);
       });
@@ -646,7 +680,7 @@
       if (ev.source === "select" || ev.source === "meta") { return; }
       waves.cache = null;
       if (ev.source === "floor") { refreshChips(); renderTabs(); return; }
-      if (ev.source === "load") { q.token++; q.card = q.gamer = q.res = q.placement = q.answer = null; q.ready = false; q.dirty = false; q.analysedOnce = false; mesh.result = null; tm.result = null; result.textContent = ""; setStatus("", false); refreshChips(); renderTabs(); return; }
+      if (ev.source === "load") { q.token++; q.card = q.gamer = q.res = q.placement = q.answer = null; q.ready = false; q.dirty = false; q.analysedOnce = false; q.pending = null; q.compare = null; mesh.result = null; tm.result = null; result.textContent = ""; setStatus("", false); refreshChips(); renderTabs(); return; }
       if (!q.analysedOnce) { refreshChips(); return; }
       q.dirty = true; q.ready = false; result.removeAttribute("data-ready"); renderResult();
       root.clearTimeout(q.timer); q.timer = root.setTimeout(function () { runAnalysis(); }, 700);
@@ -744,7 +778,7 @@
     app.quick.analyse = function () { analyseClicked(); };
   }
 
-  var api = { mount: mount, resultModel: resultModel, roomRows: roomRows, worstRoom: worstRoom, questionFor: questionFor, questionChips: questionChips, bestSpotModel: bestSpotModel,
+  var api = { mount: mount, resultModel: resultModel, roomRows: roomRows, worstRoom: worstRoom, questionFor: questionFor, questionChips: questionChips, bestSpotModel: bestSpotModel, beforeAfterModel: beforeAfterModel,
               answerModel: answerModel, topologyColumns: topologyColumns, meshRows: meshRows, timeMachineRows: timeMachineRows, smartHomeRows: smartHomeRows,
               changeOps: changeOps, waveRays: waveRays, rayLosses: rayLosses, ringAlpha: ringAlpha, ringRadii: ringRadii, gradeClass: gradeClass };
   if (isNode) { module.exports = api; }

@@ -789,6 +789,12 @@ def run_quick_features(page, problems, args):
         after = page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))")
         if before == after:
             problems.append("Apply did not move the router")
+        try:
+            page.wait_for_selector("#quickCompare #quickCompareLine", timeout=20000)
+            if "Grade" not in (page.get_attribute("#quickCompare .q-compare-grades", "aria-label") or ""):
+                problems.append("before/after card has no grade text")
+        except Exception:
+            problems.append("applying the best spot showed no before/after grade")
         page.evaluate("() => window.PlannerApp.store.undo()")
         if page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps.map(a => [a.id, a.x, a.y]))") != before:
             problems.append("undo did not restore the router")

@@ -157,3 +157,17 @@ def test_wifi_assessment_pdf_pages_footer_and_determinism():
     assert all(name.encode() in data for name in r["rooms"])
     assert r["csv"].startswith("Wallhack Wi-Fi assessment,")
     assert "Room,Coverage,Ping range,Jitter,Loss risk,Stability,Gaming grade" in r["csv"]
+
+
+def test_before_after_model_reports_grade_and_score_change():
+    r = run_js("""
+      const p = scenario('small_apartment'), before = I.scoreCard(p, 'main', opts);
+      const up = JSON.parse(JSON.stringify(before)); up.score = before.score + 7; up.grade = 'A';
+      const down = JSON.parse(JSON.stringify(before)); down.score = before.score - 3;
+      const same = Q.beforeAfterModel(before, before, 'x');
+      out({up: Q.beforeAfterModel(before, up, 'Move router'), down: Q.beforeAfterModel(before, down, 'y'), same, g: before.grade});
+    """)
+    assert r["up"]["direction"] == "up" and "went up 7 points" in r["up"]["verdict"] and r["up"]["after"]["gradeClass"] == "grade-a"
+    assert r["up"]["gradeText"].endswith("grade A (%d)" % round(r["up"]["after"]["score"])) and [x["name"] for x in r["up"]["rows"]] == ["Gaming", "Streaming", "Video calls"]
+    assert r["down"]["direction"] == "down" and "went down 3 points" in r["down"]["verdict"] and "Undo" in r["down"]["verdict"]
+    assert r["same"]["direction"] == "same" and not any(x["changed"] for x in r["same"]["rows"])

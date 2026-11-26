@@ -5,6 +5,7 @@
 - **Sensing dashboard** (`/`): watches how your WiFi signal changes and estimates **presence, motion, activity, breathing rate, an experimental heart rate and a coarse zone**, with optional air-quality sensors. Without WiFi hardware it runs a clearly labelled simulator.
 - **RF planner and WiFi architect** (`/planner`): draw a floor plan with wall materials and thicknesses, drop access points and get a **model-based signal heat map** (a MODEL ESTIMATE, not a measurement), a letter grade, per-room gaming ratings, the best router spot, mesh and before/after comparisons, and PDF, PNG, CSV and JSON reports. Everything stays in your browser.
 
+![After applying Fix 1 (change the WiFi channel) the grade card shows grade C (76) to grade A (92), model estimate](docs/screenshot-planner-quick-fix.png)
 ![WiFi architect Quick start: pick a plan, press Analyse my WiFi, get a grade, per-room gaming ratings and the main cause (model estimate)](docs/screenshot-planner-quick.png)
 
 ## Try it in a minute
@@ -37,7 +38,7 @@ It does not make images and cannot literally see through walls. Bodies disturb r
 - **Simulator**: every simulated value (vitals and environment) is marked SIMULATED. The simulated heartbeat is exaggerated so the demo shows it. With a real source and no sensors configured, environment tiles show "no sensor" and nothing is invented.
 - **Mobile companion and judge mode**: `/mobile` (occupancy, vitals, sensors, alerts; pair a phone by scanning the QR on the dashboard after starting with `--lan`) and `/judge` (every capability with its Built / Experimental / Future / Unsupported status). Glass UI and particle effects follow the quality selector and reduced-motion setting.
 - **RF planner**: `/planner` is a floor-plan editor with a model-based signal heat map (MODEL ESTIMATE, not a measurement): draw walls, place access points, import a floor-plan image and calibrate its scale, undo/redo, contours, dead zones, quality bands and hover readouts, plus an analytics dashboard, scenario comparison, a smart planner (AP placement, power and channel advice with confidence), PNG, CSV, JSON and PDF export, and mesh, capacity, IoT and enterprise planning modes. Details in `docs/rf-planner.md`, measured speed in `docs/perf-rf.md`.
-- **Wi-Fi architect Quick start**: on `/planner` pick a template, press Analyse my WiFi and get a grade, per-room gaming ratings, the main cause and the best router spot (Show or Apply, undoable), plus an Ask box, Mesh and Time Machine tabs and optional Signal waves. All model estimates.
+- **Wi-Fi architect Quick start**: on `/planner` pick a template, press Analyse my WiFi and get a grade, per-room gaming ratings, the main cause and the best router spot (Show or Apply, undoable). Applying any fix, including a channel change, shows a before and after grade card (letter grade, score, gaming, streaming, video calls), plus an Ask box, Mesh and Time Machine tabs and optional Signal waves. All model estimates.
 - **Comfort settings**: light and dark themes, a high-contrast mode (planner Contrast button or the system `prefers-contrast` setting), reduced motion and Low/Medium/High quality for slow devices.
 
 | | |
