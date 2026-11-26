@@ -560,9 +560,9 @@
       f.aps.forEach(function (a) { if (a !== router && !(router && a.id === router.id)) { others.push(apGridOf(res, floor, a, Math.abs(f.level - floor.level), f)); } });
     });
     var total = res.cols * res.rows, fixed = new Float64Array(total).fill(cfg.engine.no_signal_dbm);
-    others.forEach(function (g) { var flat = [].concat.apply([], g); for (var i = 0; i < total; i++) { if (flat[i] > fixed[i]) { fixed[i] = flat[i]; } } });
+    others.forEach(function (flat) { for (var i = 0; i < total; i++) { if (flat[i] > fixed[i]) { fixed[i] = flat[i]; } } });
     function tallyAt(x, y) {
-      var moved = Object.assign({}, template, { x: x, y: y }), flat = [].concat.apply([], apGridOf(res, floor, moved, 0, floor)), best = new Float64Array(total);
+      var moved = Object.assign({}, template, { x: x, y: y }), flat = apGridOf(res, floor, moved, 0, floor), best = new Float64Array(total);
       for (var i = 0; i < total; i++) { best[i] = Math.max(fixed[i], flat[i]); }
       return tally(res, best);
     }
