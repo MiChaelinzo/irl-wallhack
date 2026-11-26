@@ -97,7 +97,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 79 | Keyboard shortcuts and help dialog | 3 | 2 | 2 | 3 | 4 | 1 | 60.0 | Done | `wallhack/static/planner.html`, `wallhack/static/planner-editor.js` |
 | 80 | Raspberry Pi setup script | 3 | 3 | 3 | 3 | 4 | 1 | 60.0 | Done | `scripts/pi_setup.sh`, `tests/test_pi_setup.py` |
 | 81 | Nexmon CSI parsing | 3 | 4 | 4 | 4 | 2 | 3 | 60.0 | Done | `wallhack/nexmon.py`, `tests/test_nexmon.py` |
-| 82 | Automated axe or Lighthouse accessibility run in CI | 3 | 3 | 3 | 3 | 4 | 1 | 60.0 | Partial | `tools/a11y_check.py` (works, run by hand; not in `.github/workflows/ci.yml`) |
+| 82 | Automated axe or Lighthouse accessibility run in CI | 3 | 3 | 3 | 3 | 4 | 1 | 60.0 | Partial | `tools/a11y_check.py` (runs in the `browser` job of `.github/workflows/ci.yml`; the job is UNVERIFIED on GitHub, the script passed locally) |
 | 83 | Cost estimator beyond bill of quantities | 3 | 2 | 2 | 3 | 4 | 1 | 60.0 | Not started | none |
 | 84 | Campus-scale planning (many buildings) | 3 | 5 | 4 | 4 | 3 | 3 | 60.0 | Not started | none |
 | 85 | GPU compute path (WebGPU) for coverage | 3 | 5 | 4 | 4 | 2 | 4 | 58.3 | Not started | none |
@@ -109,7 +109,7 @@ Reading the list: Done rows with high composite are the strengths to demo. Not s
 | 91 | Vendor AP catalogue with real specs | 3 | 3 | 2 | 3 | 4 | 1 | 56.7 | Not started | none |
 | 92 | Offline PWA install | 3 | 3 | 2 | 3 | 4 | 1 | 56.7 | Not started | none |
 | 93 | Plan annotations (text, pin, arrow) | 2 | 2 | 2 | 3 | 4 | 1 | 55.0 | Done | `wallhack/static/planner-export.js` |
-| 94 | Unit-level tests for planner-editor.js interactions (headless browser in CI) | 4 | 4 | 4 | 2 | 2 | 1 | 55.0 | Partial | `tools/planner_smoke.py` (scripted, not run in CI) |
+| 94 | Unit-level tests for planner-editor.js interactions (headless browser in CI) | 4 | 4 | 4 | 2 | 2 | 1 | 55.0 | Partial | `tools/planner_smoke.py` (scripted; in the `browser` job of `.github/workflows/ci.yml`, UNVERIFIED on GitHub) |
 | 95 | QR calibration of scale (reusing qr.py) | 2 | 3 | 3 | 3 | 3 | 3 | 55.0 | Not started | none |
 | 96 | Authentication and users for shared deployments | 4 | 5 | 4 | 2 | 3 | 1 | 55.0 | Not started | none |
 | 97 | JSDoc type check config for engine, optimizer and state | 3 | 2 | 4 | 2 | 1 | 1 | 53.3 | Done | `tsconfig.json`, `Makefile` |

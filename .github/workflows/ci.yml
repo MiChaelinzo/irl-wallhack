@@ -28,3 +28,26 @@ jobs:
           python tools/build_demo.py
           test -s dist/index.html
           test -s dist/recording.json
+
+  browser:
+    # Drives the planner in headless Chromium. Needs the optional playwright package, which is not in requirements-dev.txt.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -r requirements.txt playwright==1.65.2
+      - run: python -m playwright install --with-deps chromium
+      - name: Build static demo (the accessibility check also scans dist/)
+        run: python tools/build_demo.py
+      - name: Planner smoke test (live page)
+        run: python tools/planner_smoke.py
+      - name: Accessibility check (axe-core, fails on serious or critical)
+        run: python tools/a11y_check.py

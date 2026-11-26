@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Performance, CI and PDF check
+- perf: the optimizer keeps a grid cache per planner context, builds the wall-perturbed environments once, and shares candidate AP grids between calls on an unchanged floor (`rf-optimizer.js`); `placementReport` no longer spreads typed arrays (`rf-insight.js`). Outputs are identical (parity, golden fixture and full suite pass; `tests/test_planner_quick.py` covers cache identity and invalidation by walls, materials, cell size and mode; timings are for one floor). Hotel floor, repeated call: `diagnose` 202 to 44 ms, `meshTopologies` 374 to 64 ms, `timeMachine` 200 to 40 ms, `placementReport` 349 to 184 ms. First call after a geometry change is barely faster (mesh 374 to 200 ms, others about the same). MISSED against 100 ms: stress floor `analyze` 512 ms and `whatIf` 1.3 s, hotel `placementReport`, all first calls. Details and profile in `docs/perf-rf.md`.
+- ci: a `browser` job installs Playwright (pinned to 1.65.2) Chromium and runs `tools/planner_smoke.py` and `tools/a11y_check.py` with read-only permissions. UNVERIFIED on GitHub; both tools passed locally.
+- fix: in `wifi_assessment.pdf` the footer wrapped off the page edge and the mesh table cut "Whole-home mesh (up to 2 nodes)"; the footer now wraps and the column is wider. Rendered with PyMuPDF and viewed; other viewers UNVERIFIED.
+
+### Quick start: before and after
+- feat: applying a fix (move router, add router or mesh node, change channel) on Quick start re-analyses the plan and shows a Before and after card: both letter grades with scores, the point change in plain words, gaming, streaming and video call ratings, coverage and dead zones. Channel change fixes now have an Apply button. `beforeAfterModel` in `planner-quick.js` is tested in `tests/test_planner_quick.py`; `tools/planner_smoke.py` checks the card after Apply and `tools/screenshot.py` writes `docs/screenshot-planner-quick-fix.png`. Model estimate. PARTIALLY VERIFIED (scripted headless run, screenshot viewed, a11y 0 serious or critical).
+
+### WiFi architect polish
+- fix: `diagnose` now tests a "Change WiFi channel" fix (the SINR channel plan, `set_channels`) when interference is the main cause, so the two bedroom condo with `unit-4b` on channel 6 gets a measured channel change; Quick start can apply it. Interference cause text says it is signal quality lost to noise, separate from wall loss.
+- fix: when fixes help the room but lower whole-floor coverage, the result says so (`rejected_for_floor`) instead of claiming nothing helps. Tests now hit the no-position branch and the floor filter for certain (model estimate, UNVERIFIED in a browser).
+
 ### WiFi architect: review fixes
 - fix: assistant fixes that lower whole-floor coverage are no longer recommended; `placementReport` returns a "No position found" result (position null) instead of throwing when the floor has no AP and no candidate position; `thicknessFactor` (Python and JS) clamps thickness to `wall_thickness.min_cm`.
 - fix: the Gamer Mode `source` text says "served" cells like the code; the hop cap moved to `insight.mesh.max_hops`; the object `source` notes that a path starting or ending inside an object crosses one edge (loss overstated); grade chips in the room table have `role="img"` (screen reader behaviour UNVERIFIED).

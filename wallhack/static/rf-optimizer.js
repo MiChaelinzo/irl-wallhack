@@ -25,11 +25,45 @@
     });
     return { project: project, floor: floor, config: config, pc: pc, env: env, cellM: cellM, cols: ax.cols, rows: ax.rows,
              cells: ax.cols * ax.rows, mode: opts.mode || "basic", band: opts.band || null, apList: apList,
-             threshold: config.analytics.coverage_dbm };
+             threshold: config.analytics.coverage_dbm, gridCache: new WeakMap(), wallEnvList: null, geometry: null };
   }
 
+  /**
+   * Candidate-AP grids shared between contexts. A candidate grid depends only on the floor geometry, the environment, the grid
+   * and the candidate itself, not on the other access points, so repeated planner calls on the same floor (diagnose, mesh
+   * topologies, placement report) reuse them. One entry per configuration object, keyed also by the environment materials, replaced when the floor geometry changes, so
+   * it holds at most one lattice of grids.
+   * The slot is found by the identity of the configuration object, so the configuration must not be mutated in place: the key
+   * covers the floor, the materials, the cell size, the mode and the band, but not the other configuration fields the engine reads.
+   * Alternating between floors replaces the slot each time, so a session that switches floors recomputes the lattice grids.
+   */
+  var sharedCandidateGrids = new WeakMap();
+
+  function geometryKey(ctx) {
+    return JSON.stringify(ctx.floor, function (k, v) { return k === "aps" || k === "rooms" || k === "sensors" || k === "furniture" || k === "name" ? undefined : v; }) +
+      "|" + JSON.stringify(ctx.env.materials) + "|" + ctx.cellM + "|" + ctx.mode + "|" + ctx.band;
+  }
+
+  /**
+   * One AP grid. Grids are cached per context, environment object and access point settings, because a placement evaluation
+   * asks for the same existing-AP grids under the same environments again and again. Candidate grids under the context
+   * environment are also shared between contexts (see sharedCandidateGrids). Callers must not modify a returned grid.
+   */
   function gridFor(ctx, env, ap, apart, apFloor) {
-    return E.computeApGrid(ctx.floor, ap, { env: env, cellM: ctx.cellM, mode: ctx.mode, band: ctx.band, floorsApart: apart, apFloor: apFloor });
+    var perEnv = ctx.gridCache.get(env);
+    if (!perEnv) { perEnv = {}; ctx.gridCache.set(env, perEnv); }
+    var key = JSON.stringify(ap) + "|" + apart + "|" + (apFloor ? apFloor.id : "");
+    if (perEnv[key]) { return perEnv[key]; }
+    var shared = null;
+    if (ap.id === CAND_ID && apart === 0 && env === ctx.env) {
+      var slot = sharedCandidateGrids.get(env.config), geo = ctx.geometry || (ctx.geometry = geometryKey(ctx));
+      if (!slot || slot.geometry !== geo) { slot = { geometry: geo, grids: {} }; sharedCandidateGrids.set(env.config, slot); }
+      shared = slot.grids;
+      if (shared[key]) { return (perEnv[key] = shared[key]); }
+    }
+    var grid = E.computeApGrid(ctx.floor, ap, { env: env, cellM: ctx.cellM, mode: ctx.mode, band: ctx.band, floorsApart: apart, apFloor: apFloor });
+    if (shared) { shared[key] = grid; }
+    return (perEnv[key] = grid);
   }
 
   function gridsFor(ctx, env, extra) {
@@ -57,7 +91,9 @@
   // ---------------------------------------------------------------- perturbations (model sensitivity)
   /** Copies of the environment with all wall and opening attenuation changed, one per configured perturbation. */
   function wallEnvs(ctx) {
+    if (ctx.wallEnvList) { return ctx.wallEnvList; }
     var cf = ctx.pc.confidence, out = [];
+    ctx.wallEnvList = out;
     /** @type {Array<[string, (v:number)=>number]>} */
     var perturbations = [["wall_plus_db", function (v) { return v + cf.wall_delta_db; }],
      ["wall_minus_db", function (v) { return v - cf.wall_delta_db; }],

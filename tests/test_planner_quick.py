@@ -57,9 +57,11 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
       const moved = JSON.stringify(store.project.floors[0].aps);
       store.undo();
       const mesh = Q.changeOps(S, p, 'main', {kind: 'add_mesh_node', x: 3, y: 3, parent_ap_id: 'router'}, config)[0];
+      const ch = Q.changeOps(S, p, 'main', {kind: 'set_channels', assignments: [{ap_id: 'router', channel: 1}]}, config);
+      let badCh = null; try { Q.changeOps(S, p, 'main', {kind: 'set_channels', assignments: [{ap_id: 'gone', channel: 1}]}, config); } catch (e) { badCh = e.message; }
       let bad = null; try { Q.changeOps(S, p, 'main', {kind: 'move_ap', ap_id: 'gone', x: 1, y: 1}, config); } catch (e) { bad = e.message; }
       out({m, rep: {room: rep.room, pts: rep.coverage_increase_pts, dz: rep.dead_zones_removed}, none: none.line, noneApply: none.canApply, add: add.line,
-           addKind: add.change.kind, changed: before !== moved, restored: before === JSON.stringify(store.project.floors[0].aps), mesh: mesh.item, bad});
+           addKind: add.change.kind, changed: before !== moved, restored: before === JSON.stringify(store.project.floors[0].aps), mesh: mesh.item, bad, chOps: ch.length, badCh, chStore: (() => { const st = S.createStore(JSON.parse(JSON.stringify(p))); st.exec({label: 'ch', ops: ch}); return st.project.floors[0].aps[0].channel; })()});
     """)
     assert r["m"]["line"].startswith(r["rep"]["room"]) and "points coverage" in r["m"]["line"] and "dead zone" in r["m"]["line"]
     assert ("+" + str(r["rep"]["pts"]) in r["m"]["line"]) or r["rep"]["pts"] <= 0
@@ -69,6 +71,7 @@ def test_best_spot_line_is_computed_not_literal_and_apply_change_is_undoable():
     assert r["changed"] and r["restored"]
     assert r["mesh"]["id"] == "mesh1" and r["mesh"]["mesh_parent"] == "router" and r["mesh"]["tx_dbm"] == rfmodel.CONFIG["planner"]["default_tx_dbm"]
     assert "no longer exists" in r["bad"]
+    assert r["chOps"] == 1 and r["chStore"] == 1 and "gone no longer exists" in r["badCh"]
 
 
 def test_answer_mesh_time_machine_and_smart_home_models():
@@ -83,7 +86,7 @@ def test_answer_mesh_time_machine_and_smart_home_models():
       out({a, amb, rows, tm: Q.timeMachineRows(tmr), cols: mesh.topologies.length, sh, clients: (hf.clients || []).length, g: g.rooms.map(r => r.name)});
     """)
     assert r["a"]["status"] == "diagnosed" and r["a"]["title"] == "WiFi in Bedroom" and r["a"]["causes"]
-    assert all(f["change"]["kind"] in ("move_ap", "add_mesh_node") for f in r["a"]["fixes"])
+    assert all(f["change"]["kind"] in ("move_ap", "add_mesh_node", "set_channels") for f in r["a"]["fixes"])
     assert r["amb"]["status"] != "diagnosed" and r["amb"]["rooms"]
     assert len(r["rows"]) == 10 and all(len(row) == 1 + r["cols"] for row in r["rows"])
     assert r["tm"][0][6] == "baseline" and len(r["tm"]) == 3 and r["tm"][1][1].startswith("B: ")
@@ -154,3 +157,59 @@ def test_wifi_assessment_pdf_pages_footer_and_determinism():
     assert all(name.encode() in data for name in r["rooms"])
     assert r["csv"].startswith("Wallhack Wi-Fi assessment,")
     assert "Room,Coverage,Ping range,Jitter,Loss risk,Stability,Gaming grade" in r["csv"]
+
+
+def test_before_after_model_reports_grade_and_score_change():
+    r = run_js("""
+      const p = scenario('small_apartment'), before = I.scoreCard(p, 'main', opts);
+      const up = JSON.parse(JSON.stringify(before)); up.score = before.score + 7; up.grade = 'A';
+      const down = JSON.parse(JSON.stringify(before)); down.score = before.score - 3;
+      const same = Q.beforeAfterModel(before, before, 'x');
+      out({up: Q.beforeAfterModel(before, up, 'Move router'), down: Q.beforeAfterModel(before, down, 'y'), same, g: before.grade});
+    """)
+    assert r["up"]["direction"] == "up" and "went up 7 points" in r["up"]["verdict"] and r["up"]["after"]["gradeClass"] == "grade-a"
+    assert r["up"]["gradeText"].endswith("grade A (%d)" % round(r["up"]["after"]["score"])) and [x["name"] for x in r["up"]["rows"]] == ["Gaming", "Streaming", "Video calls"]
+    assert r["down"]["direction"] == "down" and "went down 3 points" in r["down"]["verdict"] and "Undo" in r["down"]["verdict"]
+    assert r["same"]["direction"] == "same" and not any(x["changed"] for x in r["same"]["rows"])
+
+
+def test_candidate_grid_cache_keeps_results_identical_on_reuse():
+    r = run_js("""
+      const p = scenario('large_home'), fid = 'ground', fresh = () => Object.assign({}, opts, {env: E.makeEnv(config)});
+      const a = I.meshTopologies(p, fid, fresh()), shared = fresh(), b = I.meshTopologies(p, fid, shared), c = I.meshTopologies(p, fid, shared);
+      out({same: JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(c)});
+    """)
+    assert r["same"], "a reused environment changed the mesh result"
+
+
+# Each case changes one input of the shared candidate grid key. The cache slot is keyed by the config object, so the warm
+# call and the changed call share one config (the slot a stale key would reuse). The reference call uses a deep copy of the
+# config, which has its own empty slot and therefore cannot be stale. Removing that dimension from geometryKey must fail it.
+INVALIDATION_CASES = {
+    "walls": "project.floors[0].walls.forEach(w => { w.material = 'concrete'; });",
+    "materials": "const heavy = (m) => Object.assign({}, m, {attenuation_db: {'2.4': 40, '5': 40, '6': 40}}); o.env = E.makeEnv(o.config, {brick: heavy(o.config.materials.brick), drywall: heavy(o.config.materials.drywall)});",
+    "cell_size": "o.cellM = 1.0;",
+    "mode": "o.mode = 'multipath';",
+    "band": "o.band = '2.4';",
+}
+
+
+@pytest.mark.parametrize("dimension", sorted(INVALIDATION_CASES))
+def test_candidate_grid_cache_is_invalidated_by_every_key_dimension(dimension):
+    r = run_js("""
+      const O = require(process.argv[1] + '/rf-optimizer.js'), fid = 'ground', base = scenario('large_home'), clone = (c) => JSON.parse(JSON.stringify(c));
+      const run = (project, o) => O.suggestPlacements(project, fid, Object.assign({count: 5}, o));
+      const make = (cfg) => ({config: cfg, env: E.makeEnv(cfg), cellM: 0.5, mode: 'basic', band: '5'});
+      const change = (project, o) => { %s };
+      const warm = make(config), project = clone(base), o = make(config);
+      run(base, warm);                       // fills the slot of `config` with the unchanged inputs
+      change(project, o);
+      const cached = run(project, o);        // same config object: would reuse the slot if the key missed it
+      const cfg2 = clone(config), project2 = clone(base), o2 = make(cfg2);
+      change(project2, o2);
+      const reference = run(project2, o2);   // own empty slot
+      const unchanged = run(base, make(clone(config)));
+      out({match: JSON.stringify(cached) === JSON.stringify(reference), differs: JSON.stringify(reference) !== JSON.stringify(unchanged)});
+    """ % INVALIDATION_CASES[dimension])
+    assert r["differs"], "the %s change does not alter the suggested placements, so the test cannot detect a stale cache" % dimension
+    assert r["match"], "a %s change did not invalidate the cached candidate grids" % dimension
