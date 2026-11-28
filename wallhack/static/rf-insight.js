@@ -261,7 +261,7 @@
                streaming: r.streaming.word, video: r.video.word };
     });
     card.text = "Grade " + card.grade + " (" + card.score + " out of 100): coverage " + card.coverage_pct + "%, " + card.dead_zones + " dead zone" + (card.dead_zones === 1 ? "" : "s") +
-      ". Gaming " + card.ratings.gaming.word + ", streaming " + card.ratings.streaming.word + ", video calls " + card.ratings.video.word + ". Model estimate.";
+      ". Gaming grade " + card.ratings.gaming.grade + ", streaming " + card.ratings.streaming.word + ", video calls " + card.ratings.video.word + ". Model estimate.";
     return card;
   }
 
@@ -363,7 +363,10 @@
     if (c.kind === "wall") { return c.material_label + (c.through === "wall" ? " wall" : " (" + c.through + ")") + ": " + num(c.db) + " dB"; }
     if (c.kind === "floor") { return "Floor or ceiling (" + c.floors + " crossed): " + num(c.db) + " dB"; }
     if (c.kind === "distance") { return "Distance (" + num(c.distance_m) + " m): " + num(c.db) + " dB"; }
-    if (c.kind === "interference") { return "Neighbouring WiFi or radio noise from " + c.sources.join(", ") + " (signal quality lost, separate from wall loss): " + num(c.db) + " dB"; }
+    if (c.kind === "interference") {
+      var source = c.sources.length === 1 ? "Neighbouring WiFi or radio source " : "Neighbouring WiFi or radio sources ";
+      return source + c.sources.join(", ") + (c.sources.length === 1 ? " is" : " are") + " costing about " + num(c.db) + " dB of usable signal quality; separate from wall loss";
+    }
     return "Busy channel: " + num(c.pct) + "% of the time";
   }
 
@@ -543,11 +546,17 @@
     return { covered: cov, dead: dead, mean: sum / best.length };
   }
 
+  /** True when a mean-RSSI-only gain meets the configured actionable threshold. Equality qualifies. */
+  function hasMeaningfulMeanGain(candidateMean, currentMean, minGainDb) {
+    return candidateMean - currentMean >= minGainDb;
+  }
+
   /**
    * Best position for the router on a floor, searched over the optimizer candidate lattice with the other access points fixed.
-   * Ranking: most cells at or above analytics.coverage_dbm, then fewest dead cells, then highest mean RSSI, then lattice order. The router
-   * moves only when that beats its current position. Dead zones removed = dead-zone regions before minus after (a region is a 4-connected
-   * group of cells below analytics.dead_zone_dbm, rf-engine.js regionsOf). opts: {apId, config | env, cellM, mode}.
+   * Ranking: most cells at or above analytics.coverage_dbm, then fewest dead cells, then highest mean RSSI, then lattice order. Coverage and
+   * dead-cell gains always take priority. With those tied, the router moves only when the mean gain is at least
+   * planner.min_mean_rssi_gain_db. Dead zones removed = dead-zone regions before minus after (a region is a 4-connected group of cells below
+   * analytics.dead_zone_dbm, rf-engine.js regionsOf). opts: {apId, config | env, cellM, mode}.
    */
   function placementReport(project, floorId, opts) {
     var res = analyze(project, floorId, opts), cfg = res.config, floor = E.findFloor(res.project, floorId), pc = cfg.planner;
@@ -576,11 +585,19 @@
       return { label: cfg.insight.label, floor: floorId, ap_id: template.id, had_router: false, positions_evaluated: 0, lattice_positions: 0, moved: false, position: null, room: null,
                current_position: null, text: "No position found: the floor has no router and no candidate position fits inside it (model estimate)." };
     }
-    var beats = !current || (top && (top.t.covered > current.covered || (top.t.covered === current.covered && (top.t.dead < current.dead || (top.t.dead === current.dead && top.t.mean > current.mean)))));
+    var beats = !current || (top && (top.t.covered > current.covered ||
+      (top.t.covered === current.covered && (top.t.dead < current.dead ||
+      (top.t.dead === current.dead && hasMeaningfulMeanGain(top.t.mean, current.mean, pc.min_mean_rssi_gain_db))))));
+    var selected = beats && top ? top.t : current;
     var chosen = beats && top ? { x: round(top.p.x, 2), y: round(top.p.y, 2) } : { x: router.x, y: router.y };
     var out = { label: cfg.insight.label, floor: floorId, ap_id: template.id, had_router: !!router, positions_evaluated: lattice.length + (router ? 1 : 0),
                 lattice_positions: lattice.length, moved: !!(beats && top && router), position: chosen, room: placeName(floor, chosen.x, chosen.y),
-                current_position: router ? { x: router.x, y: router.y, room: placeName(floor, router.x, router.y) } : null };
+                current_position: router ? { x: router.x, y: router.y, room: placeName(floor, router.x, router.y) } : null,
+                current_mean_rssi_dbm: current ? round(current.mean, 3) : null,
+                selected_mean_rssi_dbm: round(selected.mean, 3), min_mean_rssi_gain_db: pc.min_mean_rssi_gain_db };
+    // Deprecated compatibility alias: this is the selected coverage-first placement's mean, not the highest possible mean.
+    out.best_mean_rssi_dbm = out.selected_mean_rssi_dbm;
+    out.mean_rssi_delta_db = out.current_mean_rssi_dbm === null ? null : round(out.selected_mean_rssi_dbm - out.current_mean_rssi_dbm, 3);
     var changed = cloneProject(res.project), target = E.findFloor(changed, floorId);
     if (router) { target.aps.filter(function (a) { return a.id === router.id; }).forEach(function (a) { a.x = chosen.x; a.y = chosen.y; }); }
     else { target.aps.push(Object.assign({}, template, { x: chosen.x, y: chosen.y })); }
@@ -721,7 +738,8 @@
   }
 
   var api = { analyze: analyze, roomStats: roomStats, gamerMode: gamerMode, scoreCard: scoreCard, gradeFor: gradeFor, wordFor: wordFor,
-              parseQuestion: parseQuestion, diagnose: diagnose, assistantPayload: assistantPayload, placeName: placeName, placementReport: placementReport,
+              parseQuestion: parseQuestion, diagnose: diagnose, assistantPayload: assistantPayload, placeName: placeName,
+              hasMeaningfulMeanGain: hasMeaningfulMeanGain, placementReport: placementReport,
               meshTopologies: meshTopologies, presetItems: presetItems, scenarioItems: scenarioItems, timeMachine: timeMachine };
   if (isNode) { module.exports = api; }
   root.RFInsight = api;

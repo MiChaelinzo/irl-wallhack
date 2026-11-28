@@ -9,6 +9,7 @@
   --radius:16px; --radius-sm:10px; --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --ring:3px solid var(--accent); --shadow:0 8px 30px rgba(0,0,0,.35); --ease:.25s ease;
 }
 * { box-sizing:border-box; }
+.visually-hidden { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0, 0, 0, 0); white-space:nowrap; border:0; }
 body { margin:0; min-height:100vh; color:var(--fg); font:0.9375rem/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background:radial-gradient(900px 480px at 15% -120px, var(--glow), transparent), radial-gradient(800px 420px at 90% -100px, var(--glow2), transparent), var(--bg); background-attachment:fixed; }
 html { scroll-padding-top:calc(var(--header-h) + var(--header-gap)); }
@@ -483,7 +484,11 @@ html[data-quality="low"] .stage, html[data-quality="low"] .room3d { background:v
 .q-ask input[type=text] { flex:1 1 240px; min-width:0; }
 .q-lines { margin:4px 0 8px; padding-left:18px; }
 .q-stale { opacity:.7; }
-.q-best { padding:var(--sp-3); border:1px solid var(--line); border-radius:var(--radius-sm); }
+.q-best, .q-next { padding:var(--sp-3); border:1px solid var(--line); border-radius:var(--radius-sm); }
+.q-next { margin:var(--sp-3) 0; background:color-mix(in srgb, var(--accent) 6%, var(--card-solid)); }
+.q-next h3 { margin-top:0; }
+.q-next-outcome { border-color:var(--accent); }
+.q-recommendation { font-weight:600; }
 .grade-chip { display:inline-block; min-width:2.2em; text-align:center; padding:1px 8px; border-radius:8px; border:2px solid currentColor; font-weight:700; font-size:.85rem; background:var(--card-solid); }
 .grade-a { color:var(--ok); } .grade-b { color:var(--accent); } .grade-c { color:var(--warn); } .grade-d, .grade-e, .grade-f { color:var(--bad); }
 :root[data-theme="light"] .grade-a { color:#0b5c27; } :root[data-theme="light"] .grade-b { color:#0b5f58; } :root[data-theme="light"] .grade-c { color:#7a4b00; } :root[data-theme="light"] .grade-d, :root[data-theme="light"] .grade-e, :root[data-theme="light"] .grade-f { color:#a01237; }
@@ -501,6 +506,7 @@ html[data-quality="low"] .stage, html[data-quality="low"] .room3d { background:v
 .q-compare h3 { margin-top:0; }
 .q-compare-grades { display:flex; align-items:center; gap:var(--sp-3); }
 .q-side { display:flex; flex-direction:column; align-items:center; gap:4px; }
-.q-arrow { font-size:1.6rem; }
+.q-connector { display:grid; grid-template-columns:minmax(12px, 32px) auto minmax(12px, 32px); align-items:center; gap:6px; min-width:76px; color:var(--muted); font-size:.82rem; font-weight:700; text-transform:uppercase; }
+.q-connector::before, .q-connector::after { content:""; display:block; height:2px; background:currentColor; }
 @media (max-width:480px) { .q-grade { width:64px; height:64px; font-size:2rem; } .q-step select, #quickAnalyse { width:100%; } .planner > .quick { padding:12px; } }
 @media (prefers-reduced-motion: reduce) { .glass, .q-chip, .grade-chip { transition:none !important; } }

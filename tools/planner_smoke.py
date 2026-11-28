@@ -659,7 +659,7 @@ def run_view3d_features(page, problems, args):
         problems.append("6 GHz table does not mark Wi-Fi 4 to 6 as unsupported")
     page.click("#genRun")
     page.wait_for_selector("#genFloor table", timeout=60000)
-    page.fill("#beamSteer", "90")
+    page.locator("#beamSteer").evaluate("e => { e.value = '90'; e.dispatchEvent(new Event('input', {bubbles: true})); }")
     if "Steered toward 90" not in page.inner_text("#beamText"):
         problems.append("beam text did not follow the steering slider: " + page.inner_text("#beamText"))
     if not args.no_screenshot:
@@ -749,11 +749,11 @@ QUICK_TIME_LIMIT_S = 20.0   # template to result; measured times are well below 
 
 
 def run_quick_features(page, problems, args):
-    """Quick start: template -> Analyse -> grade, rooms, diagnosis and best spot; ask a question; apply the best spot;
-    open every Wi-Fi architect tab; signal waves toggle; mobile width has no horizontal scroll."""
+    """Quick start: template -> Analyse -> grade, weakest-room action, rooms, diagnosis and best spot; ask a question;
+    apply the model-tested fix and best spot; open every Wi-Fi architect tab; signal waves toggle; mobile width has no horizontal scroll."""
     page.on("dialog", lambda d: d.accept())
     page.wait_for_function("() => window.PlannerApp.quick && window.PlannerApp.quick.templatesReady", timeout=15000)
-    page.select_option("#quickTemplate", "small_apartment")
+    page.select_option("#quickTemplate", "two_bedroom_condo")
     start = time.time()
     page.click("#quickAnalyse")
     page.wait_for_selector("#quickResult[data-ready=true]", timeout=int(QUICK_TIME_LIMIT_S * 1000))
@@ -763,18 +763,45 @@ def run_quick_features(page, problems, args):
     if elapsed > QUICK_TIME_LIMIT_S:
         problems.append("quick start took %.1f s" % elapsed)
     text = page.inner_text("#quickResult")
-    for word in ("Overall", "Coverage", "Dead zones", "Gaming", "Streaming", "Video calls", "Your rooms, for gaming", "Best router spot", "Bedroom", "Packet loss risk"):
+    for word in ("Overall", "Coverage", "Dead zones", "Gaming grade", "Streaming", "Video calls", "Fix my weakest room", "Your rooms, for gaming", "Best router spot", "Bedroom", "Packet loss risk"):
         if word.lower() not in text.lower() and word.lower() not in page.inner_html("#quickResult").lower():
             problems.append("quick result lacks %r" % word)
     if not page.locator("#quickResult .q-grade[aria-label^='Overall grade']").count():
         problems.append("quick result has no grade with a text equivalent")
     line = page.inner_text("#quickBestLine")
-    if "points coverage" not in line and "already at the best spot" not in line:
+    if "points coverage" not in line and "stronger average signal" not in line and "already at the best spot" not in line:
         problems.append("best spot line unexpected: %r" % line)
+    # apply the top model-tested weakest-room fix, check the visible outcome and persistent announcement, then undo it
+    if page.inner_text("#quickOutcomeStatus"):
+        problems.append("post-fix announcement is not empty before Apply")
+    if not page.locator("#quickFixWeakest:not([disabled])").count():
+        problems.append("Quick start has no enabled weakest-room action")
+    else:
+        before_fix = page.evaluate("() => JSON.stringify(window.PlannerApp.store.project.floors[0].aps)")
+        page.click("#quickFixWeakest")
+        page.wait_for_selector("#quickWeakestOutcome", timeout=30000)
+        page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
+        outcome = page.inner_text("#quickWeakestOutcome")
+        page.wait_for_function("() => document.getElementById('quickOutcomeStatus').textContent.length > 0", timeout=5000)
+        announced = page.inner_text("#quickOutcomeStatus")
+        if page.get_attribute("#quickWeakestOutcome", "role"):
+            problems.append("visible weakest-room outcome should not be a live region")
+        if announced not in outcome:
+            problems.append("post-fix announcement is not the concise visible outcome: %r" % announced)
+        if "gaming grade" not in outcome.lower():
+            problems.append("weakest-room outcome has no before/after gaming grade: %r" % outcome)
+        if "was reduced from about" not in outcome or "but it was not eliminated" not in outcome:
+            problems.append("channel-fix outcome does not explain residual interference: %r" % outcome)
+        connector = page.locator("#quickCompare .q-connector")
+        if not connector.count() or not connector.is_visible() or connector.bounding_box()["width"] <= 0:
+            problems.append("before/after grade connector is missing or has no visible width")
+        page.evaluate("() => window.PlannerApp.store.undo()")
+        page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
+        page.wait_for_function("(b) => JSON.stringify(window.PlannerApp.store.project.floors[0].aps) === b", arg=before_fix, timeout=30000)
     # ask
-    page.fill("#quickAsk", "Why is my bedroom WiFi slow?")
+    page.fill("#quickAsk", "Why is my Bedroom 2 WiFi slow?")
     page.click("#quickAskForm button[type=submit]")
-    page.wait_for_function("() => /WiFi in Bedroom/.test(document.getElementById('quickAnswer').innerText)", timeout=15000)
+    page.wait_for_function("() => /WiFi in Bedroom 2/.test(document.getElementById('quickAnswer').innerText)", timeout=15000)
     if "Main cause" not in page.inner_text("#quickAnswer"):
         problems.append("the answer names no main cause")
     if not page.locator("#quickChips .q-chip").count():
@@ -810,8 +837,8 @@ def run_quick_features(page, problems, args):
     if "How the grade is built" not in page.inner_text("#panel-scorecard") + page.inner_html("#panel-scorecard"):
         problems.append("Score card tab is incomplete")
     tab(page, "assistant")
-    page.fill("#asstInput", "Why is my bedroom WiFi slow?"); page.click("#asstForm button[type=submit]")
-    page.wait_for_function("() => /WiFi in Bedroom/.test(document.getElementById('asstAnswer').innerText)", timeout=15000)
+    page.fill("#asstInput", "Why is my Bedroom 2 WiFi slow?"); page.click("#asstForm button[type=submit]")
+    page.wait_for_function("() => /WiFi in Bedroom 2/.test(document.getElementById('asstAnswer').innerText)", timeout=15000)
     has_explain = page.locator("#asstExplain").count() > 0
     if args.demo == has_explain:
         problems.append("the explain button must be hidden in the demo and shown live")
@@ -852,6 +879,16 @@ def run_quick_features(page, problems, args):
     if page.evaluate("() => window.PlannerApp.quick.waves.raf !== 0"):
         problems.append("signal waves animate although reduced motion is on")
     page.uncheck("#tgWaves"); page.emulate_media(reduced_motion="no-preference")
+    # switching floors clears the previous floor's result and action rather than applying it to another floor
+    page.select_option("#quickTemplate", "large_home")
+    page.click("#quickAnalyse")
+    page.wait_for_selector("#quickResult[data-ready=true]", timeout=30000)
+    if not page.locator("#quickFixWeakest:not([disabled])").count():
+        problems.append("large home has no weakest-room action before the floor switch")
+    page.select_option("#floorSel", "upper")
+    page.wait_for_function("() => !document.getElementById('quickResult').innerText && /check this floor/i.test(document.getElementById('quickStatus').innerText)", timeout=5000)
+    if page.locator("#quickFixWeakest").count():
+        problems.append("switching floors left the old weakest-room action active")
     # mobile width: no horizontal scroll, quick start usable
     page.set_viewport_size({"width": 390, "height": 800})
     page.wait_for_timeout(300)

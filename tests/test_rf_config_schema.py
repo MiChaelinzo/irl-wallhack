@@ -99,6 +99,19 @@ def test_schema_rejects_broken_copies():
     broken = copy.deepcopy(CONFIG)
     broken["bands"]["5"]["channels"] = []
     assert any("channels" in e for e in validate(broken, SCHEMA, SCHEMA))
+    broken = copy.deepcopy(CONFIG)
+    del broken["planner"]["min_mean_rssi_gain_db"]
+    assert any("min_mean_rssi_gain_db" in e for e in validate(broken, SCHEMA, SCHEMA))
+    broken = copy.deepcopy(CONFIG)
+    broken["planner"]["min_mean_rssi_gain_db"] = 0
+    assert any("min_mean_rssi_gain_db" in e for e in validate(broken, SCHEMA, SCHEMA))
+
+
+def test_planner_mean_rssi_threshold_is_documented_and_positive():
+    threshold = CONFIG["planner"]["min_mean_rssi_gain_db"]
+    schema = SCHEMA["properties"]["planner"]["properties"]["min_mean_rssi_gain_db"]
+    assert threshold > 0
+    assert "RSSI-only" in schema["description"] and "take priority" in schema["description"] and "equality qualifies" in schema["description"]
 
 
 def test_insight_block_is_documented_validated_and_consistent():
